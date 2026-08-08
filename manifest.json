@@ -1,0 +1,7 @@
+{
+  "name": "Marvel Chat",
+  "short_name": "MarvelChat",
+  "start_url": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary"
+}
