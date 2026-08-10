@@ -5,3 +5,101 @@
  * Global reset, design tokens, typography,
  * themes and foundational styles will be migrated here.
  */
+
+
+:root{
+  --primary:#6d28d9;
+  --primary2:#8b5cf6;
+  --primary3:#a78bfa;
+  --deep:#4c1d95;
+
+  --bg:#f7f7fb;
+  --surface:#fff;
+  --surface2:#f0eef5;
+  --surface3:#faf9fd;
+
+  --text:#17131f;
+  --muted:#756e80;
+  --border:#e5e0ea;
+
+  --success:#16803c;
+  --danger:#c62828;
+  --warning:#a16207;
+  --info:#2563eb;
+
+  --shadow:
+    0 10px 30px rgba(40,20,80,.08);
+
+  --shadow2:
+    0 22px 65px rgba(40,20,80,.15);
+
+  --radius:20px;
+
+  --top:68px;
+  --nav:76px;
+}
+
+html[data-theme="dark"]{
+  --bg:#0d0b12;
+  --surface:#17141e;
+  --surface2:#24202d;
+  --surface3:#1d1926;
+
+  --text:#f8f5fc;
+  --muted:#b4acbf;
+  --border:#342d3e;
+
+  --shadow:
+    0 10px 30px rgba(0,0,0,.25);
+
+  --shadow2:
+    0 25px 75px rgba(0,0,0,.45);
+}
+
+*{
+  box-sizing:border-box;
+  -webkit-tap-highlight-color:transparent;
+}
+
+html{
+  scroll-behavior:smooth;
+}
+
+body{
+  margin:0;
+  min-height:100vh;
+  font-family:
+    Inter,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  background:var(--bg);
+  color:var(--text);
+}
+
+button,
+input,
+textarea,
+select{
+  font:inherit;
+}
+
+button{
+  cursor:pointer;
+}
+
+button:disabled{
+  opacity:.55;
+  cursor:not-allowed;
+}
+
+a{
+  color:inherit;
+  text-decoration:none;
+}
+
+.hidden{
+  display:none!important;
+}
