@@ -1,4 +1,5 @@
 import { state } from './state.js';
+import { initializeHome } from './features/home.js';
 
 const VALID_PAGES = [
   'home',
@@ -61,12 +62,16 @@ function renderCurrentRoute() {
 
   const currentPage = state.page || 'home';
 
-  mainContent.innerHTML = `
-    <div class="page-placeholder">
-      <h2>${currentPage} View</h2>
-      <p>Stage 6 Application Shell & Router Active. Feature module pending extraction.</p>
-    </div>
-  `;
+  if (currentPage === 'home') {
+    initializeHome();
+  } else {
+    mainContent.innerHTML = `
+      <div class="page-placeholder">
+        <h2>${currentPage} View</h2>
+        <p>${currentPage.charAt(0).toUpperCase() + currentPage.slice(1)} feature module pending extraction.</p>
+      </div>
+    `;
+  }
 
   document.querySelectorAll('[data-route]').forEach((btn) => {
     const targetPage = btn.getAttribute('data-route');
