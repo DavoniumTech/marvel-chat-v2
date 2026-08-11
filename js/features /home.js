@@ -1,3 +1,6 @@
+// GitHub Pages deployment synchronization marker.
+
+
 
 import { state } from '../state.js';
 import { db } from '../firebase/config.js';
