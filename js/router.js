@@ -1,5 +1,5 @@
 import { state } from './state.js';
-import { initializeHome } from './features/home.js';
+import { initializeHome } from './features /home.js';
 
 const VALID_PAGES = [
   'home',
