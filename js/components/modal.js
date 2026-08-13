@@ -1,65 +1,25 @@
-/*
- * Marvel Chat V2
- *
- * Reusable modal component.
- */
+import { escapeHtml } from "../state.js";
 
+const modalRoot = document.getElementById("modalRoot");
 
-function escapeHtml(str) {
-  if (!str) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
-export function showModal(title, body, onClose) {
-  const modalRoot = document.getElementById('modalRoot');
-  if (!modalRoot) return;
-
-  const safeTitle = escapeHtml(title);
-
+export function showModal(title, body) {
   modalRoot.innerHTML = `
-    <div class="modal-backdrop">
+    <div class="modal-backdrop" id="modalBackdrop">
       <div class="modal">
         <div class="modal-head">
-          <h3>${safeTitle}</h3>
-          <button class="icon-btn" id="modalCloseBtn">&times;</button>
+          <h2>${escapeHtml(title)}</h2>
+          <button class="icon-btn" id="closeModal">✕</button>
         </div>
-        <div class="modal-body">
-          ${body}
-        </div>
+        ${body}
       </div>
     </div>
   `;
-
-  const closeBtn = modalRoot.querySelector('#modalCloseBtn');
-  const backdrop = modalRoot.querySelector('.modal-backdrop');
-
-  const closeModal = () => {
-    modalRoot.innerHTML = '';
-    if (typeof onClose === 'function') {
-      onClose();
-    }
-  };
-
-  if (closeBtn) {
-    closeBtn.addEventListener('click', closeModal);
-  }
-  if (backdrop) {
-    backdrop.addEventListener('click', (e) => {
-      if (e.target === backdrop) {
-        closeModal();
-      }
-    });
-  }
+  document.getElementById("closeModal")?.addEventListener("click", closeModal);
+  document.getElementById("modalBackdrop")?.addEventListener("click", e => {
+    if (e.target.id === "modalBackdrop") closeModal();
+  });
 }
 
-export function close() {
-  const modalRoot = document.getElementById('modalRoot');
-  if (modalRoot) {
-    modalRoot.innerHTML = '';
-  }
+export function closeModal() {
+  modalRoot.innerHTML = "";
 }
