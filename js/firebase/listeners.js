@@ -1,7 +1,7 @@
 import { db } from "./config.js";
 import { collection, query, orderBy, limit, where, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { state } from "../state.js";
-import { playNotificationSound } from "../features/notifications.js";
+import { playNotificationSound } from "../features /notifications.js";
 
 export function sub(name, q, handler) {
   state.unsubs[name]?.();
