@@ -456,4 +456,4 @@ if ("serviceWorker" in navigator) {
 }
 
 const startupStatus = document.getElementById("startupStatus");
-if (startupStatus) startupStatus.textContent = "Initializing the Marvel Chat universe…";
+if (startupStatus) startupStatus.textContent = "Initializing the MarvelChat universe…";
