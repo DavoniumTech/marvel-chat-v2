@@ -1,280 +1,56 @@
-/*
- * Marvel Chat V2
- * Layout styles
- *
- * Application shell, navigation, pages,
- * grids and structural layout will live here.
- */
-
-
-
-
-
-.app{
-  min-height:100vh;
-  display:flex;
-  flex-direction:column;
-}
-
+.app{ min-height:100vh; display:flex; flex-direction:column; }
 .topbar{
-  position:sticky;
-  top:0;
-  z-index:100;
+  position:sticky; top:0; z-index:100;
   height:var(--top);
-  background:
-    color-mix(
-      in srgb,
-      var(--surface) 92%,
-      transparent
-    );
+  background:color-mix(in srgb, var(--surface) 92%, transparent);
   backdrop-filter:blur(20px);
-  border-bottom:
-    1px solid var(--border);
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
+  border-bottom:1px solid var(--border);
+  display:flex; align-items:center; justify-content:space-between;
   padding:0 14px;
 }
-
-.brand{
-  display:flex;
-  align-items:center;
-  gap:10px;
-  min-width:0;
-}
-
-.brand-logo,
-.auth-logo{
-  display:grid;
-  place-items:center;
-  color:#fff;
-  background:
-    linear-gradient(
-      135deg,
-      var(--primary),
-      var(--primary2)
-    );
-  font-weight:950;
-  box-shadow:
-    0 10px 28px
-    rgba(109,40,217,.3);
-}
-
-.brand-logo{
-  width:42px;
-  height:42px;
-  border-radius:14px;
-}
-
-.auth-logo{
-  width:60px;
-  height:60px;
-  border-radius:19px;
-  margin:0 auto 15px;
-  font-size:25px;
-}
-
-.brand-name{
-  font-weight:950;
-  font-size:17px;
-}
-
-.brand-sub{
-  font-size:10px;
-  color:var(--muted);
-  margin-top:1px;
-}
-
-.top-actions{
-  display:flex;
-  gap:7px;
-}
-
-.main{
-  width:min(1120px,100%);
-  margin:auto;
-  padding:
-    18px
-    14px
-    calc(var(--nav) + 35px);
-  flex:1;
-}
-
-.page{
-  animation:in .2s ease;
-}
-
+.brand{ display:flex; align-items:center; gap:10px; min-width:0; }
+.brand-name{ font-weight:950; font-size:17px; }
+.brand-sub{ font-size:10px; color:var(--muted); margin-top:1px; }
+.top-actions{ display:flex; gap:7px; }
+.main{ width:min(1120px,100%); margin:auto; padding:18px 14px calc(var(--nav) + 35px); flex:1; }
+.page{ animation:in .2s ease; }
 @keyframes in{
-  from{
-    opacity:0;
-    transform:translateY(5px);
-  }
-  to{
-    opacity:1;
-    transform:none;
-  }
+  from{ opacity:0; transform:translateY(5px); }
+  to{ opacity:1; transform:none; }
 }
-
 .hero{
-  position:relative;
-  overflow:hidden;
-  background:
-    linear-gradient(
-      135deg,
-      #4c1d95,
-      #6d28d9 50%,
-      #8b5cf6
-    );
-  color:#fff;
-  border-radius:28px;
-  padding:24px;
-  margin-bottom:16px;
-  box-shadow:
-    0 20px 55px
-    rgba(76,29,149,.25);
+  position:relative; overflow:hidden;
+  background:linear-gradient(135deg, #4c1d95, #6d28d9 50%, #8b5cf6);
+  color:#fff; border-radius:28px; padding:24px; margin-bottom:16px;
+  box-shadow:0 20px 55px rgba(76,29,149,.25);
 }
-
 .hero:after{
-  content:"";
-  position:absolute;
-  width:190px;
-  height:190px;
-  border:
-    1px solid
-    rgba(255,255,255,.2);
-  border-radius:50%;
-  right:-55px;
-  top:-80px;
-  box-shadow:
-    0 0 0 30px
-    rgba(255,255,255,.04),
-    0 0 0 60px
-    rgba(255,255,255,.03);
+  content:""; position:absolute; width:190px; height:190px;
+  border:1px solid rgba(255,255,255,.2); border-radius:50%;
+  right:-55px; top:-80px;
+  box-shadow:0 0 0 30px rgba(255,255,255,.04), 0 0 0 60px rgba(255,255,255,.03);
 }
-
-.hero h1{
-  margin:0 0 7px;
-  font-size:
-    clamp(25px,6vw,40px);
-  line-height:1.05;
-  position:relative;
-  z-index:1;
-}
-
-.hero p{
-  margin:0;
-  opacity:.92;
-  line-height:1.55;
-  position:relative;
-  z-index:1;
-}
-
-.grid{
-  display:grid;
-  gap:14px;
-}
-
-.grid2{
-  grid-template-columns:
-    repeat(2,minmax(0,1fr));
-}
-
-.grid3{
-  grid-template-columns:
-    repeat(3,minmax(0,1fr));
-}
-
-.grid4{
-  grid-template-columns:
-    repeat(4,minmax(0,1fr));
-}
-
-.section-title{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:10px;
-  margin:22px 0 11px;
-}
-
-.section-title h2{
-  margin:0;
-  font-size:19px;
-}
-
+.hero h1{ margin:0 0 7px; font-size:clamp(25px,6vw,40px); line-height:1.05; position:relative; z-index:1; }
+.hero p{ margin:0; opacity:.92; line-height:1.55; position:relative; z-index:1; }
+.grid{ display:grid; gap:14px; }
+.grid2{ grid-template-columns:repeat(2,minmax(0,1fr)); }
+.grid3{ grid-template-columns:repeat(3,minmax(0,1fr)); }
+.grid4{ grid-template-columns:repeat(4,minmax(0,1fr)); }
 .bottom-nav{
-  position:fixed;
-  left:0;
-  right:0;
-  bottom:0;
-  z-index:110;
+  position:fixed; left:0; right:0; bottom:0; z-index:110;
   height:var(--nav);
-  background:
-    color-mix(
-      in srgb,
-      var(--surface) 96%,
-      transparent
-    );
+  background:color-mix(in srgb, var(--surface) 96%, transparent);
   backdrop-filter:blur(20px);
-  border-top:
-    1px solid var(--border);
-  display:flex;
-  justify-content:center;
+  border-top:1px solid var(--border);
+  display:flex; justify-content:center;
 }
-
-.bottom-inner{
-  width:min(700px,100%);
-  display:grid;
-  grid-template-columns:
-    repeat(5,1fr);
-}
-
+.bottom-inner{ width:min(700px,100%); display:grid; grid-template-columns:repeat(5,1fr); }
 .nav-btn{
-  border:0;
-  background:transparent;
-  color:var(--muted);
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  justify-content:center;
-  gap:3px;
-  font-size:11px;
-  font-weight:800;
+  border:0; background:transparent; color:var(--muted);
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:3px; font-size:11px; font-weight:800;
 }
-
-.nav-btn.active{
-  color:var(--primary);
-}
-
-.nav-icon{
-  font-size:22px;
-}
-
-.auth-shell{
-  min-height:100vh;
-  display:grid;
-  place-items:center;
-  padding:18px;
-}
-
-.auth-card{
-  width:min(480px,100%);
-  background:var(--surface);
-  border:
-    1px solid var(--border);
-  border-radius:28px;
-  box-shadow:var(--shadow2);
-  padding:25px;
-}
-
-.auth-card h1{
-  text-align:center;
-  margin:0 0 8px;
-}
-
-.auth-card > p{
-  color:var(--muted);
-  line-height:1.6;
-  text-align:center;
-}
-
+.nav-btn.active{ color:var(--primary); }
+.nav-icon{ font-size:22px; }
+.auth-shell{ min-height:100vh; display:grid; place-items:center; padding:18px; }
+.country-grid{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
