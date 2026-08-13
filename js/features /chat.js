@@ -186,6 +186,26 @@ export async function sendMessage() {
       lastMessage: text,
       updatedAt: serverTimestamp()
     });
+
+    // Create message notification for recipient
+    const recipientUid = state.activeConversation.participants?.find(x => x !== state.user.uid);
+    if (recipientUid) {
+      try {
+        const actorName = state.profile.displayName || state.profile.username || "Someone";
+        await addDoc(collection(db, "users", recipientUid, "notifications"), {
+          type: "message",
+          actorUid: state.user.uid,
+          actorName,
+          targetId: id,
+          text: `${actorName} sent you a message.`,
+          read: false,
+          createdAt: serverTimestamp()
+        });
+      } catch (notifErr) {
+        console.warn("Could not create message notification:", notifErr);
+      }
+    }
+
     input.value = "";
   } catch (e) {
     console.error("SEND MESSAGE ERROR:", e);
