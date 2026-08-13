@@ -1,7 +1,24 @@
 {
-  "name": "Marvel Chat",
+  "name": "Marvel Chat V2",
   "short_name": "MarvelChat",
+  "description": "Modular PWA Community and Real-Time Chat Application",
   "start_url": "./",
+  "scope": "./",
   "display": "standalone",
-  "orientation": "portrait-primary"
+  "background_color": "#0f172a",
+  "theme_color": "#6366f1",
+  "icons": [
+    {
+      "src": "./assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
 }
