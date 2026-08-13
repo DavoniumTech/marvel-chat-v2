@@ -1,5 +1,5 @@
 import { state, escapeHtml, formatDate, friendly } from "../state.js";
-import { db, getDocs, query, collection, orderBy, limit, doc, updateDb = updateDoc, writeBatch } from "../firebase/firestore.js";
+import { db, getDocs, query, collection, orderBy, limit, doc, updateDoc, writeBatch } from "../firebase/firestore.js";
 import { showModal } from "../components/modal.js";
 
 export function playNotificationSound() {
