@@ -444,7 +444,7 @@ window.addEventListener("beforeinstallprompt", e => {
 });
 window.addEventListener("appinstalled", () => {
   state.installPrompt = null;
-  toast("Marvel Chat installed 📲");
+  toast("MarvelChat installed 📲");
 });
 
 if ("serviceWorker" in navigator) {
