@@ -1,6 +1,7 @@
 import { db } from "./config.js";
 import { collection, query, orderBy, limit, where, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { state } from "../state.js";
+import { playNotificationSound } from "../features/notifications.js";
 
 export function sub(name, q, handler) {
   state.unsubs[name]?.();
@@ -41,5 +42,30 @@ export function subscribeAll(renderCallback) {
   sub("requests", query(collection(db, "skillRequests"), orderBy("createdAt", "desc"), limit(50)), s => {
     state.requests = s.docs.map(d => ({ id: d.id, ...d.data() }));
     if (state.page === "timetrust") renderCallback();
+  });
+
+  // Real-time notifications listener with initial snapshot sound protection
+  let isInitialNotificationLoad = true;
+  sub("notifications", query(collection(db, "users", state.user.uid, "notifications"), orderBy("createdAt", "desc"), limit(50)), s => {
+    const list = s.docs.map(d => ({ id: d.id, ...d.data() }));
+    state.notifications = list;
+    state.unreadNotificationsCount = list.filter(n => !n.read).length;
+
+    if (isInitialNotificationLoad) {
+      isInitialNotificationLoad = false;
+    } else {
+      // Check if any added/modified doc in this snapshot is unread and newly arrived
+      const hasNewUnread = s.docChanges().some(change => change.type === "added" && !change.doc.data().read);
+      if (hasNewUnread) {
+        playNotificationSound();
+      }
+    }
+
+    // Update badge dynamically if rendered
+    const badgeEl = document.getElementById("notificationBadge");
+    if (badgeEl) {
+      badgeEl.textContent = state.unreadNotificationsCount > 0 ? state.unreadNotificationsCount : "";
+      badgeEl.style.display = state.unreadNotificationsCount > 0 ? "inline-block" : "none";
+    }
   });
 }
