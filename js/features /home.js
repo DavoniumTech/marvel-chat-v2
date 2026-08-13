@@ -133,6 +133,23 @@ export async function toggleLike(id) {
       likes: increment(liked ? -1 : 1),
       likedBy: liked ? arrayRemove(state.user.uid) : arrayUnion(state.user.uid)
     });
+
+    // Create like notification if successfully liked and not self-like
+    if (!liked && post.uid && post.uid !== state.user.uid) {
+      try {
+        await addDoc(collection(db, "users", post.uid, "notifications"), {
+          type: "like",
+          actorUid: state.user.uid,
+          actorName: state.profile.displayName || state.profile.username || "Someone",
+          targetId: id,
+          text: `${state.profile.displayName || state.profile.username || "Someone"} liked your post.`,
+          read: false,
+          createdAt: serverTimestamp()
+        });
+      } catch (notifErr) {
+        console.warn("Could not create like notification:", notifErr);
+      }
+    }
   } catch (e) {
     toast(friendly(e));
   }
@@ -169,6 +186,7 @@ export async function sharePost(id) {
 }
 
 export async function showComments(id) {
+  const post = state.posts.find(x => x.id === id);
   showModal(
     "Comments",
     `
@@ -202,13 +220,32 @@ export async function showComments(id) {
     const text = input.value.trim();
     if (!text) { toast("Write a comment first."); return; }
     try {
+      const actorName = state.profile.displayName || state.profile.username || "User";
       await addDoc(collection(db, "posts", id, "comments"), {
         uid: state.user.uid,
-        username: state.profile.displayName || state.profile.username || "User",
+        username: actorName,
         text,
         createdAt: serverTimestamp()
       });
       await updateDoc(doc(db, "posts", id), { comments: increment(1) });
+      
+      // Create comment notification if post exists and post owner is not current user
+      if (post && post.uid && post.uid !== state.user.uid) {
+        try {
+          await addDoc(collection(db, "users", post.uid, "notifications"), {
+            type: "comment",
+            actorUid: state.user.uid,
+            actorName,
+            targetId: id,
+            text: `${actorName} commented on your post.`,
+            read: false,
+            createdAt: serverTimestamp()
+          });
+        } catch (notifErr) {
+          console.warn("Could not create comment notification:", notifErr);
+        }
+      }
+
       input.value = "";
       toast("Comment added 💬");
       showComments(id);
