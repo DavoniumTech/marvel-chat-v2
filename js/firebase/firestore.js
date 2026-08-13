@@ -1,15 +1,4 @@
-/*
- * Marvel Chat V2
- *
- * Firestore service.
- *
- * Firestore reads, writes and reusable
- * database operations will be migrated here.
- */
-
-
-
-
+import { db } from "./config.js";
 import {
   collection,
   doc,
@@ -23,12 +12,12 @@ import {
   orderBy,
   limit,
   getDocs,
+  onSnapshot,
   serverTimestamp,
   increment,
   arrayUnion,
   arrayRemove
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { db } from "./config.js";
 
 export {
   db,
@@ -44,6 +33,7 @@ export {
   orderBy,
   limit,
   getDocs,
+  onSnapshot,
   serverTimestamp,
   increment,
   arrayUnion,
