@@ -1,308 +1,219 @@
-// GitHub Pages deployment synchronization marker.
+import { state, escapeHtml, initials, formatDate, friendly } from "../state.js";
+import { db, collection, addDoc, updateDoc, doc, serverTimestamp, increment, arrayUnion, arrayRemove, getDocs, query, orderBy, limit } from "../firebase/firestore.js";
+import { showModal, closeModal } from "../components/modal.js";
+import { toast } from "../components/toast.js";
 
+export function renderHome(renderApp) {
+  const me = state.profile?.displayName || state.profile?.username || "there";
+  const posts = state.posts;
 
-
-import { state } from '../state.js';
-import { db } from '../firebase/config.js';
-import { 
-  collection, 
-  doc, 
-  updateDoc, 
-  addDoc, 
-  query, 
-  orderBy, 
-  getDocs, 
-  serverTimestamp, 
-  increment, 
-  arrayUnion, 
-  arrayRemove 
-} from '../firebase/firestore.js';
-import { createListener } from '../firebase/listeners.js';
-import { renderLoader } from '../components/loader.js';
-import { showToast } from '../components/toast.js';
-import { showModal } from '../components/modal.js';
-import { renderAvatar } from '../components/avatar.js';
-
-let currentPostsUnsub = null;
-let eventDelegationInitialized = false;
-
-export function initializeHome() {
-  renderHome();
-  setupHomeListeners();
-  setupEventDelegation();
-}
-
-export function renderHome() {
-  const container = document.getElementById('mainContent') || document.getElementById('app');
-  if (!container) return;
-
-  container.innerHTML = `
-    <div class="home-container">
-      <div class="post-composer-card card">
-        <form id="postForm">
-          <textarea id="postInput" placeholder="What's happening?" rows="3" required></textarea>
-          <div class="composer-actions">
-            <button type="submit" class="btn btn-primary">Post</button>
-          </div>
-        </form>
+  return `
+    <div class="page">
+      <section class="hero">
+        <h1>Hey ${escapeHtml(me)} 👋</h1>
+        <p>Welcome to your futuristic community. Connect, chat, trade skills and discover what people around you are building.</p>
+      </section>
+      <div class="quick-grid">
+        <button class="quick" data-quick="post">
+          <div class="quick-icon">✍️</div>
+          <strong>Create post</strong>
+          <span>Share something</span>
+        </button>
+        <button class="quick" data-quick="chat">
+          <div class="quick-icon">💬</div>
+          <strong>Start chat</strong>
+          <span>Talk to someone</span>
+        </button>
+        <button class="quick" data-quick="skill">
+          <div class="quick-icon">⏱️</div>
+          <strong>Offer a skill</strong>
+          <span>Trade your time</span>
+        </button>
+        <button class="quick" data-quick="sell">
+          <div class="quick-icon">🛍️</div>
+          <strong>Sell something</strong>
+          <span>Open the market</span>
+        </button>
       </div>
-
-      <div class="feed-header">
-        <h3>Feed</h3>
+      <div class="section-title">
+        <h2>Community feed</h2>
+        <button class="btn btn-primary" id="createPostBtn">+ Post</button>
       </div>
-
-      <div id="feedContainer" class="feed-list">
-        ${!state.posts || state.posts.length === 0 ? `<div class="loading-wrapper">${renderLoader()}</div>` : renderPostsList()}
-      </div>
-    </div>
-  `;
-}
-
-function renderPostsList() {
-  if (!state.posts || state.posts.length === 0) {
-    return `<p class="empty-state">No posts found.</p>`;
-  }
-
-  return state.posts.map(post => {
-    const authorName = post.displayName || post.username || 'Anonymous';
-    const timestamp = post.createdAt?.toDate ? post.createdAt.toDate().toLocaleString() : 'Just now';
-    const textContent = escapeHtml(post.text || '');
-    const likesCount = typeof post.likes === 'number' ? post.likes : (Array.isArray(post.likedBy) ? post.likedBy.length : 0);
-    const isLiked = state.user && Array.isArray(post.likedBy) && post.likedBy.includes(state.user.uid);
-
-    return `
-      <div class="post-card card" data-id="${post.id}">
-        <div class="post-header">
-          <div class="post-author-info">
-            ${renderAvatar(authorName, 'avatar-sm')}
-            <div>
-              <h4 class="post-author-name">${escapeHtml(authorName)}</h4>
-              <span class="post-timestamp">${timestamp}</span>
+      ${
+        posts.length
+          ? posts.map(renderPost).join("")
+          : `
+            <div class="card empty">
+              <div style="font-size:38px">🌌</div>
+              <h3>The community is quiet…</h3>
+              <p>Be the first person to start the conversation.</p>
+              <button class="btn btn-primary" id="emptyCreatePost">Create the first post</button>
             </div>
-          </div>
-        </div>
-        <div class="post-body">
-          <p>${textContent}</p>
-        </div>
-        <div class="post-footer">
-          <button class="btn-action like-btn ${isLiked ? 'active' : ''}" data-id="${post.id}" type="button">
-            ❤️ <span class="like-count">${likesCount}</span>
-          </button>
-          <button class="btn-action comment-btn" data-id="${post.id}" type="button">
-            💬 Comments
-          </button>
-        </div>
-      </div>
-    `;
-  }).join('');
-}
-
-function setupHomeListeners() {
-  if (typeof currentPostsUnsub === 'function') {
-    currentPostsUnsub();
-    currentPostsUnsub = null;
-  }
-
-  try {
-    const postsQuery = query(collection(db, 'posts'), orderBy('createdAt', 'desc'));
-    
-    currentPostsUnsub = createListener(postsQuery, (snapshot) => {
-      const postsData = [];
-      snapshot.forEach(docSnap => {
-        postsData.push({ id: docSnap.id, ...docSnap.data() });
-      });
-
-      state.posts = postsData;
-
-      const feedContainer = document.getElementById('feedContainer');
-      if (feedContainer) {
-        feedContainer.innerHTML = renderPostsList();
+          `
       }
-    }, (error) => {
-      console.error('[Home] Error listening to posts feed:', error);
-      showToast('Error loading live feed.');
-    });
-  } catch (err) {
-    console.error('[Home] Failed to set up posts listener:', err);
-  }
-}
-
-function setupEventDelegation() {
-  if (eventDelegationInitialized) return;
-  eventDelegationInitialized = true;
-
-  document.addEventListener('submit', async (e) => {
-    if (state.page !== 'home') return;
-
-    if (e.target && e.target.id === 'postForm') {
-      e.preventDefault();
-      const input = document.getElementById('postInput');
-      if (!input) return;
-
-      const text = input.value.trim();
-      if (!text) return;
-
-      if (!state.user) {
-        showToast('You must be signed in to post.');
-        return;
-      }
-
-      try {
-        input.disabled = true;
-        await addDoc(collection(db, 'posts'), {
-          text: text,
-          uid: state.user.uid,
-          username: state.profile?.username || state.user.email?.split('@')[0] || 'user',
-          displayName: state.profile?.displayName || state.user.displayName || 'Member',
-          createdAt: serverTimestamp(),
-          likes: 0,
-          likedBy: [],
-          savedBy: []
-        });
-
-        input.value = '';
-        showToast('Post created successfully!');
-      } catch (error) {
-        console.error('[Home] Error creating post:', error);
-        showToast('Failed to create post.');
-      } finally {
-        input.disabled = false;
-      }
-    } else if (e.target && e.target.id === 'commentForm') {
-      e.preventDefault();
-      const postId = e.target.getAttribute('data-post-id');
-      if (!postId) return;
-
-      const input = document.getElementById('commentInput');
-      if (!input) return;
-      const text = input.value.trim();
-      if (!text) return;
-
-      if (!state.user) {
-        showToast('Sign in required to comment.');
-        return;
-      }
-
-      try {
-        await addDoc(collection(db, 'posts', postId, 'comments'), {
-          text: text,
-          uid: state.user.uid,
-          username: state.profile?.username || state.user.email?.split('@')[0] || 'user',
-          displayName: state.profile?.displayName || state.user.displayName || 'Member',
-          createdAt: serverTimestamp()
-        });
-
-        input.value = '';
-        showToast('Comment added!');
-        handleOpenComments(postId);
-      } catch (err) {
-        console.error('[Home] Error adding comment:', err);
-        showToast('Failed to add comment.');
-      }
-    }
-  });
-
-  document.addEventListener('click', (e) => {
-    if (state.page !== 'home') return;
-
-    const likeBtn = e.target.closest('.like-btn');
-    if (likeBtn) {
-      const postId = likeBtn.getAttribute('data-id');
-      if (postId) handleLikePost(postId);
-      return;
-    }
-
-    const commentBtn = e.target.closest('.comment-btn');
-    if (commentBtn) {
-      const postId = commentBtn.getAttribute('data-id');
-      if (postId) handleOpenComments(postId);
-      return;
-    }
-  });
-}
-
-async function handleLikePost(postId) {
-  if (!state.user) {
-    showToast('Sign in required to like posts.');
-    return;
-  }
-
-  const post = state.posts.find(p => p.id === postId);
-  if (!post) return;
-
-  const userId = state.user.uid;
-  const likedBy = Array.isArray(post.likedBy) ? post.likedBy : [];
-  const isLiked = likedBy.includes(userId);
-
-  try {
-    const postRef = doc(db, 'posts', postId);
-    if (isLiked) {
-      await updateDoc(postRef, {
-        likedBy: arrayRemove(userId),
-        likes: increment(-1)
-      });
-    } else {
-      await updateDoc(postRef, {
-        likedBy: arrayUnion(userId),
-        likes: increment(1)
-      });
-    }
-  } catch (error) {
-    console.error('[Home] Error updating like:', error);
-    showToast('Failed to update like.');
-  }
-}
-
-async function handleOpenComments(postId) {
-  const modalBody = `
-    <div class="comments-container">
-      <div id="modalCommentsList" class="comments-list">
-        ${renderLoader()}
-      </div>
-      <form id="commentForm" class="comment-form" data-post-id="${postId}">
-        <input type="text" id="commentInput" placeholder="Write a comment..." required />
-        <button type="submit" class="btn btn-primary">Send</button>
-      </form>
     </div>
   `;
+}
 
-  showModal('Comments', modalBody);
+export function renderPost(p) {
+  const liked = Array.isArray(p.likedBy) && p.likedBy.includes(state.user.uid);
+  const saved = Array.isArray(p.savedBy) && p.savedBy.includes(state.user.uid);
 
-  const commentsListEl = document.getElementById('modalCommentsList');
-  try {
-    const commentsQuery = query(collection(db, 'posts', postId, 'comments'), orderBy('createdAt', 'asc'));
-    const snapshot = await getDocs(commentsQuery);
+  return `
+    <article class="card post">
+      <div class="post-head">
+        <div class="avatar">${escapeHtml(initials(p.username))}</div>
+        <div class="profile-meta">
+          <strong>${escapeHtml(p.username || "User")}</strong>
+          <span class="small">${escapeHtml(formatDate(p.createdAt))}</span>
+        </div>
+      </div>
+      <div class="post-body">${escapeHtml(p.text || "")}</div>
+      <div class="post-actions">
+        <button class="action ${liked ? "active" : ""}" data-like="${p.id}">
+          ${liked ? "❤️" : "♡"} ${Number(p.likes || 0)}
+        </button>
+        <button class="action" data-comment="${p.id}">
+          💬 ${Number(p.comments || 0)}
+        </button>
+        <button class="action" data-share="${p.id}">↗ Share</button>
+        <button class="action ${saved ? "active" : ""}" data-save="${p.id}">
+          ${saved ? "🔖 Saved" : "🔖 Save"}
+        </button>
+      </div>
+    </article>
+  `;
+}
 
-    if (snapshot.empty) {
-      commentsListEl.innerHTML = `<p class="empty-state">No comments yet.</p>`;
-    } else {
-      let html = '';
-      snapshot.forEach(docSnap => {
-        const comment = docSnap.data();
-        const author = comment.displayName || comment.username || 'User';
-        html += `
-          <div class="comment-item">
-            <strong>${escapeHtml(author)}</strong>
-            <p>${escapeHtml(comment.text || '')}</p>
-          </div>
-        `;
+export function showCreatePost() {
+  showModal(
+    "Create a community post",
+    `
+      <div class="field">
+        <label>What's happening?</label>
+        <textarea class="textarea" id="postText" maxlength="1000" placeholder="Share an idea, question, achievement or opportunity…"></textarea>
+      </div>
+      <button class="btn btn-primary btn-block" id="publishPost">Publish 🚀</button>
+    `
+  );
+
+  document.getElementById("publishPost")?.addEventListener("click", async () => {
+    const text = document.getElementById("postText")?.value.trim();
+    if (!text) { toast("Write something first."); return; }
+    const btn = document.getElementById("publishPost");
+    btn.disabled = true;
+    btn.textContent = "Publishing…";
+    try {
+      await addDoc(collection(db, "posts"), {
+        uid: state.user.uid,
+        username: state.profile.displayName || state.profile.username || "User",
+        text,
+        likes: 0,
+        comments: 0,
+        likedBy: [],
+        savedBy: [],
+        createdAt: serverTimestamp()
       });
-      commentsListEl.innerHTML = html;
+      closeModal();
+      toast("Posted successfully 🚀");
+    } catch (e) {
+      toast(friendly(e));
+      btn.disabled = false;
+      btn.textContent = "Publish 🚀";
     }
-  } catch (error) {
-    console.error('[Home] Error loading comments:', error);
-    if (commentsListEl) {
-      commentsListEl.innerHTML = `<p class="error-state">Failed to load comments.</p>`;
-    }
+  });
+}
+
+export async function toggleLike(id) {
+  const post = state.posts.find(x => x.id === id);
+  if (!post) return;
+  const liked = Array.isArray(post.likedBy) && post.likedBy.includes(state.user.uid);
+  try {
+    await updateDoc(doc(db, "posts", id), {
+      likes: increment(liked ? -1 : 1),
+      likedBy: liked ? arrayRemove(state.user.uid) : arrayUnion(state.user.uid)
+    });
+  } catch (e) {
+    toast(friendly(e));
   }
 }
 
-function escapeHtml(str) {
-  if (!str) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
+export async function savePost(id) {
+  const post = state.posts.find(x => x.id === id);
+  if (!post) return;
+  const saved = Array.isArray(post.savedBy) && post.savedBy.includes(state.user.uid);
+  try {
+    await updateDoc(doc(db, "posts", id), {
+      savedBy: saved ? arrayRemove(state.user.uid) : arrayUnion(state.user.uid)
+    });
+    toast(saved ? "Removed from saved posts." : "Saved to your vault 🔖");
+  } catch (e) {
+    toast(friendly(e));
+  }
+}
+
+export async function sharePost(id) {
+  const post = state.posts.find(x => x.id === id);
+  if (!post) return;
+  const text = `${post.username || "Someone"} on Marvel Chat:\n\n${post.text}`;
+  try {
+    if (navigator.share) {
+      await navigator.share({ title: "Marvel Chat", text });
+    } else {
+      await navigator.clipboard.writeText(text);
+      toast("Post copied to clipboard 📋");
+    }
+  } catch (e) {
+    if (e?.name !== "AbortError") toast("Could not share this post.");
+  }
+}
+
+export async function showComments(id) {
+  showModal(
+    "Comments",
+    `
+      <div id="commentsList" class="list"><div class="empty">Loading comments…</div></div>
+      <div style="height:14px"></div>
+      <textarea class="textarea" id="commentText" placeholder="Write a comment…"></textarea>
+      <button class="btn btn-primary btn-block" id="addComment" style="margin-top:8px">Add comment</button>
+    `
+  );
+
+  try {
+    const snap = await getDocs(query(collection(db, "posts", id, "comments"), orderBy("createdAt", "asc"), limit(50)));
+    const comments = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const list = document.getElementById("commentsList");
+    list.className = comments.length ? "list" : "empty";
+    list.innerHTML = comments.length
+      ? comments.map(c => `
+          <div class="list-item">
+            <strong>${escapeHtml(c.username || "User")}</strong>
+            <div>${escapeHtml(c.text || "")}</div>
+            <div class="small">${escapeHtml(formatDate(c.createdAt))}</div>
+          </div>
+        `).join("")
+      : "No comments yet. Start the conversation.";
+  } catch (e) {
+    document.getElementById("commentsList").innerHTML = `<div class="status error">${escapeHtml(friendly(e))}</div>`;
+  }
+
+  document.getElementById("addComment")?.addEventListener("click", async () => {
+    const input = document.getElementById("commentText");
+    const text = input.value.trim();
+    if (!text) { toast("Write a comment first."); return; }
+    try {
+      await addDoc(collection(db, "posts", id, "comments"), {
+        uid: state.user.uid,
+        username: state.profile.displayName || state.profile.username || "User",
+        text,
+        createdAt: serverTimestamp()
+      });
+      await updateDoc(doc(db, "posts", id), { comments: increment(1) });
+      input.value = "";
+      toast("Comment added 💬");
+      showComments(id);
+    } catch (e) {
+      toast(friendly(e));
+    }
+  });
 }
