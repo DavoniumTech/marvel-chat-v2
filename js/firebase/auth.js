@@ -1,4 +1,6 @@
 import { auth, db } from "./config.js";
+
+export { auth };
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
