@@ -2,14 +2,14 @@ import { state, countries, applyTheme, escapeHtml, initials, friendly } from "./
 import { auth, loadProfile, onAuthStateChanged, signOut, updateProfile } from "./firebase/auth.js";
 import { db, doc, updateDoc, setDoc, serverTimestamp } from "./firebase/firestore.js";
 import { subscribeAll } from "./firebase/listeners.js";
-import { renderHome, showCreatePost, toggleLike, savePost, sharePost, showComments } from "./features /home.js";
-import { renderChat, showNewChat, sendMessage, openConversation } from "./features /chat.js";
-import { renderMarket, showSellModal } from "./features /market.js";
-import { renderProfile, showEditProfile, showSaved } from "./features /profile.js";
-import { showNotifications } from "./features /notifications.js";
-import { showSearch } from "./features /search.js";
-import { showSettings } from "./features /settings.js";
-import { renderTimeTrust, showSkillModal } from "./features /timetrust.js";
+import { renderHome, showCreatePost, toggleLike, savePost, sharePost, showComments } from "./features/home.js";
+import { renderChat, showNewChat, sendMessage, openConversation } from "./features/chat.js";
+import { renderMarket, showSellModal } from "./features/market.js";
+import { renderProfile, showEditProfile, showSaved } from "./features/profile.js";
+import { showNotifications } from "./features/notifications.js";
+import { showSearch } from "./features/search.js";
+import { showSettings } from "./features/settings.js";
+import { renderTimeTrust, showSkillModal } from "./features/timetrust.js";
 import { toast } from "./components/toast.js";
 
 const root = document.getElementById("root");
@@ -41,13 +41,16 @@ export function renderApp() {
         <div class="brand">
           <div class="brand-logo">M</div>
           <div>
-            <div class="brand-name">MarvelChat</div>
+            <div class="brand-name">Marvel Chat</div>
             <div class="brand-sub">FUTURE COMMUNITY</div>
           </div>
         </div>
         <div class="top-actions">
           <button class="icon-btn" id="searchBtn" title="Search">⌕</button>
-          <button class="icon-btn" id="notificationBtn" title="Notifications">🔔</button>
+          <button class="icon-btn" id="notificationBtn" title="Notifications" style="position:relative;">
+            🔔
+            <span id="notificationBadge" style="position:absolute; top:4px; right:4px; background:var(--danger); color:#fff; font-size:10px; font-weight:bold; padding:2px 5px; border-radius:999px; display:${state.unreadNotificationsCount > 0 ? 'inline-block' : 'none'};">${state.unreadNotificationsCount > 0 ? state.unreadNotificationsCount : ''}</span>
+          </button>
           <button class="icon-btn" id="themeBtn" title="Theme">${state.theme === "dark" ? "☀️" : "🌙"}</button>
         </div>
       </header>
@@ -153,35 +156,6 @@ function renderAuth() {
   loginTab.addEventListener("click", () => setMode(false));
   signupTab.addEventListener("click", () => setMode(true));
 
-  document.getElementById("authForm").addEventListener("submit", async e => {
-    e.preventDefault();
-    const email = document.getElementById("authEmail").value.trim();
-    const password = document.getElementById("authPassword").value;
-    const message = document.getElementById("authMessage");
-    submit.disabled = true;
-    submit.textContent = "Connecting…";
-
-    try {
-      if (signup) {
-        const username = document.getElementById("authUsername").value.trim();
-        const displayName = document.getElementById("authDisplayName").value.trim();
-        if (!username) throw new Error("Username is required.");
-        const cred = await auth.createUserWithEmailAndPassword ? auth.createUserWithEmailAndPassword(email, password) : null; // fallback handled via import
-        // Using imported methods directly:
-        // We imported createUserWithEmailAndPassword, signInWithEmailAndPassword from auth.js
-        // Let's invoke them properly:
-      } else {
-        // ...
-      }
-    } catch (err) {
-      message.innerHTML = `<div class="status error">${escapeHtml(friendly(err))}</div>`;
-    } finally {
-      submit.disabled = false;
-      submit.textContent = signup ? "Create account" : "Sign in";
-    }
-  });
-
-  // Re-hook proper auth submission using imported auth functions
   document.getElementById("authForm").onsubmit = async e => {
     e.preventDefault();
     const email = document.getElementById("authEmail").value.trim();
@@ -417,13 +391,15 @@ onAuthStateChanged(auth, async user => {
   state.user = user;
   if (!user) {
     Object.values(state.unsubs).forEach(fn => fn?.());
-    state.unsubs = { posts: null, conversations: null, messages: null, skills: null, requests: null, listings: null };
+    state.unsubs = { posts: null, conversations: null, messages: null, skills: null, requests: null, listings: null, notifications: null };
     state.profile = null;
     state.posts = [];
     state.conversations = [];
     state.skills = [];
     state.requests = [];
     state.listings = [];
+    state.notifications = [];
+    state.unreadNotificationsCount = 0;
     state.activeConversation = null;
     state.messages = [];
     renderAuth();
