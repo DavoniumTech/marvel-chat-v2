@@ -1,41 +1,36 @@
-/*
- * Marvel Chat V2
- *
- * Authentication service.
- *
- * Firebase Authentication operations
- * will be migrated here.
- */
-
-
-
+import { auth, db } from "./config.js";
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
-  signOut,
+  signOut as fbSignOut,
   onAuthStateChanged,
   updateProfile
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { auth } from "./config.js";
+import { doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { state } from "../state.js";
 
-export async function registerUser(email, password) {
-  return await createUserWithEmailAndPassword(auth, email, password);
+export { createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, updateProfile };
+
+export async function signOut() {
+  return fbSignOut(auth);
 }
 
-export async function loginUser(email, password) {
-  return await signInWithEmailAndPassword(auth, email, password);
+export async function loadProfile(user) {
+  const ref = doc(db, "users", user.uid);
+  const snap = await getDoc(ref);
+  if (snap.exists()) {
+    state.profile = { uid: user.uid, ...snap.data() };
+    return;
+  }
+  const profile = {
+    uid: user.uid,
+    displayName: user.displayName || "User",
+    username: "",
+    email: user.email || "",
+    country: "",
+    bio: "",
+    createdAt: serverTimestamp()
+  };
+  await setDoc(ref, profile);
+  state.profile = { uid: user.uid, ...profile };
 }
-
-export async function logoutUser() {
-  return await signOut(auth);
-}
-
-export function subscribeToAuth(callback) {
-  return onAuthStateChanged(auth, callback);
-}
-
-export async function updateUserProfile(user, profileData) {
-  return await updateProfile(user, profileData);
-}
-
-export { auth };
