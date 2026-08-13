@@ -2,14 +2,14 @@ import { state, countries, applyTheme, escapeHtml, initials, friendly } from "./
 import { auth, loadProfile, onAuthStateChanged, signOut, updateProfile } from "./firebase/auth.js";
 import { db, doc, updateDoc, setDoc, serverTimestamp } from "./firebase/firestore.js";
 import { subscribeAll } from "./firebase/listeners.js";
-import { renderHome, showCreatePost, toggleLike, savePost, sharePost, showComments } from "./features/home.js";
-import { renderChat, showNewChat, sendMessage, openConversation } from "./features/chat.js";
+import { renderHome, showCreatePost, toggleLike, savePost, sharePost, showComments } from "./features /home.js";
+import { renderChat, showNewChat, sendMessage, openConversation } from "./features /chat.js";
 import { renderMarket, showSellModal } from "./features/market.js";
-import { renderProfile, showEditProfile, showSaved } from "./features/profile.js";
-import { showNotifications } from "./features/notifications.js";
-import { showSearch } from "./features/search.js";
-import { showSettings } from "./features/settings.js";
-import { renderTimeTrust, showSkillModal } from "./features/timetrust.js";
+import { renderProfile, showEditProfile, showSaved } from "./features /profile.js";
+import { showNotifications } from "./features /notifications.js";
+import { showSearch } from "./features /search.js";
+import { showSettings } from "./features /settings.js";
+import { renderTimeTrust, showSkillModal } from "./features /timetrust.js";
 import { toast } from "./components/toast.js";
 
 const root = document.getElementById("root");
