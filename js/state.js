@@ -10,6 +10,7 @@ export const state = {
   requests: [],
   listings: [],
   notifications: [],
+  unreadNotificationsCount: 0,
   search: "",
   marketCategory: "all",
   timeTab: "offers",
@@ -22,7 +23,8 @@ export const state = {
     messages: null,
     skills: null,
     requests: null,
-    listings: null
+    listings: null,
+    notifications: null
   }
 };
 
