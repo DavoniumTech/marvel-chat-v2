@@ -1,23 +1,8 @@
-/*
- * Marvel Chat V2
- *
- * Reusable toast / notification component.
- */
+import { escapeHtml } from "../state.js";
 
-export function showToast(message) {
-  const toastRoot = document.getElementById('toastRoot');
-  if (!toastRoot) return;
+const toastRoot = document.getElementById("toastRoot");
 
-  const toastEl = document.createElement('div');
-  toastEl.className = 'toast';
-  toastEl.textContent = message;
-
-  toastRoot.appendChild(toastEl);
-
-  setTimeout(() => {
-    if (toastEl.parentElement) {
-      toastEl.remove();
-    }
-  }, 3000);
+export function toast(m) {
+  toastRoot.innerHTML = `<div class="toast">${escapeHtml(m)}</div>`;
+  setTimeout(() => { toastRoot.innerHTML = ""; }, 2800);
 }
-
