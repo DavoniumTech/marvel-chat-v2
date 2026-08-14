@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marvel-chat-v2-cache-v2';
+const CACHE_NAME = 'marvel-chat-v2-cache-v3';
 
 const ASSETS_TO_PRECACHE = [
   './',
@@ -66,44 +66,63 @@ self.addEventListener('activate', event => {
   );
 });
 
-// Handle incoming Web Push notifications (FCM background messages)
+// Handle incoming Web Push notifications (FCM background messages) with correct GitHub Pages destination and icon branding
 self.addEventListener('push', event => {
-  let data = { title: 'Marvel Chat', body: 'New notification received.', icon: './assets/icon-192.png' };
+  let title = 'Marvel Chat';
+  let body = 'New notification received.';
+  let icon = './assets/icon-192.png';
+  let targetUrl = 'https://devonim.github.io/marvel-chat-v2/';
+
   try {
     if (event.data) {
       const payload = event.data.json();
-      data.title = payload.notification?.title || payload.data?.title || data.title;
-      data.body = payload.notification?.body || payload.data?.body || data.body;
-      data.icon = payload.notification?.icon || data.icon;
+      title = payload.notification?.title || payload.data?.title || title;
+      body = payload.notification?.body || payload.data?.body || body;
+      icon = payload.notification?.icon || icon;
+
+      const rawUrl = payload.notification?.click_action || payload.data?.url;
+      if (rawUrl) {
+        try {
+          const parsed = new URL(rawUrl, self.location.origin);
+          if (parsed.origin === self.location.origin && parsed.pathname.includes('/marvel-chat-v2/')) {
+            targetUrl = parsed.href;
+          }
+        } catch (e) {
+          // Fallback to default targetUrl
+        }
+      }
     }
   } catch (e) {
     console.error('Push parse error:', e);
   }
 
   const options = {
-    body: data.body,
-    icon: data.icon,
+    body: body,
+    icon: icon,
     badge: './assets/icon-192.png',
     vibrate: [100, 50, 100],
-    data: { url: self.location.origin }
+    data: { url: targetUrl }
   };
 
   event.waitUntil(
-    self.registration.showNotification(data.title, options)
+    self.registration.showNotification(title, options)
   );
 });
 
 self.addEventListener('notificationclick', event => {
   event.notification.close();
+  const clickTargetUrl = event.notification.data?.url || 'https://devonim.github.io/marvel-chat-v2/';
+
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
       for (const client of clientList) {
-        if (client.url === event.notification.data.url && 'focus' in client) {
+        if (client.url.startsWith('https://devonim.github.io/marvel-chat-v2/') && 'focus' in client) {
+          client.navigate(clickTargetUrl);
           return client.focus();
         }
       }
       if (clients.openWindow) {
-        return clients.openWindow(event.notification.data.url);
+        return clients.openWindow(clickTargetUrl);
       }
     })
   );
