@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marvel-chat-v2-cache-v1';
+const CACHE_NAME = 'marvel-chat-v2-cache-v2';
 
 const ASSETS_TO_PRECACHE = [
   './',
@@ -35,8 +35,19 @@ const ASSETS_TO_PRECACHE = [
 
 self.addEventListener('install', event => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => {
-      return cache.addAll(ASSETS_TO_PRECACHE);
+    caches.open(CACHE_NAME).then(async cache => {
+      for (const asset of ASSETS_TO_PRECACHE) {
+        try {
+          const response = await fetch(asset);
+          if (response && response.ok) {
+            await cache.put(asset, response);
+          } else {
+            console.warn(`[ServiceWorker] Precache skipped for invalid response: ${asset} (status: ${response ? response.status : 'no response'})`);
+          }
+        } catch (err) {
+          console.warn(`[ServiceWorker] Failed to fetch and cache asset during install: ${asset}`, err);
+        }
+      }
     }).then(() => self.skipWaiting())
   );
 });
