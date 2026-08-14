@@ -55,10 +55,52 @@ self.addEventListener('activate', event => {
   );
 });
 
+// Handle incoming Web Push notifications (FCM background messages)
+self.addEventListener('push', event => {
+  let data = { title: 'Marvel Chat', body: 'New notification received.', icon: './assets/icon-192.png' };
+  try {
+    if (event.data) {
+      const payload = event.data.json();
+      data.title = payload.notification?.title || payload.data?.title || data.title;
+      data.body = payload.notification?.body || payload.data?.body || data.body;
+      data.icon = payload.notification?.icon || data.icon;
+    }
+  } catch (e) {
+    console.error('Push parse error:', e);
+  }
+
+  const options = {
+    body: data.body,
+    icon: data.icon,
+    badge: './assets/icon-192.png',
+    vibrate: [100, 50, 100],
+    data: { url: self.location.origin }
+  };
+
+  event.waitUntil(
+    self.registration.showNotification(data.title, options)
+  );
+});
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
+      for (const client of clientList) {
+        if (client.url === event.notification.data.url && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      if (clients.openWindow) {
+        return clients.openWindow(event.notification.data.url);
+      }
+    })
+  );
+});
+
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
 
-  // Skip cross-origin requests, Firebase APIs, and Firestore real-time connections
   if (
     url.origin !== location.origin ||
     url.pathname.includes('/firestore.googleapis.com') ||
@@ -68,7 +110,6 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Network-first strategy for documents/HTML, cache-first for static assets
   if (event.request.mode === 'navigate' || event.request.destination === 'document') {
     event.respondWith(
       fetch(event.request)
