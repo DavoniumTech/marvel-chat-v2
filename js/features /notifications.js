@@ -13,7 +13,7 @@ export function playNotificationSound() {
     const gain = ctx.createGain();
 
     osc.type = "sine";
-    osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+    osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5 note
     gain.gain.setValueAtTime(0.12, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.18);
 
@@ -23,7 +23,7 @@ export function playNotificationSound() {
     osc.start();
     osc.stop(ctx.currentTime + 0.18);
   } catch (e) {
-    // Autoplay blocked safely
+    // Autoplay or audio context blocked safely
   }
 }
 
@@ -40,17 +40,14 @@ export async function enablePushNotifications() {
       return;
     }
 
-    // Initialize FCM Messaging using existing app instance from config
-    const { auth } = await import("../firebase/auth.js"); // or reference via state/app
     if (!state.user) {
       toast("You must be signed in to enable push notifications.");
       return;
     }
 
-    // Get registration token using VAPID key (placeholder VAPID key configured in Firebase Console)
     const messaging = getMessaging();
     const currentToken = await getToken(messaging, {
-      vapidKey: "BOMR-EXAMPLE-VAPID-KEY-REPLACE-WITH-ACTUAL-FIREBASE-CONSOLE-KEY"
+      vapidKey: "BEV7Hou4cU2o2SyyTKUgfTpnNh3yHqPNZo5AM7kCa7wAYCUIlLRPtfIXIiX643hUJ12EAoeZnSBkj_lsHF8nHNY" 
     }).catch(err => {
       console.warn("FCM getToken error:", err);
       return null;
@@ -81,6 +78,7 @@ export async function markAllNotificationsRead() {
     const unread = state.notifications.filter(n => !n.read);
     if (unread.length === 0) return;
     
+    // We update local state immediately
     state.notifications = state.notifications.map(n => ({ ...n, read: true }));
     state.unreadNotificationsCount = 0;
 
@@ -90,6 +88,7 @@ export async function markAllNotificationsRead() {
       badgeEl.style.display = "none";
     }
 
+    // Update in Firestore
     for (const n of unread) {
       await updateDoc(doc(db, "users", state.user.uid, "notifications", n.id), { read: true });
     }
@@ -131,5 +130,6 @@ export async function showNotifications() {
     showNotifications();
   });
 
+  // Mark all unread as read upon viewing
   markAllNotificationsRead();
 }
