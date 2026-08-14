@@ -4,7 +4,7 @@ import { db, doc, updateDoc, setDoc, serverTimestamp } from "./firebase/firestor
 import { subscribeAll } from "./firebase/listeners.js";
 import { renderHome, showCreatePost, toggleLike, savePost, sharePost, showComments } from "./features /home.js";
 import { renderChat, showNewChat, sendMessage, openConversation } from "./features /chat.js";
-import { renderMarket, showSellModal } from "./features /market.js";
+import { renderMarket, showSellModal, attachMarketEvents } from "./features /market.js";
 import { renderProfile, showEditProfile, showSaved } from "./features /profile.js";
 import { showNotifications } from "./features /notifications.js";
 import { showSearch } from "./features /search.js";
@@ -29,7 +29,7 @@ export function renderApp() {
     home: () => renderHome(renderApp),
     chat: () => renderChat(renderApp),
     timetrust: () => renderTimeTrust(),
-    market: () => renderMarket(),
+    market: () => renderMarket(renderApp),
     profile: () => renderProfile()
   };
 
@@ -316,43 +316,12 @@ function attachEvents() {
     });
   }
 
-  if (state.page === "market") {
-    document.getElementById("sellBtn")?.addEventListener("click", showSellModal);
-    document.getElementById("marketSearch")?.addEventListener("input", e => {
-      state.search = e.target.value;
-      const el = document.getElementById("marketItems");
-      if (!el) return;
-      const filtered = state.listings.filter(x =>
-        (`${x.title || ""} ${x.description || ""} ${x.username || ""}`).toLowerCase().includes(state.search.toLowerCase()) &&
-        (state.marketCategory === "all" || x.category === state.marketCategory)
-      );
-      el.innerHTML = filtered.length ? `
-        <div class="list">
-          ${filtered.map(x => `
-            <div class="list-item">
-              <div class="profile-row">
-                <div class="avatar">🛍</div>
-                <div class="profile-meta">
-                  <strong>${escapeHtml(x.title)}</strong>
-                  <span class="small">${escapeHtml(x.username || "User")} · ${escapeHtml(x.country || "Community")}</span>
-                </div>
-                <strong>${escapeHtml(String(x.price ?? 0))}</strong>
-              </div>
-              <p class="small">${escapeHtml(x.description || "")}</p>
-              <span class="badge">${escapeHtml(x.category || "Other")}</span>
-            </div>
-          `).join("")}
-        </div>
-      ` : `<div class="empty">No matching listings.</div>`;
-    });
-
-    document.querySelectorAll("[data-category]").forEach(b => {
-      b.addEventListener("click", () => {
-        state.marketCategory = b.dataset.category;
-        renderApp();
-      });
-    });
-  }
+  
+if (state.page === "market") {
+  attachMarketEvents(renderApp);
+}
+   
+  
 
   if (state.page === "profile") {
     document.getElementById("editProfileBtn")?.addEventListener("click", () => showEditProfile(renderApp));
