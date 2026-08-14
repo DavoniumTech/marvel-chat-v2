@@ -101,6 +101,7 @@ self.addEventListener('notificationclick', event => {
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
 
+  // Skip cross-origin requests, Firebase APIs, and Firestore real-time connections
   if (
     url.origin !== location.origin ||
     url.pathname.includes('/firestore.googleapis.com') ||
@@ -110,6 +111,7 @@ self.addEventListener('fetch', event => {
     return;
   }
 
+  // Network-first strategy for documents/HTML, cache-first for static assets
   if (event.request.mode === 'navigate' || event.request.destination === 'document') {
     event.respondWith(
       fetch(event.request)
