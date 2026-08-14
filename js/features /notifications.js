@@ -64,7 +64,7 @@ export async function enablePushNotifications() {
     console.log("[FCM Diagnostic] Initializing Firebase Messaging and calling getToken()...");
     const messaging = getMessaging();
     const currentToken = await getToken(messaging, {
-      vapidKey: "BEV7Hou4cU2o2SyyTKUgfTpnNh3yHqPNZo5AM7kCa7wAYCUIlLRPtfIXIiX643hUJ12EAoeZnSBkj_lsHF8nHNY" 
+      vapidKey: "BEV7Hou4cU2o2SyyTKUgfTpnNh3yHqPNZo5AM7kCa7wAYCUIlLRPtfIXIiX643hUJ12EAoeZnSBkj_lsHF8nHNY", 
       serviceWorkerRegistration: registration
     }).catch(err => {
       console.error("[FCM Diagnostic] getToken() rejected with error:", err);
