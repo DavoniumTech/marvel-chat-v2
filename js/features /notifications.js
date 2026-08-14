@@ -45,9 +45,13 @@ export async function enablePushNotifications() {
       return;
     }
 
+    // Explicitly grab the active PWA service worker registration to prevent 404 on /firebase-messaging-sw.js
+    const registration = await navigator.serviceWorker.ready;
+
     const messaging = getMessaging();
     const currentToken = await getToken(messaging, {
-      vapidKey: "BEV7Hou4cU2o2SyyTKUgfTpnNh3yHqPNZo5AM7kCa7wAYCUIlLRPtfIXIiX643hUJ12EAoeZnSBkj_lsHF8nHNY" 
+      vapidKey: "BEV7Hou4cU2o2SyyTKUgfTpnNh3yHqPNZo5AM7kCa7wAYCUIlLRPtfIXIiX643hUJ12EAoeZnSBkj_lsHF8nHNY", 
+      serviceWorkerRegistration: registration
     }).catch(err => {
       console.warn("FCM getToken error:", err);
       return null;
