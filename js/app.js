@@ -2,8 +2,8 @@ import { state, countries, applyTheme, escapeHtml, initials, friendly } from "./
 import { auth, loadProfile, onAuthStateChanged, signOut, updateProfile } from "./firebase/auth.js";
 import { db, doc, updateDoc, setDoc, serverTimestamp } from "./firebase/firestore.js";
 import { subscribeAll } from "./firebase/listeners.js";
-import { renderHome, showCreatePost, toggleLike, savePost, sharePost, showComments } from "./features /home.js";
-import { renderChat, showNewChat, sendMessage, openConversation } from "./features /chat.js";
+import { renderHome, showCreatePost, showEditPost, showDeletePostConfirmation, toggleLike, savePost, sharePost, showComments } from "./features /home.js";
+import { renderChat, showNewChat, sendMessage, openConversation, editMessage, deleteMessage, copyMessage, togglePinConversation } from "./features /chat.js";
 import { renderMarket, showSellModal, attachMarketEvents } from "./features /market.js";
 import { renderProfile, showEditProfile, showSaved } from "./features /profile.js";
 import { showNotifications } from "./features /notifications.js";
@@ -248,6 +248,28 @@ function attachEvents() {
     document.querySelectorAll("[data-comment]").forEach(b => b.addEventListener("click", () => showComments(b.dataset.comment)));
     document.querySelectorAll("[data-share]").forEach(b => b.addEventListener("click", () => sharePost(b.dataset.share)));
     document.querySelectorAll("[data-save]").forEach(b => b.addEventListener("click", () => savePost(b.dataset.save)));
+    
+    // Post owner dropdown menus & actions
+    document.querySelectorAll(".post-menu-btn").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const postId = btn.dataset.menuPost;
+        const menu = document.getElementById(`postMenu-${postId}`);
+        if (menu) {
+          document.querySelectorAll(".dropdown-menu").forEach(m => { if (m !== menu) m.classList.add("hidden"); });
+          menu.classList.toggle("hidden");
+        }
+      });
+    });
+
+    document.querySelectorAll("[data-edit-post]").forEach(btn => {
+      btn.addEventListener("click", () => showEditPost(btn.dataset.editPost));
+    });
+
+    document.querySelectorAll("[data-delete-post]").forEach(btn => {
+      btn.addEventListener("click", () => showDeletePostConfirmation(btn.dataset.deletePost));
+    });
+
     document.querySelectorAll("[data-quick]").forEach(b => b.addEventListener("click", () => {
       const a = b.dataset.quick;
       if (a === "post") showCreatePost();
@@ -270,37 +292,38 @@ function attachEvents() {
       document.getElementById("messageInput")?.addEventListener("keydown", e => {
         if (e.key === "Enter") { e.preventDefault(); sendMessage(); }
       });
+
+      document.querySelectorAll("[data-copy-msg]").forEach(btn => {
+        btn.addEventListener("click", () => copyMessage(btn.dataset.copyMsg));
+      });
+
+      document.querySelectorAll("[data-edit-msg]").forEach(btn => {
+        btn.addEventListener("click", () => editMessage(btn.dataset.editMsg));
+      });
+
+      document.querySelectorAll("[data-delete-msg]").forEach(btn => {
+        btn.addEventListener("click", () => deleteMessage(btn.dataset.deleteMsg));
+      });
     } else {
       document.getElementById("newChatBtn")?.addEventListener("click", () => showNewChat(renderApp));
       document.getElementById("newChatEmpty")?.addEventListener("click", () => showNewChat(renderApp));
       document.querySelectorAll("[data-conversation]").forEach(x => {
-        x.addEventListener("click", () => openConversation(x.dataset.conversation, renderApp));
-      });
-      document.getElementById("chatSearch")?.addEventListener("input", e => {
-        state.search = e.target.value.toLowerCase();
-        const list = document.getElementById("chatList");
-        const filtered = state.conversations.filter(c =>
-          Object.values(c.participantProfiles || {}).map(p => `${p.displayName || ""} ${p.username || ""}`).join(" ").toLowerCase().includes(state.search)
-        );
-        if (!list) return;
-        list.innerHTML = filtered.length ? filtered.map(c => {
-          const o = c.participants?.find(x => x !== state.user.uid) || "";
-          const p = c.participantProfiles?.[o] || {};
-          const n = p.displayName || p.username || "User";
-          return `
-            <div class="chat-item" data-conversation="${c.id}">
-              <div class="avatar">${escapeHtml(initials(n))}</div>
-              <div class="chat-content">
-                <strong>${escapeHtml(n)}</strong>
-                <p>${escapeHtml(c.lastMessage || "Start chatting")}</p>
-              </div>
-            </div>
-          `;
-        }).join("") : `<div class="empty">No matching conversations.</div>`;
-
-        list.querySelectorAll("[data-conversation]").forEach(x => {
-          x.addEventListener("click", () => openConversation(x.dataset.conversation, renderApp));
+        x.addEventListener("click", (e) => {
+          if (e.target.closest("[data-pin-toggle]")) return;
+          openConversation(x.dataset.conversation, renderApp);
         });
+      });
+
+      document.querySelectorAll("[data-pin-toggle]").forEach(btn => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          togglePinConversation(btn.dataset.pinToggle);
+        });
+      });
+
+      document.getElementById("chatSearch")?.addEventListener("input", e => {
+        state.chatSearchQuery = e.target.value;
+        renderApp();
       });
     }
   }
@@ -316,12 +339,9 @@ function attachEvents() {
     });
   }
 
-  
-if (state.page === "market") {
-  attachMarketEvents(renderApp);
-}
-   
-  
+  if (state.page === "market") {
+    attachMarketEvents(renderApp);
+  }
 
   if (state.page === "profile") {
     document.getElementById("editProfileBtn")?.addEventListener("click", () => showEditProfile(renderApp));
@@ -360,7 +380,7 @@ onAuthStateChanged(auth, async user => {
   state.user = user;
   if (!user) {
     Object.values(state.unsubs).forEach(fn => fn?.());
-    state.unsubs = { posts: null, conversations: null, messages: null, skills: null, requests: null, listings: null, notifications: null };
+    state.unsubs = { posts: null, conversations: null, messages: null, skills: null, requests: null, listings: null, notifications: null, preferences: null };
     state.profile = null;
     state.posts = [];
     state.conversations = [];
@@ -371,7 +391,8 @@ onAuthStateChanged(auth, async user => {
     state.unreadNotificationsCount = 0;
     state.activeConversation = null;
     state.messages = [];
-    renderAuth();
+    state.conversationPreferences = {};
+    renderAuthScreen();
     return;
   }
   await startApplication(user);
