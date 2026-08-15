@@ -12,6 +12,8 @@ export const state = {
   notifications: [],
   unreadNotificationsCount: 0,
   search: "",
+  chatSearchQuery: "",
+  conversationPreferences: {},
   marketCategory: "all",
   timeTab: "offers",
   lowData: localStorage.getItem("marvel_low_data") === "1",
@@ -24,7 +26,8 @@ export const state = {
     skills: null,
     requests: null,
     listings: null,
-    notifications: null
+    notifications: null,
+    preferences: null
   }
 };
 
@@ -71,12 +74,14 @@ export function initials(n) {
 export function formatDate(v) {
   if (!v) return "";
   const d = v?.toDate ? v.toDate() : new Date(v);
-  return Number.isNaN(d.getTime()) ? "" : d.toLocaleString([], {
-    day: "numeric",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit"
-  });
+  return Number.isNaN(d.getTime())
+    ? ""
+    : d.toLocaleString([], {
+        day: "numeric",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
 }
 
 export function applyTheme() {
