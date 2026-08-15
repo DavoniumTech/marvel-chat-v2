@@ -1,4 +1,4 @@
-import { state } from "../state.js";
+import { state } from "./state.js";
 
 export function setPage(pageName) {
   state.page = pageName;
