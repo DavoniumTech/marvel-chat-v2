@@ -248,8 +248,7 @@ function attachEvents() {
     document.querySelectorAll("[data-comment]").forEach(b => b.addEventListener("click", () => showComments(b.dataset.comment)));
     document.querySelectorAll("[data-share]").forEach(b => b.addEventListener("click", () => sharePost(b.dataset.share)));
     document.querySelectorAll("[data-save]").forEach(b => b.addEventListener("click", () => savePost(b.dataset.save)));
-    
-    // Post owner dropdown menus & actions
+
     document.querySelectorAll(".post-menu-btn").forEach(btn => {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -392,7 +391,7 @@ onAuthStateChanged(auth, async user => {
     state.activeConversation = null;
     state.messages = [];
     state.conversationPreferences = {};
-    renderAuthScreen();
+    renderAuth();
     return;
   }
   await startApplication(user);
