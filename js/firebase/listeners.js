@@ -1,7 +1,7 @@
 import { db } from "./config.js";
 import { collection, query, orderBy, limit, where, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { state } from "../state.js";
-import { playNotificationSound } from "../features /notifications.js";
+import { playNotificationSound } from "../features/notifications.js";
 
 export function sub(name, q, handler) {
   state.unsubs[name]?.();
@@ -11,12 +11,15 @@ export function sub(name, q, handler) {
 }
 
 export function subscribeAll(renderCallback) {
+  if (!state.user) return;
+  const uid = state.user.uid;
+
   sub("posts", query(collection(db, "posts"), orderBy("createdAt", "desc"), limit(50)), s => {
     state.posts = s.docs.map(d => ({ id: d.id, ...d.data() }));
     if (state.page === "home") renderCallback();
   });
 
-  sub("conversations", query(collection(db, "conversations"), where("participants", "array-contains", state.user.uid), limit(50)), s => {
+  sub("conversations", query(collection(db, "conversations"), where("participants", "array-contains", uid), limit(50)), s => {
     state.conversations = s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => {
       const aTime = a.updatedAt?.toMillis ? a.updatedAt.toMillis() : 0;
       const bTime = b.updatedAt?.toMillis ? b.updatedAt.toMillis() : 0;
@@ -27,6 +30,15 @@ export function subscribeAll(renderCallback) {
       if (current) state.activeConversation = current;
     }
     if (state.page === "chat" && !state.activeConversation) renderCallback();
+  });
+
+  sub("preferences", query(collection(db, "users", uid, "conversationPreferences")), s => {
+    const prefs = {};
+    s.docs.forEach(d => {
+      prefs[d.id] = d.data();
+    });
+    state.conversationPreferences = prefs;
+    if (state.page === "chat") renderCallback();
   });
 
   sub("listings", query(collection(db, "listings"), where("status", "==", "active"), orderBy("createdAt", "desc"), limit(50)), s => {
@@ -44,9 +56,8 @@ export function subscribeAll(renderCallback) {
     if (state.page === "timetrust") renderCallback();
   });
 
-  // Real-time notifications listener with initial snapshot sound protection
   let isInitialNotificationLoad = true;
-  sub("notifications", query(collection(db, "users", state.user.uid, "notifications"), orderBy("createdAt", "desc"), limit(50)), s => {
+  sub("notifications", query(collection(db, "users", uid, "notifications"), orderBy("createdAt", "desc"), limit(50)), s => {
     const list = s.docs.map(d => ({ id: d.id, ...d.data() }));
     state.notifications = list;
     state.unreadNotificationsCount = list.filter(n => !n.read).length;
@@ -54,14 +65,12 @@ export function subscribeAll(renderCallback) {
     if (isInitialNotificationLoad) {
       isInitialNotificationLoad = false;
     } else {
-      // Check if any added/modified doc in this snapshot is unread and newly arrived
       const hasNewUnread = s.docChanges().some(change => change.type === "added" && !change.doc.data().read);
       if (hasNewUnread) {
         playNotificationSound();
       }
     }
 
-    // Update badge dynamically if rendered
     const badgeEl = document.getElementById("notificationBadge");
     if (badgeEl) {
       badgeEl.textContent = state.unreadNotificationsCount > 0 ? state.unreadNotificationsCount : "";
