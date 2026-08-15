@@ -74,14 +74,12 @@ export function initials(n) {
 export function formatDate(v) {
   if (!v) return "";
   const d = v?.toDate ? v.toDate() : new Date(v);
-  return Number.isNaN(d.getTime())
-    ? ""
-    : d.toLocaleString([], {
-        day: "numeric",
-        month: "short",
-        hour: "2-digit",
-        minute: "2-digit"
-      });
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleString([], {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
 }
 
 export function applyTheme() {
