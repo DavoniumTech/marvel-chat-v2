@@ -1,5 +1,5 @@
 import { state, escapeHtml, initials, formatDate, friendly } from "../state.js";
-import { db, collection, doc, getDoc, setDoc, updateDoc, addDoc, query, where, orderBy, limit, getDocs, onSnapshot, serverTimestamp } from "../firebase/firestore.js";
+import { db, collection, doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc, query, where, orderBy, limit, getDocs, onSnapshot, serverTimestamp } from "../firebase/firestore.js";
 import { showModal, closeModal } from "../components/modal.js";
 import { toast } from "../components/toast.js";
 
@@ -177,7 +177,7 @@ export async function sendMessage() {
   const id = state.activeConversation.id;
   try {
     input.disabled = true;
-    await addDoc(collection(db, "conversations", id, "messages"), {
+    const docRef = await addDoc(collection(db, "conversations", id, "messages"), {
       uid: state.user.uid,
       text,
       createdAt: serverTimestamp()
@@ -187,7 +187,14 @@ export async function sendMessage() {
       updatedAt: serverTimestamp()
     });
 
-    // Create message notification for recipient
+    const newMsg = {
+      id: docRef.id,
+      uid: state.user.uid,
+      text,
+      createdAt: new Date()
+    };
+    state.messages.push(newMsg);
+
     const recipientUid = state.activeConversation.participants?.find(x => x !== state.user.uid);
     if (recipientUid) {
       try {
@@ -216,11 +223,126 @@ export async function sendMessage() {
   }
 }
 
+export async function editMessage(messageId) {
+  const msg = state.messages.find(m => m.id === messageId);
+  if (!msg || msg.uid !== state.user.uid) return;
+
+  showModal(
+    "Edit message",
+    `
+      <div class="field">
+        <textarea class="textarea" id="editMessageText" maxlength="5000">${escapeHtml(msg.text || "")}</textarea>
+      </div>
+      <button class="btn btn-primary btn-block" id="saveEditMessage">Save</button>
+    `
+  );
+
+  document.getElementById("saveEditMessage")?.addEventListener("click", async () => {
+    const text = document.getElementById("editMessageText")?.value.trim();
+    if (!text) { toast("Message cannot be empty."); return; }
+    try {
+      await updateDoc(doc(db, "conversations", state.activeConversation.id, "messages", messageId), {
+        text,
+        editedAt: serverTimestamp()
+      });
+      state.messages = state.messages.map(m => m.id === messageId ? { ...m, text, editedAt: new Date() } : m);
+      closeModal();
+      toast("Message updated");
+    } catch (e) {
+      console.error("EDIT MESSAGE ERROR:", e);
+      toast("Could not update message.");
+    }
+  });
+}
+
+export async function deleteMessage(messageId) {
+  const msg = state.messages.find(m => m.id === messageId);
+  if (!msg || msg.uid !== state.user.uid) return;
+
+  showModal(
+    "Delete this message?",
+    `
+      <p class="small">This message will be permanently removed.</p>
+      <div style="display: flex; gap: 10px; margin-top: 16px;">
+        <button class="btn btn-ghost" id="cancelDelMsg" style="flex: 1;">Cancel</button>
+        <button class="btn btn-danger" id="confirmDelMsg" style="flex: 1;">Delete</button>
+      </div>
+    `
+  );
+
+  document.getElementById("cancelDelMsg")?.addEventListener("click", closeModal);
+  document.getElementById("confirmDelMsg")?.addEventListener("click", async () => {
+    try {
+      await deleteDoc(doc(db, "conversations", state.activeConversation.id, "messages", messageId));
+      state.messages = state.messages.filter(m => m.id !== messageId);
+      
+      const latest = state.messages[state.messages.length - 1];
+      const newLastMsg = latest ? latest.text : "";
+      await updateDoc(doc(db, "conversations", state.activeConversation.id), {
+        lastMessage: newLastMsg,
+        updatedAt: latest ? latest.createdAt : serverTimestamp()
+      });
+
+      closeModal();
+      toast("Message deleted.");
+    } catch (e) {
+      console.error("DELETE MESSAGE ERROR:", e);
+      toast("Could not delete message.");
+    }
+  });
+}
+
+export async function copyMessage(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast("Message copied 📋");
+  } catch (e) {
+    toast("Could not copy message.");
+  }
+}
+
+export async function togglePinConversation(conversationId) {
+  const isPinned = !!state.conversationPreferences[conversationId]?.pinned;
+  try {
+    const prefRef = doc(db, "users", state.user.uid, "conversationPreferences", conversationId);
+    if (isPinned) {
+      await updateDoc(prefRef, { pinned: false });
+      state.conversationPreferences[conversationId] = { pinned: false };
+      toast("Conversation unpinned.");
+    } else {
+      await setDoc(prefRef, { pinned: true, updatedAt: serverTimestamp() }, { merge: true });
+      state.conversationPreferences[conversationId] = { pinned: true };
+      toast("Conversation pinned 📌");
+    }
+  } catch (e) {
+    console.error("PIN ERROR:", e);
+    toast(friendly(e));
+  }
+}
+
 export function renderChat(renderApp) {
   if (state.activeConversation) {
     return renderConversation();
   }
-  const conversations = state.conversations;
+  const searchQuery = (state.chatSearchQuery || "").toLowerCase();
+  let conversations = state.conversations.filter(c => {
+    if (!searchQuery) return true;
+    const other = c.participants?.find(x => x !== state.user.uid);
+    const profile = c.participantProfiles?.[other] || {};
+    const name = (profile.displayName || "").toLowerCase();
+    const username = (profile.username || "").toLowerCase();
+    const lastMsg = (c.lastMessage || "").toLowerCase();
+    return name.includes(searchQuery) || username.includes(searchQuery) || lastMsg.includes(searchQuery);
+  });
+
+  conversations.sort((a, b) => {
+    const aPinned = !!state.conversationPreferences[a.id]?.pinned;
+    const bPinned = !!state.conversationPreferences[b.id]?.pinned;
+    if (aPinned && !bPinned) return -1;
+    if (!aPinned && bPinned) return 1;
+    return 0;
+  });
+
   return `
     <div class="page">
       <div class="section-title">
@@ -231,7 +353,7 @@ export function renderChat(renderApp) {
         <button class="btn btn-primary" id="newChatBtn">+ New chat</button>
       </div>
       <div class="search">
-        <input class="input" id="chatSearch" placeholder="Search conversations…">
+        <input class="input" id="chatSearch" placeholder="Search conversations…" value="${escapeHtml(state.chatSearchQuery || "")}">
       </div>
       ${
         conversations.length
@@ -241,14 +363,18 @@ export function renderChat(renderApp) {
                 const other = c.participants?.find(x => x !== state.user.uid);
                 const profile = c.participantProfiles?.[other] || {};
                 const name = profile.displayName || profile.username || "User";
+                const pinned = !!state.conversationPreferences[c.id]?.pinned;
                 return `
-                  <div class="chat-item" data-conversation="${c.id}">
+                  <div class="chat-item ${pinned ? "pinned-chat" : ""}" data-conversation="${c.id}" style="position: relative;">
                     <div class="avatar">${escapeHtml(initials(name))}</div>
                     <div class="chat-content">
-                      <strong>${escapeHtml(name)}</strong>
+                      <strong>${escapeHtml(name)} ${pinned ? "📌" : ""}</strong>
                       <p>${escapeHtml(c.lastMessage || "Start chatting")}</p>
                     </div>
-                    <span class="small">${escapeHtml(formatDate(c.updatedAt))}</span>
+                    <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px;">
+                      <span class="small">${escapeHtml(formatDate(c.updatedAt))}</span>
+                      <button class="icon-btn chat-menu-btn" aria-label="Conversation options" data-pin-toggle="${c.id}" style="font-size: 11px; padding: 2px 6px;">${pinned ? "Unpin" : "Pin"}</button>
+                    </div>
                   </div>
                 `;
               }).join("")}
@@ -257,9 +383,8 @@ export function renderChat(renderApp) {
           : `
             <div class="card empty">
               <div style="font-size:42px">💬</div>
-              <h3>No conversations yet</h3>
-              <p>Start a private conversation with another Marvel Chat member.</p>
-              <button class="btn btn-primary" id="newChatEmpty">Start a chat</button>
+              <h3>No conversations found</h3>
+              <p>Try searching or start a new conversation.</p>
             </div>
           `
       }
@@ -289,12 +414,25 @@ export function renderConversation() {
         <div class="messages" id="messages">
           ${
             state.messages.length
-              ? state.messages.map(m => `
-                  <div class="bubble ${m.uid === state.user.uid ? "mine" : ""}">
-                    <div>${escapeHtml(m.text || "")}</div>
-                    <div class="bubble-time">${escapeHtml(formatDate(m.createdAt))}</div>
-                  </div>
-                `).join("")
+              ? state.messages.map(m => {
+                  const isMine = m.uid === state.user.uid;
+                  return `
+                    <div class="bubble ${isMine ? "mine" : ""}" data-message-id="${m.id}" style="position: relative;">
+                      <div>${escapeHtml(m.text || "")}</div>
+                      <div class="bubble-time">
+                        ${escapeHtml(formatDate(m.createdAt))} 
+                        ${m.editedAt ? `<span class="edited-indicator">(Edited)</span>` : ""}
+                      </div>
+                      <div class="message-actions-dropdown" style="margin-top: 4px; display: flex; gap: 8px; font-size: 11px;">
+                        <button class="btn-text" data-copy-msg="${escapeHtml(m.text || "")}">Copy</button>
+                        ${isMine ? `
+                          <button class="btn-text" data-edit-msg="${m.id}">Edit</button>
+                          <button class="btn-text" data-delete-msg="${m.id}" style="color: #ff5c5c;">Delete</button>
+                        ` : ""}
+                      </div>
+                    </div>
+                  `;
+                }).join("")
               : `<div class="empty">👋 Say hello and start the conversation.</div>`
           }
         </div>
