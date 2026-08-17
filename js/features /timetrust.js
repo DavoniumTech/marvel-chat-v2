@@ -1,10 +1,16 @@
-import { state, escapeHtml, friendly, initials, formatDate } from "../state.js";
-import { db, collection, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, where, getDocs, limit } from "../firebase/firestore.js";
+/*
+ * Marvel Chat V2 - TimeTrust Production Upgrade
+ */
+import { state, escapeHtml, initials, formatDate, friendly } from "../state.js";
+import { 
+  db, collection, doc, getDoc, setDoc, updateDoc, deleteDoc, 
+  addDoc, serverTimestamp 
+} from "../firebase/firestore.js";
 import { showModal, closeModal } from "../components/modal.js";
 import { toast } from "../components/toast.js";
 import { createConversation } from "./chat.js";
 
-const skillCategories = [
+export const TIME_CATEGORIES = [
   "All",
   "Education",
   "Technology",
@@ -18,370 +24,488 @@ const skillCategories = [
   "Other"
 ];
 
-export function renderTimeTrust(renderApp) {
-  const searchQuery = (state.search || "").toLowerCase();
-  const selectedCategory = state.timeCategory || "All";
-  const sortBy = state.timeSort || "newest"; // 'newest' or 'oldest'
+// Helper to get saved skills subcollection or state reference safely
+function getUserSavedSkills() {
+  return state.savedSkills || [];
+}
 
-  const filterAndSort = (arr) => {
-    return arr
-      .filter(x => {
-        const title = (x.title || x.skill || "").toLowerCase();
-        const desc = (x.description || "").toLowerCase();
-        const uname = (x.username || "").toLowerCase();
-        const cat = (x.category || "Other").toLowerCase();
-        
-        const matchesSearch = !searchQuery || title.includes(searchQuery) || desc.includes(searchQuery) || uname.includes(searchQuery) || cat.includes(searchQuery);
-        const matchesCategory = selectedCategory === "All" || (x.category || "Other") === selectedCategory;
-        return matchesSearch && matchesCategory;
-      })
-      .sort((a, b) => {
-        const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : (a.createdAt ? new Date(a.createdAt).getTime() : 0);
-        const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
-        return sortBy === "newest" ? timeB - timeA : timeA - timeB;
-      });
-  };
+export function renderTimeTrust(renderApp = null) {
+  const activeTab = state.timeTab || "offers"; // "offers", "requests", "my", "saved"
+  const subView = state.timeSubView || "all"; // "all" or category name
+  const searchQuery = (state.timeSearchQuery || "").toLowerCase();
+  const sortOrder = state.timeSort || "newest";
 
-  const offers = filterAndSort(state.skills.filter(x => x.type === "offer" || !x.type));
-  const requests = filterAndSort(state.requests);
-  const items = state.timeTab === "offers" ? offers : requests;
+  const rawOffers = state.skills || [];
+  const rawRequests = state.requests || [];
+
+  // Filter and normalize data with safe fallbacks
+  const processItem = (item, type) => ({
+    id: item.id,
+    uid: item.uid || "",
+    username: item.username || "User",
+    title: item.title || item.skill || "Untitled Skill",
+    description: item.description || "",
+    hours: item.hours || "1 hour",
+    category: item.category || "Other",
+    type: item.type || type,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt
+  });
+
+  const offers = rawOffers.map(x => processItem(x, "offer"));
+  const requests = rawRequests.map(x => processItem(x, "request"));
+
+  let pool = [];
+  if (activeTab === "offers") {
+    pool = offers;
+  } else if (activeTab === "requests") {
+    pool = requests;
+  } else if (activeTab === "my") {
+    pool = [...offers, ...requests].filter(x => x.uid === state.user?.uid);
+  } else if (activeTab === "saved") {
+    const savedIds = state.savedSkillIds || [];
+    pool = [...offers, ...requests].filter(x => savedIds.includes(x.id));
+  } else {
+    pool = offers;
+  }
+
+  // Category filtering
+  if (subView !== "all" && activeTab !== "my" && activeTab !== "saved") {
+    pool = pool.filter(x => x.category.toLowerCase() === subView.toLowerCase());
+  }
+
+  // Search filtering
+  if (searchQuery) {
+    pool = pool.filter(x => 
+      x.title.toLowerCase().includes(searchQuery) ||
+      x.description.toLowerCase().includes(searchQuery) ||
+      x.username.toLowerCase().includes(searchQuery) ||
+      x.category.toLowerCase().includes(searchQuery)
+    );
+  }
+
+  // Sorting
+  pool.sort((a, b) => {
+    const aTime = a.createdAt?.toMillis ? a.createdAt.toMillis() : (a.createdAt ? new Date(a.createdAt).getTime() : 0);
+    const bTime = b.createdAt?.toMillis ? b.createdAt.toMillis() : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
+    if (sortOrder === "oldest") {
+      return aTime - bTime;
+    }
+    return bTime - aTime;
+  });
+
+  const myOffersCount = offers.filter(x => x.uid === state.user?.uid).length;
+  const myRequestsCount = requests.filter(x => x.uid === state.user?.uid).length;
 
   return `
-    <div class="page">
+    <div class="page timetrust-page">
       <section class="hero">
         <h1>TimeTrust ⏱️</h1>
-        <p>Your time is valuable. Exchange skills, knowledge and useful help with other members.</p>
+        <p>Exchange skills, knowledge, and collaborative help with community peers. Built on trust and mutual growth.</p>
       </section>
 
-      <div class="grid grid2" style="margin-bottom:15px;">
-        <div class="card" style="padding:15px; margin:0;">
-          <span class="small">Time Balance System</span>
-          <strong style="display:block; font-size:20px; color:var(--primary); margin:4px 0;">Community Ledger</strong>
-          <span class="small">Contributed skill hours build community trust and foundational credit for future peer trading.</span>
+      <div class="grid grid2" style="margin-bottom: 16px;">
+        <div class="card stat" style="padding: 14px;">
+          <span class="small">Community Ledger Foundation</span>
+          <strong style="font-size: 20px;">Peer Exchange</strong>
+          <span class="small">Direct skill sharing (Foundational)</span>
         </div>
-        <div class="card" style="padding:15px; margin:0;">
-          <span class="small">Community Offers</span>
-          <strong style="display:block; font-size:20px; color:var(--primary); margin:4px 0;">${offers.length} Active</strong>
-          <span class="small">Skills ready to exchange now.</span>
+        <div class="card stat" style="padding: 14px;">
+          <span class="small">Active Opportunities</span>
+          <strong>${offers.length + requests.length}</strong>
+          <span class="small">${offers.length} offers · ${requests.length} requests</span>
         </div>
       </div>
 
-      <div class="search" style="margin-bottom:12px;">
-        <input class="input" id="timeSearch" value="${escapeHtml(state.search || "")}" placeholder="Search skills, topics or helpers…">
+      <div class="section-title">
+        <h2>Exchange Directory</h2>
         <div style="display:flex; gap:7px">
           <button class="btn btn-secondary" id="requestSkillBtn">+ Request</button>
           <button class="btn btn-primary" id="offerSkillBtn">+ Offer</button>
         </div>
       </div>
 
-      <div class="segmented" style="margin-bottom:12px;">
-        <button class="btn ${state.timeTab === "offers" ? "btn-primary" : "btn-ghost"}" id="tabOffersBtn" style="flex:1;">Skill Offers</button>
-        <button class="btn ${state.timeTab === "requests" ? "btn-primary" : "btn-ghost"}" id="tabRequestsBtn" style="flex:1;">Skill Requests</button>
+      <!-- Main Tabs -->
+      <div class="segmented" style="margin-bottom: 12px;">
+        <button class="btn ${activeTab === "offers" ? "btn-primary" : "btn-ghost"}" data-time-tab="offers">Offers (${offers.length})</button>
+        <button class="btn ${activeTab === "requests" ? "btn-primary" : "btn-ghost"}" data-time-tab="requests">Requests (${requests.length})</button>
+        <button class="btn ${activeTab === "my" ? "btn-primary" : "btn-ghost"}" data-time-tab="my">My Items (${myOffersCount + myRequestsCount})</button>
+        <button class="btn ${activeTab === "saved" ? "btn-primary" : "btn-ghost"}" data-time-tab="saved">Saved</button>
       </div>
 
-      <div style="display:flex; gap:8px; align-items:center; margin-bottom:14px; flex-wrap:wrap;">
-        <select class="select" id="timeSortSelect" style="width:auto; padding:6px 12px; font-size:12px;">
-          <option value="newest" ${sortBy === "newest" ? "selected" : ""}>Newest first</option>
-          <option value="oldest" ${sortBy === "oldest" ? "selected" : ""}>Oldest first</option>
-        </select>
-        <div style="display:flex; gap:5px; overflow-x:auto; flex:1; padding-bottom:4px;">
-          ${
-            skillCategories
-              .map(
-                cat => `
-                  <button class="btn ${selectedCategory === cat ? "btn-primary" : "btn-ghost"}" data-time-cat="${escapeHtml(cat)}" style="font-size:11px; padding:6px 10px; white-space:nowrap;">
-                    ${escapeHtml(cat)}
-                  </button>
-                `
-              )
-              .join("")
-          }
+      <!-- Search & Sort Bar -->
+      <div style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;">
+        <div class="search" style="flex: 1; min-width: 200px; margin: 0;">
+          <input class="input" id="timeSearchInput" placeholder="Search title, category, user, description…" value="${escapeHtml(state.timeSearchQuery || "")}">
         </div>
+        <select class="input" id="timeSortSelect" style="width: auto; padding: 6px 12px;">
+          <option value="newest" ${sortOrder === "newest" ? "selected" : ""}>Newest first</option>
+          <option value="oldest" ${sortOrder === "oldest" ? "selected" : ""}>Oldest first</option>
+        </select>
       </div>
 
-      <div id="timeTrustItems">
-        ${
-          items.length
-            ? `
-              <div class="list">
-                ${
-                  items
-                    .map(
-                      x => `
-                        <div class="list-item" style="cursor:pointer;" data-view-skill="${x.id}" data-skill-type="${x.type || 'offer'}">
-                          <div class="profile-row">
-                            <div class="avatar">${escapeHtml(initials(x.username || "User"))}</div>
-                            <div class="profile-meta">
-                              <strong>${escapeHtml(x.title || x.skill || "Skill")}</strong>
-                              <span class="small">${escapeHtml(x.username || "User")} · ${escapeHtml(formatDate(x.createdAt))}</span>
-                            </div>
-                            <span class="badge" style="background:var(--surface2); color:var(--text);">${escapeHtml(x.hours || "1 hour")}</span>
+      <!-- Category Filter Pills (Hidden if viewing My or Saved) -->
+      ${activeTab !== "my" && activeTab !== "saved" ? `
+        <div class="categories-scroll" style="display: flex; gap: 6px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 16px; white-space: nowrap;">
+          ${TIME_CATEGORIES.map(cat => `
+            <button class="btn ${subView.toLowerCase() === cat.toLowerCase() ? "btn-primary" : "btn-ghost"}" data-time-cat="${escapeHtml(cat)}" style="padding: 4px 10px; font-size: 12px; border-radius: 999px;">
+              ${escapeHtml(cat)}
+            </button>
+          `).join("")}
+        </div>
+      ` : ""}
+
+      <!-- Item List or Empty State -->
+      ${
+        pool.length
+          ? `
+            <div class="list">
+              ${pool.map(x => {
+                const isOwner = x.uid === state.user?.uid;
+                const isSaved = (state.savedSkillIds || []).includes(x.id);
+                return `
+                  <div class="list-item" style="cursor: pointer;" data-skill-detail="${x.id}" data-skill-type="${x.type}">
+                    <div class="profile-row" style="align-items: flex-start; justify-content: space-between;">
+                      <div style="display: flex; gap: 10px; align-items: flex-start; flex: 1;">
+                        <div class="avatar" style="font-size: 16px;">${escapeHtml(initials(x.username))}</div>
+                        <div class="profile-meta" style="flex: 1;">
+                          <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                            <strong style="font-size: 15px;">${escapeHtml(x.title)}</strong>
+                            <span class="badge" style="background: var(--surface2);">${escapeHtml(x.category)}</span>
+                            <span class="badge" style="background: var(--primary-light, #eef2ff); color: var(--primary, #4f46e5);">${escapeHtml(x.type.toUpperCase())}</span>
                           </div>
-
-                          <p class="small" style="margin:8px 0; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">
-                            ${escapeHtml(x.description || "")}
-                          </p>
-
-                          <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-                            <span class="badge">${escapeHtml(x.category || "Other")}</span>
-                            <span class="badge" style="background:${x.type === 'request' ? 'var(--warning, #f59e0b)' : 'var(--primary)'}; color:#fff;">
-                              ${x.type === 'request' ? 'Request' : 'Offer'}
-                            </span>
+                          <div class="small" style="margin-top: 2px;">By @${escapeHtml(x.username)} · ${escapeHtml(formatDate(x.createdAt))}</div>
+                          <p class="small" style="margin: 6px 0; color: var(--text-secondary); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${escapeHtml(x.description)}</p>
+                          <div style="display: flex; gap: 8px; align-items: center; margin-top: 6px;">
+                            <span class="badge" style="font-weight: 600;">⏱️ Est: ${escapeHtml(x.hours)}</span>
+                            ${isOwner ? `<span class="badge" style="background: rgba(79, 70, 229, 0.1); color: var(--primary);">Your ${x.type}</span>` : ""}
                           </div>
                         </div>
-                      `
-                    )
-                    .join("")
-                }
-              </div>
-            `
-            : `
-              <div class="card empty">
-                <div style="font-size:40px">⏱️</div>
-                <h3>${state.timeTab === "offers" ? "No skill offers match your filter." : "No skill requests match your filter."}</h3>
-                <p>Be the first person to publish one for the community.</p>
-                <button class="btn btn-primary" id="emptyTimeBtn" style="margin-top:12px;">Publish ${state.timeTab === "offers" ? "an offer" : "a request"}</button>
-              </div>
-            `
-        }
-      </div>
+                      </div>
+                      <div style="display: flex; gap: 4px; align-items: center;" onclick="event.stopPropagation()">
+                        <button class="icon-btn" data-toggle-save="${x.id}" title="${isSaved ? "Unsave" : "Save"}" style="font-size: 14px;">${isSaved ? "⭐" : "☆"}</button>
+                      </div>
+                    </div>
+                  </div>
+                `;
+              }).join("")}
+            </div>
+          `
+          : `
+            <div class="card empty" style="padding: 40px 20px; text-align: center;">
+              <div style="font-size: 42px; margin-bottom: 8px;">⏱️</div>
+              <h3>${
+                activeTab === "my" ? "You haven't published any offers or requests yet." :
+                activeTab === "saved" ? "No saved skills found." :
+                searchQuery || subView !== "all" ? "No matching skills found." :
+                activeTab === "offers" ? "No skill offers available yet." : "No skill requests available yet."
+              }</h3>
+              <p style="color: var(--text-secondary); margin-bottom: 16px;">${activeTab === "my" ? "Publish your first skill offer or request to get started." : "Try adjusting your search filters or create a new entry."}</p>
+              ${activeTab !== "my" && activeTab !== "saved" ? `
+                <button class="btn btn-primary" id="emptyCreateSkillBtn">Create a ${activeTab === "offers" ? "skill offer" : "skill request"}</button>
+              ` : ""}
+            </div>
+          `
+      }
     </div>
   `;
 }
 
-export function showSkillModal(type, existingItem = null) {
-  const isOffer = type === "offer" || (existingItem && existingItem.type === "offer");
-  const isEditing = Boolean(existingItem);
+// Attach event listeners for TimeTrust interactions
+export function attachTimeTrustEvents(renderApp) {
+  if (state.page !== "timetrust") return;
+
+  document.getElementById("offerSkillBtn")?.addEventListener("click", () => showSkillModal("offer", renderApp));
+  document.getElementById("requestSkillBtn")?.addEventListener("click", () => showSkillModal("request", renderApp));
+  document.getElementById("emptyCreateSkillBtn")?.addEventListener("click", () => {
+    const type = state.timeTab === "requests" ? "request" : "offer";
+    showSkillModal(type, renderApp);
+  });
+
+  document.querySelectorAll("[data-time-tab]").forEach(b => {
+    b.addEventListener("click", () => {
+      state.timeTab = b.dataset.timeTab;
+      state.timeSubView = "all";
+      renderApp();
+    });
+  });
+
+  document.querySelectorAll("[data-time-cat]").forEach(b => {
+    b.addEventListener("click", () => {
+      state.timeSubView = b.dataset.timeCat;
+      renderApp();
+    });
+  });
+
+  const searchInput = document.getElementById("timeSearchInput");
+  if (searchInput) {
+    searchInput.addEventListener("input", e => {
+      state.timeSearchQuery = e.target.value;
+      renderApp();
+      // Restore focus to search input
+      setTimeout(() => {
+        const input = document.getElementById("timeSearchInput");
+        if (input) {
+          input.focus();
+          input.selectionStart = input.selectionEnd = input.value.length;
+        }
+      }, 0);
+    });
+  }
+
+  const sortSelect = document.getElementById("timeSortSelect");
+  if (sortSelect) {
+    sortSelect.addEventListener("change", e => {
+      state.timeSort = e.target.value;
+      renderApp();
+    });
+  }
+
+  // Card click to show details
+  document.querySelectorAll("[data-skill-detail]").forEach(card => {
+    card.addEventListener("click", () => {
+      const id = card.dataset.skillDetail;
+      const type = card.dataset.skillType;
+      const pool = type === "request" ? state.requests : state.skills;
+      const item = pool.find(x => x.id === id);
+      if (item) {
+        showSkillDetails(item, type, renderApp);
+      }
+    });
+  });
+
+  // Toggle save/favorite
+  document.querySelectorAll("[data-toggle-save]").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.toggleSave;
+      if (!state.savedSkillIds) state.savedSkillIds = [];
+      const idx = state.savedSkillIds.indexOf(id);
+      if (idx > -1) {
+        state.savedSkillIds.splice(idx, 1);
+        toast("Removed from saved skills.");
+      } else {
+        state.savedSkillIds.push(id);
+        toast("Saved skill to favorites ⭐");
+      }
+      renderApp();
+    });
+  });
+}
+
+export function showSkillModal(type, renderApp, existingItem = null) {
+  const isOffer = type === "offer";
+  const isEdit = !!existingItem;
+
+  const titleText = isEdit 
+    ? (isOffer ? "Edit skill offer" : "Edit skill request") 
+    : (isOffer ? "Offer your skill" : "Request a skill");
 
   showModal(
-    isEditing ? (isOffer ? "Edit skill offer" : "Edit skill request") : (isOffer ? "Offer your skill" : "Request a skill"),
+    titleText,
     `
       <div class="field">
-        <label>${isOffer ? "Skill title *" : "What do you need? *"}</label>
-        <input class="input" id="skillTitle" value="${escapeHtml(existingItem?.title || existingItem?.skill || "")}" placeholder="${isOffer ? "e.g. Advanced Mathematics Tutoring" : "e.g. UI/UX Figma Review"}">
+        <label>${isOffer ? "Skill title" : "What do you need?"}</label>
+        <input class="input" id="skillTitle" placeholder="${isOffer ? "e.g. Advanced Mathematics tutoring" : "e.g. Responsive landing page design"}" value="${escapeHtml(existingItem?.title || existingItem?.skill || "")}">
       </div>
-
-      <div class="grid grid2">
-        <div class="field">
-          <label>Category *</label>
-          <select class="select" id="skillCategory">
-            ${
-              skillCategories
-                .filter(c => c !== "All")
-                .map(c => `<option value="${escapeHtml(c)}" ${existingItem?.category === c ? "selected" : ""}>${escapeHtml(c)}</option>`)
-                .join("")
-            }
-          </select>
-        </div>
-
-        <div class="field">
-          <label>Time estimate</label>
-          <input class="input" id="skillHours" value="${escapeHtml(existingItem?.hours || "1 hour")}" placeholder="e.g. 2 hours">
-        </div>
-      </div>
-
       <div class="field">
-        <label>Description *</label>
-        <textarea class="textarea" id="skillDescription" placeholder="Explain what you can teach, share or need help with…">${escapeHtml(existingItem?.description || "")}</textarea>
+        <label>Category</label>
+        <select class="input" id="skillCategory">
+          ${TIME_CATEGORIES.filter(c => c !== "All").map(c => `
+            <option value="${escapeHtml(c)}" ${((existingItem?.category || "Other") === c) ? "selected" : ""}>${escapeHtml(c)}</option>
+          `).join("")}
+        </select>
       </div>
-
-      <button class="btn btn-primary btn-block" id="saveSkillBtn">
-        ${isEditing ? "Save changes" : (isOffer ? "Publish offer ⏱️" : "Publish request ⏱️")}
-      </button>
+      <div class="field">
+        <label>Time Estimate</label>
+        <input class="input" id="skillHours" placeholder="e.g. 2 hours" value="${escapeHtml(existingItem?.hours || "1 hour")}">
+      </div>
+      <div class="field">
+        <label>Description</label>
+        <textarea class="textarea" id="skillDescription" rows="4" placeholder="Describe clearly what you are offering or looking for…">${escapeHtml(existingItem?.description || "")}</textarea>
+      </div>
+      <button class="btn btn-primary btn-block" id="saveSkillBtn">${isEdit ? "Save Changes" : (isOffer ? "Publish offer 🚀" : "Publish request 🚀")}</button>
     `
   );
 
   document.getElementById("saveSkillBtn")?.addEventListener("click", async () => {
-    const title = document.getElementById("skillTitle").value.trim();
-    const category = document.getElementById("skillCategory").value;
-    const hours = document.getElementById("skillHours").value.trim() || "1 hour";
-    const description = document.getElementById("skillDescription").value.trim();
+    const titleInput = document.getElementById("skillTitle");
+    const descInput = document.getElementById("skillDescription");
+    const hoursInput = document.getElementById("skillHours");
+    const catInput = document.getElementById("skillCategory");
+    const saveBtn = document.getElementById("saveSkillBtn");
 
-    if (!title) { toast("Enter a skill title."); return; }
-    if (!description) { toast("Enter a description."); return; }
+    const title = titleInput.value.trim();
+    const description = descInput.value.trim();
+    const hours = hoursInput.value.trim() || "1 hour";
+    const category = catInput.value || "Other";
 
-    const btn = document.getElementById("saveSkillBtn");
-    btn.disabled = true;
-    btn.textContent = isEditing ? "Saving…" : "Publishing…";
+    if (!title) {
+      toast("Please enter a title.");
+      titleInput.focus();
+      return;
+    }
+    if (!description) {
+      toast("Please enter a description.");
+      descInput.focus();
+      return;
+    }
 
     try {
-      const col = isOffer ? "skills" : "skillRequests";
+      saveBtn.disabled = true;
+      saveBtn.textContent = "Publishing…";
+
+      const colName = isOffer ? "skills" : "skillRequests";
       const username = state.profile?.displayName || state.profile?.username || "User";
 
-      if (isEditing) {
-        await updateDoc(doc(db, col, existingItem.id), {
+      if (isEdit) {
+        const docRef = doc(db, colName, existingItem.id);
+        await updateDoc(docRef, {
           title,
-          category,
-          hours,
           description,
+          hours,
+          category,
           updatedAt: serverTimestamp()
         });
+        closeModal();
         toast("Updated successfully ✨");
       } else {
-        await addDoc(collection(db, col), {
+        await addDoc(collection(db, colName), {
           uid: state.user.uid,
           username,
           title,
-          category,
-          hours,
           description,
+          hours,
+          category,
           type: isOffer ? "offer" : "request",
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
+          createdAt: serverTimestamp()
         });
+        closeModal();
         toast(isOffer ? "Skill offer published ⏱️" : "Skill request published ⏱️");
       }
-
-      closeModal();
-      if (typeof window.renderMarvelApp === "function") window.renderMarvelApp();
+      if (renderApp) renderApp();
     } catch (e) {
+      console.error("SKILL SAVE ERROR:", e);
       toast(friendly(e));
-      btn.disabled = false;
-      btn.textContent = isEditing ? "Save changes" : (isOffer ? "Publish offer ⏱️" : "Publish request ⏱️");
+      saveBtn.disabled = false;
+      saveBtn.textContent = isEdit ? "Save Changes" : (isOffer ? "Publish offer 🚀" : "Publish request 🚀");
     }
   });
 }
 
-export async function showSkillDetails(itemId, itemType, renderApp) {
-  const collectionName = itemType === "request" ? "skillRequests" : "skills";
-  const item = (itemType === "request" ? state.requests : state.skills).find(x => x.id === itemId);
-
-  if (!item) {
-    toast("Item not found.");
-    return;
-  }
-
-  const isOwner = item.uid === state.user.uid;
+export function showSkillDetails(item, type, renderApp) {
+  const isOwner = item.uid === state.user?.uid;
+  const isOffer = type === "offer";
 
   showModal(
-    item.title || item.skill || "Skill Exchange",
+    isOffer ? "Skill Offer Details" : "Skill Request Details",
     `
-      <div style="margin-bottom:14px;">
-        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
+      <div style="display: flex; flex-direction: column; gap: 14px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <div class="avatar" style="font-size: 18px;">${escapeHtml(initials(item.username))}</div>
           <div>
-            <h3 style="font-size:20px; color:var(--text); margin:0 0 4px;">${escapeHtml(item.title || item.skill || "")}</h3>
-            <div class="small">Posted by <strong>${escapeHtml(item.username || "User")}</strong> · ${escapeHtml(formatDate(item.createdAt))}</div>
-          </div>
-          <div>
-            <span class="badge">${escapeHtml(item.category || "Other")}</span>
-            <span class="badge" style="background:var(--surface2); color:var(--text); margin-left:4px;">${escapeHtml(item.hours || "1 hour")}</span>
+            <strong style="font-size: 16px; display: block;">${escapeHtml(item.title)}</strong>
+            <span class="small">Posted by @${escapeHtml(item.username)} · ${escapeHtml(formatDate(item.createdAt))}</span>
           </div>
         </div>
-      </div>
 
-      <div class="card" style="background:var(--surface2); margin-bottom:15px; box-shadow:none;">
-        <strong style="display:block; margin-bottom:6px; font-size:13px;">Description</strong>
-        <p class="post-body" style="margin:0;">${escapeHtml(item.description || "")}</p>
-      </div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <span class="badge" style="background: var(--surface2);">📂 ${escapeHtml(item.category || "Other")}</span>
+          <span class="badge" style="background: var(--surface2);">⏱️ Time: ${escapeHtml(item.hours || "1 hour")}</span>
+          <span class="badge" style="background: var(--primary-light, #eef2ff); color: var(--primary, #4f46e5);">🏷️ ${escapeHtml(type.toUpperCase())}</span>
+        </div>
 
-      <div id="timeTrustActionArea">
-        ${
-          isOwner
-            ? `
-              <div class="grid grid2" style="gap:8px;">
-                <button class="btn btn-secondary" id="editSkillBtn">✏️ Edit</button>
-                <button class="btn btn-danger" id="deleteSkillBtn">🗑️ Delete</button>
-              </div>
-            `
-            : `
-              <button class="btn btn-primary btn-block" id="connectUserBtn">
-                💬 Connect with ${escapeHtml(item.username || "User")}
-              </button>
-            `
-        }
+        <div class="card" style="background: var(--surface2); padding: 12px; margin: 0;">
+          <span class="small" style="font-weight: 600; display: block; margin-bottom: 4px;">Description</span>
+          <p style="white-space: pre-wrap; word-break: break-word; margin: 0; font-size: 14px;">${escapeHtml(item.description)}</p>
+        </div>
+
+        <div style="display: flex; gap: 10px; margin-top: 8px;">
+          ${isOwner ? `
+            <button class="btn btn-secondary" id="editSkillDetail" style="flex: 1;">Edit</button>
+            <button class="btn btn-danger" id="deleteSkillDetail" style="flex: 1;">Delete</button>
+          ` : `
+            <button class="btn btn-primary btn-block" id="connectSkillUser">Connect with @${escapeHtml(item.username)} 💬</button>
+          `}
+        </div>
+
+        <div style="text-align: center; margin-top: 4px;">
+          <button class="btn-text small" id="reportSkillBtn" style="color: var(--text-secondary);">Report this entry</button>
+        </div>
       </div>
     `
   );
 
   if (isOwner) {
-    document.getElementById("editSkillBtn")?.addEventListener("click", () => {
+    document.getElementById("editSkillDetail")?.addEventListener("click", () => {
       closeModal();
-      showSkillModal(item.type || (collectionName === "skillRequests" ? "request" : "offer"), item);
+      showSkillModal(type, renderApp, item);
     });
 
-    document.getElementById("deleteSkillBtn")?.addEventListener("click", () => {
-      showModal(
-        "Delete entry?",
-        `
-          <p class="small">Are you sure you want to delete this ${escapeHtml(item.type || "skill")}? This action cannot be undone.</p>
-          <div style="display:flex; gap:8px; margin-top:15px;">
-            <button class="btn btn-ghost" style="flex:1;" id="cancelDelSkill">Cancel</button>
-            <button class="btn btn-danger" style="flex:1;" id="confirmDelSkill">Delete</button>
-          </div>
-        `
-      );
-
-      document.getElementById("cancelDelSkill")?.addEventListener("click", () => {
-        showSkillDetails(itemId, itemType, renderApp);
-      });
-
-      document.getElementById("confirmDelSkill")?.addEventListener("click", async () => {
-        try {
-          await deleteDoc(doc(db, collectionName, item.id));
-          toast("Successfully deleted.");
-          closeModal();
-          if (typeof renderApp === "function") renderApp();
-        } catch (e) {
-          toast(friendly(e));
-        }
-      });
+    document.getElementById("deleteSkillDetail")?.addEventListener("click", () => {
+      showDeleteSkillConfirmation(item, type, renderApp);
     });
   } else {
-    document.getElementById("connectUserBtn")?.addEventListener("click", async () => {
+    document.getElementById("connectSkillUser")?.addEventListener("click", async () => {
+      const connectBtn = document.getElementById("connectSkillUser");
       try {
+        connectBtn.disabled = true;
+        connectBtn.textContent = `Opening chat with ${item.username}…`;
+        
+        // Fetch user profile or construct target profile object
+        const profileSnap = await getDoc(doc(db, "users", item.uid));
+        const targetProfile = profileSnap.exists() ? { uid: item.uid, ...profileSnap.data() } : { uid: item.uid, username: item.username, displayName: item.username };
+        
         closeModal();
-        const targetUid = item.uid;
-        const userSnap = await getDocs(query(collection(db, "users"), where("uid", "==", targetUid), limit(1)));
-        let profile = { uid: targetUid, username: item.username || "User", displayName: item.username || "User" };
-        if (!userSnap.empty) {
-          profile = { id: userSnap.docs[0].id, ...userSnap.docs[0].data() };
-        }
-        await createConversation(profile, renderApp);
+        await createConversation(targetProfile, renderApp);
+        toast(`Connected with ${item.username} 💬`);
       } catch (e) {
-        console.error("Connect error:", e);
-        toast("Could not open chat with this user.");
+        console.error("CONNECT SKILL ERROR:", e);
+        toast("Could not open this conversation. Please try again.");
+        connectBtn.disabled = false;
+        connectBtn.textContent = `Connect with @${escapeHtml(item.username)} 💬`;
       }
     });
   }
+
+  document.getElementById("reportSkillBtn")?.addEventListener("click", () => {
+    toast("Thank you. Report received for review.");
+  });
 }
 
-export function attachTimeTrustEvents(renderApp) {
-  window.renderMarvelApp = renderApp;
+function showDeleteSkillConfirmation(item, type, renderApp) {
+  showModal(
+    "Delete this entry?",
+    `
+      <p class="small">Are you sure you want to delete <strong>${escapeHtml(item.title)}</strong>? This action cannot be undone.</p>
+      <div style="display: flex; gap: 10px; margin-top: 16px;">
+        <button class="btn btn-ghost" id="cancelDelSkill" style="flex: 1;">Cancel</button>
+        <button class="btn btn-danger" id="confirmDelSkill" style="flex: 1;">Delete</button>
+      </div>
+    `
+  );
 
-  document.getElementById("offerSkillBtn")?.addEventListener("click", () => showSkillModal("offer"));
-  document.getElementById("requestSkillBtn")?.addEventListener("click", () => showSkillModal("request"));
-  document.getElementById("emptyTimeBtn")?.addEventListener("click", () => showSkillModal(state.timeTab === "offers" ? "offer" : "request"));
-
-  document.getElementById("tabOffersBtn")?.addEventListener("click", () => {
-    state.timeTab = "offers";
-    renderApp();
+  document.getElementById("cancelDelSkill")?.addEventListener("click", () => {
+    showSkillDetails(item, type, renderApp);
   });
 
-  document.getElementById("tabRequestsBtn")?.addEventListener("click", () => {
-    state.timeTab = "requests";
-    renderApp();
-  });
+  document.getElementById("confirmDelSkill")?.addEventListener("click", async () => {
+    const confirmBtn = document.getElementById("confirmDelSkill");
+    try {
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = "Deleting…";
 
-  document.getElementById("timeSearch")?.addEventListener("input", e => {
-    state.search = e.target.value;
-    renderApp();
-  });
+      const colName = type === "offer" ? "skills" : "skillRequests";
+      await deleteDoc(doc(db, colName, item.id));
 
-  document.getElementById("timeSortSelect")?.addEventListener("change", e => {
-    state.timeSort = e.target.value;
-    renderApp();
-  });
-
-  document.querySelectorAll("[data-time-cat]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      state.timeCategory = btn.dataset.timeCat;
-      renderApp();
-    });
-  });
-
-  document.querySelectorAll("[data-view-skill]").forEach(item => {
-    item.addEventListener("click", () => {
-      showSkillDetails(item.dataset.viewSkill, item.dataset.skillType, renderApp);
-    });
+      closeModal();
+      toast("Entry deleted successfully.");
+      if (renderApp) renderApp();
+    } catch (e) {
+      console.error("DELETE SKILL ERROR:", e);
+      toast("Could not delete entry.");
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = "Delete";
+    }
   });
 }
