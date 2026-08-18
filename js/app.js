@@ -9,7 +9,7 @@ import { renderProfile, showEditProfile, showSaved } from "./features /profile.j
 import { showNotifications } from "./features /notifications.js";
 import { showSearch } from "./features /search.js";
 import { showSettings } from "./features /settings.js";
-import { renderTimeTrust, showSkillModal } from "./features /timetrust.js";
+import { renderTimeTrust, showSkillModal, attachTimeTrustEvents } from "./features /timetrust.js";
 import { toast } from "./components/toast.js";
 
 const root = document.getElementById("root");
@@ -28,7 +28,7 @@ export function renderApp() {
   const pages = {
     home: () => renderHome(renderApp),
     chat: () => renderChat(renderApp),
-    timetrust: () => renderTimeTrust(),
+    timetrust: () => renderTimeTrust(renderApp),
     market: () => renderMarket(renderApp),
     profile: () => renderProfile()
   };
@@ -328,14 +328,7 @@ function attachEvents() {
   }
 
   if (state.page === "timetrust") {
-    document.getElementById("offerSkillBtn")?.addEventListener("click", () => showSkillModal("offer"));
-    document.getElementById("requestSkillBtn")?.addEventListener("click", () => showSkillModal("request"));
-    document.querySelectorAll("[data-time-tab]").forEach(b => {
-      b.addEventListener("click", () => {
-        state.timeTab = b.dataset.timeTab;
-        renderApp();
-      });
-    });
+    attachTimeTrustEvents(renderApp);
   }
 
   if (state.page === "market") {
