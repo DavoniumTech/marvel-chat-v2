@@ -115,7 +115,7 @@ html[data-theme="dark"] .btn-secondary{ color:#d9c8ff; }
 .segmented button{ white-space:nowrap; }
 .notice{ padding:12px 14px; border-radius:15px; background:color-mix(in srgb, var(--info) 9%, var(--surface)); color:var(--text); border:1px solid color-mix(in srgb, var(--info) 14%, var(--border)); }
 
-/* Modal Fullscreen & Responsive Wrapping Additions */
+/* Modal Fullscreen & Responsive Soft Corner Alignment (Matches Sell Modal Design System) */
 .modal.modal-fullscreen {
   width: min(96vw, 980px);
   height: min(92vh, 880px);
@@ -140,6 +140,6 @@ html[data-theme="dark"] .btn-secondary{ color:#d9c8ff; }
     max-width: none;
     max-height: none;
     border-radius: 0;
-    padding: 16px 14px;
+    padding: 18px 14px;
   }
 }
