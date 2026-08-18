@@ -143,3 +143,42 @@ html[data-theme="dark"] .btn-secondary{ color:#d9c8ff; }
     padding: 18px 14px;
   }
 }
+
+
+/* =========================================================
+TIMETRUST UI-ONLY TEXT CONTAINMENT & WRAPPING FIXES
+========================================================= */
+​.timetrust-page .list-item {
+width: 100%;
+max-width: 100%;
+box-sizing: border-box;
+overflow: hidden;
+}
+​.timetrust-page .list-item .profile-row {
+width: 100%;
+min-width: 0;
+}
+​.timetrust-page .list-item .profile-meta {
+min-width: 0;
+flex: 1;
+overflow-wrap: anywhere;
+word-break: break-word;
+}
+​.timetrust-page .list-item strong {
+overflow-wrap: anywhere;
+word-break: break-word;
+white-space: normal;
+}
+​.timetrust-page .list-item p.small {
+overflow-wrap: anywhere;
+word-break: break-word;
+white-space: pre-wrap;
+}
+​.timetrust-page .badge {
+max-width: 100%;
+overflow-wrap: anywhere;
+word-break: break-word;
+white-space: normal;
+  }
+
+
