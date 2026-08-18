@@ -1,5 +1,5 @@
 import { state, escapeHtml, formatDate, friendly } from "../state.js";
-import { db, getDocs, query, collection, orderBy, limit, doc, updateDoc, setDoc } from "../firebase/firestore.js";
+import { db, getDocs, query, collection, orderBy, limit, doc, updateDoc, setDoc, deleteDoc } from "../firebase/firestore.js";
 import { showModal } from "../components/modal.js";
 import { toast } from "../components/toast.js";
 import { getMessaging, getToken } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js";
@@ -121,6 +121,58 @@ export async function markAllNotificationsRead() {
   }
 }
 
+export async function deleteNotification(notificationId) {
+  try {
+    const target = state.notifications.find(n => n.id === notificationId);
+    if (!target) return;
+
+    // Optimistically update state
+    const wasUnread = !target.read;
+    state.notifications = state.notifications.filter(n => n.id !== notificationId);
+    if (wasUnread) {
+      state.unreadNotificationsCount = Math.max(0, state.unreadNotificationsCount - 1);
+    }
+
+    // Update badge element
+    const badgeEl = document.getElementById("notificationBadge");
+    if (badgeEl) {
+      badgeEl.textContent = state.unreadNotificationsCount > 0 ? state.unreadNotificationsCount : "";
+      badgeEl.style.display = state.unreadNotificationsCount > 0 ? "inline-block" : "none";
+    }
+
+    // Re-render modal contents or reload list
+    const el = document.getElementById("notificationContent");
+    if (el) {
+      el.className = state.notifications.length ? "list" : "empty";
+      el.innerHTML = state.notifications.length ? state.notifications.map(n => `
+        <div class="list-item" style="${n.read ? 'opacity:0.8;' : 'border-left:4px solid var(--primary);'} display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;">
+          <div style="flex: 1; min-width: 0;">
+            <strong>${escapeHtml(n.actorName || "Community")}</strong>
+            <div>${escapeHtml(n.text || "")}</div>
+            <div class="small">${escapeHtml(formatDate(n.createdAt))}</div>
+          </div>
+          <button class="icon-btn delete-notif-btn" data-delete-notif="${n.id}" aria-label="Delete notification" style="flex: none; width: 32px; height: 32px; font-size: 13px; color: var(--danger, #ff5c5c);">🗑️</button>
+        </div>
+      `).join("") : `🔔<p>No notifications yet.</p>`;
+
+      // Re-attach delete listeners
+      el.querySelectorAll("[data-delete-notif]").forEach(btn => {
+        btn.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          await deleteNotification(btn.dataset.deleteNotif);
+        });
+      });
+    }
+
+    // Delete in Firestore
+    await deleteDoc(doc(db, "users", state.user.uid, "notifications", notificationId));
+    toast("Notification removed");
+  } catch (e) {
+    console.error("Delete notification error:", e);
+    toast("Could not delete notification.");
+  }
+}
+
 export async function showNotifications() {
   showModal(
     "Notifications",
@@ -138,10 +190,13 @@ export async function showNotifications() {
 
   el.className = state.notifications.length ? "list" : "empty";
   el.innerHTML = state.notifications.length ? state.notifications.map(n => `
-    <div class="list-item" style="${n.read ? 'opacity:0.8;' : 'border-left:4px solid var(--primary);'}">
-      <strong>${escapeHtml(n.actorName || "Community")}</strong>
-      <div>${escapeHtml(n.text || "")}</div>
-      <div class="small">${escapeHtml(formatDate(n.createdAt))}</div>
+    <div class="list-item" style="${n.read ? 'opacity:0.8;' : 'border-left:4px solid var(--primary);'} display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;">
+      <div style="flex: 1; min-width: 0;">
+        <strong>${escapeHtml(n.actorName || "Community")}</strong>
+        <div>${escapeHtml(n.text || "")}</div>
+        <div class="small">${escapeHtml(formatDate(n.createdAt))}</div>
+      </div>
+      <button class="icon-btn delete-notif-btn" data-delete-notif="${n.id}" aria-label="Delete notification" style="flex: none; width: 32px; height: 32px; font-size: 13px; color: var(--danger, #ff5c5c);">🗑️</button>
     </div>
   `).join("") : `🔔<p>No notifications yet.</p>`;
 
@@ -152,6 +207,13 @@ export async function showNotifications() {
   document.getElementById("markAllReadBtn")?.addEventListener("click", async () => {
     await markAllNotificationsRead();
     showNotifications();
+  });
+
+  el.querySelectorAll("[data-delete-notif]").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      await deleteNotification(btn.dataset.deleteNotif);
+    });
   });
 
   // Mark all unread as read upon viewing
