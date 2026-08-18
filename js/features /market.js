@@ -117,11 +117,11 @@ export function renderMarket(renderApp) {
                       x => `
                         <div class="list-item" style="cursor: pointer;" data-view-listing="${x.id}">
                           <div class="profile-row" style="align-items: flex-start; justify-content: space-between;">
-                            <div style="display: flex; gap: 10px; align-items: flex-start; flex: 1;">
+                            <div style="display: flex; gap: 10px; align-items: flex-start; flex: 1; min-width: 0;">
                               <div class="avatar" style="font-size: 16px;">🛍</div>
-                              <div class="profile-meta" style="flex: 1;">
+                              <div class="profile-meta" style="flex: 1; min-width: 0;">
                                 <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-                                  <strong style="font-size: 15px;">${escapeHtml(x.title)}</strong>
+                                  <strong style="font-size: 15px; overflow-wrap: anywhere; word-break: break-word;">${escapeHtml(x.title)}</strong>
                                   <span class="badge" style="background: var(--surface2);">${escapeHtml(x.category || "Other")}</span>
                                   <span class="badge" style="background: var(--surface2); color: var(--text);">${escapeHtml(x.condition || "Good")}</span>
                                 </div>
@@ -309,30 +309,33 @@ export async function showListingDetails(listingId, renderApp) {
   const updatedDate = listing.updatedAt ? formatDate(listing.updatedAt) : null;
 
   const detailBody = `
-    <div style="display: flex; flex-direction: column; gap: 16px; padding: 4px 0;">
-      <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap;">
-        <div>
-          <h2 style="font-size: clamp(26px, 5vw, 32px); color: var(--primary); margin: 0 0 6px;">₦${Number(listing.price || 0).toLocaleString()}</h2>
-          <div class="small">Posted by <strong>@${escapeHtml(listing.username || "User")}</strong> · ${escapeHtml(postedDate)}${updatedDate && updatedDate !== postedDate ? ` (Updated ${escapeHtml(updatedDate)})` : ""}</div>
+    <div class="market-detail">
+      <div class="market-detail-body">
+        <div class="market-detail-header-row">
+          <div class="market-detail-title-block">
+            <div class="market-detail-price">₦${Number(listing.price || 0).toLocaleString()}</div>
+            <h1 class="market-detail-title">${escapeHtml(listing.title)}</h1>
+            <div class="small">Posted by <strong>@${escapeHtml(listing.username || "User")}</strong> · ${escapeHtml(postedDate)}${updatedDate && updatedDate !== postedDate ? ` (Updated ${escapeHtml(updatedDate)})` : ""}</div>
+          </div>
+          <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center; flex-shrink: 0;">
+            <span class="badge">${escapeHtml(listing.category || "Other")}</span>
+            <span class="badge" style="background: var(--surface2); color: var(--text);">${escapeHtml(listing.condition || "Good")}</span>
+            ${listing.status === "sold" ? `<span class="badge" style="background: var(--danger); color: #fff;">Sold</span>` : ``}
+          </div>
         </div>
-        <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
-          <span class="badge">${escapeHtml(listing.category || "Other")}</span>
-          <span class="badge" style="background: var(--surface2); color: var(--text);">${escapeHtml(listing.condition || "Good")}</span>
-          ${listing.status === "sold" ? `<span class="badge" style="background: var(--danger); color: #fff;">Sold</span>` : ``}
+
+        <div class="card" style="background: var(--surface2); padding: 16px; margin: 0; box-shadow: none; border-radius: 16px;">
+          <strong style="display: block; margin-bottom: 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted);">Description</strong>
+          <p style="white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; margin: 0; font-size: 15px; line-height: 1.6;">${escapeHtml(listing.description || "")}</p>
+        </div>
+
+        <div class="small" style="background: var(--surface2); padding: 14px; border-radius: 16px; display: flex; flex-direction: column; gap: 6px;">
+          <div>📍 Location: <strong>${escapeHtml(listing.location || "Not specified")} (${escapeHtml(listing.country || "Nigeria")})</strong></div>
+          <div>📋 Status: <strong>${escapeHtml(listing.status === "sold" ? "Sold" : "Active")}</strong></div>
         </div>
       </div>
 
-      <div class="card" style="background: var(--surface2); padding: 16px; margin: 0; box-shadow: none; border-radius: 16px;">
-        <strong style="display: block; margin-bottom: 8px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted);">Description</strong>
-        <p style="white-space: pre-wrap; word-break: break-word; margin: 0; font-size: 15px; line-height: 1.6;">${escapeHtml(listing.description || "")}</p>
-      </div>
-
-      <div class="small" style="background: var(--surface2); padding: 14px; border-radius: 16px; display: flex; flex-direction: column; gap: 6px;">
-        <div>📍 Location: <strong>${escapeHtml(listing.location || "Not specified")} (${escapeHtml(listing.country || "Nigeria")})</strong></div>
-        <div>📋 Status: <strong>${escapeHtml(listing.status === "sold" ? "Sold" : "Active")}</strong></div>
-      </div>
-
-      <div id="listingActionArea" style="margin-top: auto; padding-top: 12px;">
+      <div class="market-detail-actions-bar" id="listingActionArea">
         ${
           isOwner
             ? `
