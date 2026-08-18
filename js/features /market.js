@@ -310,10 +310,11 @@ export async function showListingDetails(listingId, renderApp) {
 
   const detailBody = `
     <div style="display: flex; flex-direction: column; gap: 16px; height: 100%; min-height: 0;">
+      <!-- Header / Title / Price / Badges -->
       <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; flex-wrap: wrap;">
         <div style="flex: 1; min-width: 0;">
-          <h2 style="font-size: clamp(26px, 5vw, 32px); color: var(--primary); margin: 0 0 6px; white-space: nowrap;">₦${Number(listing.price || 0).toLocaleString()}</h2>
-          <h1 style="font-size: clamp(18px, 4vw, 22px); font-weight: 800; margin: 0 0 6px; overflow-wrap: anywhere; word-break: break-word; line-height: 1.4;">${escapeHtml(listing.title)}</h1>
+          <div style="font-size: clamp(26px, 5vw, 32px); font-weight: 900; color: var(--primary); margin-bottom: 6px; white-space: nowrap;">₦${Number(listing.price || 0).toLocaleString()}</div>
+          <h2 style="font-size: clamp(17px, 3.5vw, 21px); font-weight: 800; margin: 0 0 6px; overflow-wrap: anywhere; word-break: break-word; line-height: 1.4; color: var(--text);">${escapeHtml(listing.title)}</h2>
           <div class="small">Posted by <strong>@${escapeHtml(listing.username || "User")}</strong> · ${escapeHtml(postedDate)}${updatedDate && updatedDate !== postedDate ? ` (Updated ${escapeHtml(updatedDate)})` : ""}</div>
         </div>
         <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center; flex-shrink: 0;">
@@ -323,16 +324,19 @@ export async function showListingDetails(listingId, renderApp) {
         </div>
       </div>
 
+      <!-- Description Box -->
       <div class="card" style="background: var(--surface2); padding: 16px; margin: 0; box-shadow: none; border-radius: 16px;">
         <strong style="display: block; margin-bottom: 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted);">Description</strong>
         <p style="white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; margin: 0; font-size: 15px; line-height: 1.6;">${escapeHtml(listing.description || "")}</p>
       </div>
 
+      <!-- Meta Info -->
       <div class="small" style="background: var(--surface2); padding: 14px; border-radius: 16px; display: flex; flex-direction: column; gap: 6px;">
         <div>📍 Location: <strong>${escapeHtml(listing.location || "Not specified")} (${escapeHtml(listing.country || "Nigeria")})</strong></div>
         <div>📋 Status: <strong>${escapeHtml(listing.status === "sold" ? "Sold" : "Active")}</strong></div>
       </div>
 
+      <!-- Bottom Pinned Action Area -->
       <div id="listingActionArea" style="margin-top: auto; padding-top: 14px; border-top: 1px solid var(--border); background: var(--surface); position: sticky; bottom: 0;">
         ${
           isOwner
@@ -355,6 +359,7 @@ export async function showListingDetails(listingId, renderApp) {
     </div>
   `;
 
+  // Open using fullscreen modal size variant
   showModal(listing.title || "Listing Details", detailBody, { size: "fullscreen" });
 
   if (isOwner) {
