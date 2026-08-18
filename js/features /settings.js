@@ -115,18 +115,32 @@ export function showReportProblem() {
   );
 
   document.getElementById("submitProblem")?.addEventListener("click", async () => {
-    const text = document.getElementById("problemText").value.trim();
+    const textInput = document.getElementById("problemText");
+    const submitBtn = document.getElementById("submitProblem");
+    const text = textInput.value.trim();
     if (!text) { toast("Describe the problem first."); return; }
     try {
-      await addDoc(collection(db, "users", state.user.uid, "notifications"), {
-        title: "Problem report",
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Sending…";
+
+      const username = state.profile?.displayName || state.profile?.username || "User";
+      const email = state.user?.email || "";
+
+      await addDoc(collection(db, "reports"), {
+        uid: state.user.uid,
+        username,
+        email,
         message: text,
+        status: "open",
         createdAt: serverTimestamp()
       });
       closeModal();
-      toast("Report saved. Thank you.");
+      toast("Report submitted successfully. Thank you.");
     } catch (e) {
+      console.error("Report submit error:", e);
       toast(friendly(e));
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Send report";
     }
   });
 }
