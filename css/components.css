@@ -114,3 +114,31 @@ html[data-theme="dark"] .btn-secondary{ color:#d9c8ff; }
 .segmented{ display:flex; gap:7px; overflow:auto; margin-bottom:12px; }
 .segmented button{ white-space:nowrap; }
 .notice{ padding:12px 14px; border-radius:14px; background:color-mix(in srgb, var(--info) 9%, var(--surface)); color:var(--text); border:1px solid color-mix(in srgb, var(--info) 14%, var(--border)); }
+
+
+
+
+.modal.modal-fullscreen {
+  width: min(96vw, 980px);
+  height: min(92vh, 880px);
+  max-width: none;
+  max-height: none;
+  display: flex;
+  flex-direction: column;
+}
+.modal-fullscreen .modal-body-scroll {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding-right: 2px;
+}
+@media(max-width: 700px) {
+  .modal.modal-fullscreen {
+    width: 100vw;
+    height: 100dvh;
+    max-width: none;
+    max-height: none;
+    border-radius: 0;
+    padding: 16px 12px;
+  }
+}
