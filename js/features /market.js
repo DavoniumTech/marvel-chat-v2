@@ -46,7 +46,6 @@ export function renderMarket(renderApp) {
       const isOwner = x.uid === state.user?.uid;
       return matchesSearch && matchesCategory && isOwner;
     } else {
-      // General browse: show active listings, or sold if viewing user's own
       const isActive = x.status !== "sold";
       return matchesSearch && matchesCategory && isActive;
     }
@@ -306,55 +305,57 @@ export async function showListingDetails(listingId, renderApp) {
   }
 
   const isOwner = listing.uid === state.user?.uid;
+  const postedDate = formatDate(listing.createdAt);
+  const updatedDate = listing.updatedAt ? formatDate(listing.updatedAt) : null;
 
-  showModal(
-    listing.title || "Listing Details",
-    `
-      <div style="display: flex; flex-direction: column; gap: 14px;">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;">
-          <div>
-            <h2 style="font-size: 24px; color: var(--primary); margin: 0 0 4px;">₦${Number(listing.price || 0).toLocaleString()}</h2>
-            <div class="small">Posted by <strong>@${escapeHtml(listing.username || "User")}</strong> · ${escapeHtml(formatDate(listing.createdAt))}</div>
-          </div>
-          <div style="display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end;">
-            <span class="badge">${escapeHtml(listing.category || "Other")}</span>
-            <span class="badge" style="background: var(--surface2); color: var(--text);">${escapeHtml(listing.condition || "Good")}</span>
-            ${listing.status === "sold" ? `<span class="badge" style="background: var(--danger); color: #fff;">Sold</span>` : ``}
-          </div>
+  const detailBody = `
+    <div style="display: flex; flex-direction: column; gap: 16px; padding: 4px 0;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap;">
+        <div>
+          <h2 style="font-size: clamp(26px, 5vw, 32px); color: var(--primary); margin: 0 0 6px;">₦${Number(listing.price || 0).toLocaleString()}</h2>
+          <div class="small">Posted by <strong>@${escapeHtml(listing.username || "User")}</strong> · ${escapeHtml(postedDate)}${updatedDate && updatedDate !== postedDate ? ` (Updated ${escapeHtml(updatedDate)})` : ""}</div>
         </div>
-
-        <div class="card" style="background: var(--surface2); padding: 12px; margin: 0; box-shadow: none;">
-          <strong style="display: block; margin-bottom: 6px; font-size: 13px;">Description</strong>
-          <p style="white-space: pre-wrap; word-break: break-word; margin: 0; font-size: 14px;">${escapeHtml(listing.description || "")}</p>
-        </div>
-
-        <div class="small" style="background: var(--bg); padding: 10px; border-radius: 8px;">
-          📍 Location: <strong>${escapeHtml(listing.location || "Not specified")} (${escapeHtml(listing.country || "Nigeria")})</strong><br>
-          📋 Status: <strong>${escapeHtml(listing.status === "sold" ? "Sold" : "Active")}</strong>
-        </div>
-
-        <div id="listingActionArea" style="margin-top: 4px;">
-          ${
-            isOwner
-              ? `
-                <div class="grid grid3" style="gap: 8px;">
-                  <button class="btn btn-secondary" id="editListingBtn">✏️ Edit</button>
-                  <button class="btn ${listing.status === "sold" ? "btn-secondary" : "btn-ghost"}" id="toggleSoldBtn">
-                    ${listing.status === "sold" ? "Reactivate" : "Mark as Sold"}
-                  </button>
-                  <button class="btn btn-danger" id="deleteListingBtn">🗑️ Delete</button>
-                </div>
-              `
-              : `
-                <button class="btn btn-primary btn-block" id="messageSellerBtn">
-                  💬 Contact Seller @${escapeHtml(listing.username || "Seller")}
-                </button>
-              `
-          }
+        <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
+          <span class="badge">${escapeHtml(listing.category || "Other")}</span>
+          <span class="badge" style="background: var(--surface2); color: var(--text);">${escapeHtml(listing.condition || "Good")}</span>
+          ${listing.status === "sold" ? `<span class="badge" style="background: var(--danger); color: #fff;">Sold</span>` : ``}
         </div>
       </div>
-    `
-  );
+
+      <div class="card" style="background: var(--surface2); padding: 16px; margin: 0; box-shadow: none; border-radius: 16px;">
+        <strong style="display: block; margin-bottom: 8px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted);">Description</strong>
+        <p style="white-space: pre-wrap; word-break: break-word; margin: 0; font-size: 15px; line-height: 1.6;">${escapeHtml(listing.description || "")}</p>
+      </div>
+
+      <div class="small" style="background: var(--surface2); padding: 14px; border-radius: 16px; display: flex; flex-direction: column; gap: 6px;">
+        <div>📍 Location: <strong>${escapeHtml(listing.location || "Not specified")} (${escapeHtml(listing.country || "Nigeria")})</strong></div>
+        <div>📋 Status: <strong>${escapeHtml(listing.status === "sold" ? "Sold" : "Active")}</strong></div>
+      </div>
+
+      <div id="listingActionArea" style="margin-top: auto; padding-top: 12px;">
+        ${
+          isOwner
+            ? `
+              <div class="grid grid3" style="gap: 10px;">
+                <button class="btn btn-secondary" id="editListingBtn" style="padding: 13px;">✏️ Edit</button>
+                <button class="btn ${listing.status === "sold" ? "btn-secondary" : "btn-ghost"}" id="toggleSoldBtn" style="padding: 13px;">
+                  ${listing.status === "sold" ? "Reactivate" : "Mark as Sold"}
+                </button>
+                <button class="btn btn-danger" id="deleteListingBtn" style="padding: 13px;">🗑️ Delete</button>
+              </div>
+            `
+            : `
+              <button class="btn btn-primary btn-block" id="messageSellerBtn" style="padding: 15px; font-size: 16px;">
+                💬 Contact Seller @${escapeHtml(listing.username || "Seller")}
+              </button>
+            `
+        }
+      </div>
+    </div>
+  `;
+
+  // Open using fullscreen modal size variant
+  showModal(listing.title || "Listing Details", detailBody, { size: "fullscreen" });
 
   if (isOwner) {
     document.getElementById("editListingBtn")?.addEventListener("click", () => {
