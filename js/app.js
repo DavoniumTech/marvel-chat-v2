@@ -1824,10 +1824,9 @@ const startupStatus =
   );
 
 
-if (
-  startupStatus
-) {else 
-
+if (startupStatus) {
   startupStatus.textContent =
     "Initializing the MarvelChat universe…";
 }
+ 
+
