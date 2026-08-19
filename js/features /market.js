@@ -432,9 +432,20 @@ export async function showListingDetails(listingId, renderApp) {
           sellerProfile = { id: userSnap.docs[0].id, ...userSnap.docs[0].data() };
         }
 
+        await addDoc(collection(db, "users", sellerUid, "notifications"), {
+          actorUid: state.user.uid,
+          actorName: state.profile?.displayName || state.profile?.username || "A community member",
+          text: `is interested in your marketplace listing "${listing.title}" 🛍️`,
+          type: "marketplace_interest",
+          listingId: listing.id,
+          listingTitle: listing.title,
+          read: false,
+          createdAt: serverTimestamp()
+        });
+
         closeModal();
         await createConversation(sellerProfile, renderApp);
-        toast(`Connected with @${listing.username} 💬`);
+        toast(`Interest sent to @${listing.username} 🛍️`);
       } catch (e) {
         console.error("[Marketplace] Contact seller error:", e);
         toast("Could not open chat with seller.");
