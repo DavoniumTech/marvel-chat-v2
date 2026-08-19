@@ -1,18 +1,94 @@
-import { state, countries, applyTheme, escapeHtml, initials, friendly } from "./state.js";
-import { auth, loadProfile, onAuthStateChanged, signOut, updateProfile } from "./firebase/auth.js";
-import { db, doc, updateDoc, setDoc, serverTimestamp } from "./firebase/firestore.js";
-import { subscribeAll } from "./firebase/listeners.js";
-import { renderHome, showCreatePost, showEditPost, showDeletePostConfirmation, toggleLike, savePost, sharePost, showComments } from "./features /home.js";
-import { renderChat, showNewChat, sendMessage, openConversation, editMessage, deleteMessage, copyMessage, togglePinConversation } from "./features /chat.js";
-import { renderMarket, showSellModal, attachMarketEvents } from "./features /market.js";
-import { renderProfile, showEditProfile, showSaved } from "./features /profile.js";
-import { showNotifications } from "./features /notifications.js";
-import { showSearch } from "./features /search.js";
-import { showSettings } from "./features /settings.js";
-import { renderTimeTrust, showSkillModal, attachTimeTrustEvents } from "./features /timetrust.js";
-import { toast } from "./components/toast.js";
+import {
+  state,
+  countries,
+  applyTheme,
+  escapeHtml,
+  initials,
+  friendly
+} from "./state.js";
 
-const root = document.getElementById("root");
+import {
+  auth,
+  loadProfile,
+  onAuthStateChanged,
+  signOut,
+  updateProfile
+} from "./firebase/auth.js";
+
+import {
+  db,
+  doc,
+  updateDoc,
+  setDoc,
+  serverTimestamp
+} from "./firebase/firestore.js";
+
+import {
+  subscribeAll
+} from "./firebase/listeners.js";
+
+import {
+  renderHome,
+  showCreatePost,
+  showEditPost,
+  showDeletePostConfirmation,
+  toggleLike,
+  savePost,
+  sharePost,
+  showComments
+} from "./features /home.js";
+
+import {
+  renderChat,
+  showNewChat,
+  sendMessage,
+  openConversation,
+  editMessage,
+  deleteMessage,
+  copyMessage,
+  togglePinConversation
+} from "./features /chat.js";
+
+import {
+  renderMarket,
+  showSellModal,
+  attachMarketEvents
+} from "./features /market.js";
+
+import {
+  renderProfile,
+  showEditProfile,
+  showSaved
+} from "./features /profile.js";
+
+import {
+  showNotifications
+} from "./features /notifications.js";
+
+import {
+  showSearch
+} from "./features /search.js";
+
+import {
+  showSettings
+} from "./features /settings.js";
+
+import {
+  renderTimeTrust,
+  showSkillModal,
+  attachTimeTrustEvents
+} from "./features /timetrust.js";
+
+import {
+  toast
+} from "./components/toast.js";
+
+
+const root =
+  document.getElementById(
+    "root"
+  );
+
 
 export function renderApp() {
   applyTheme();
@@ -28,28 +104,63 @@ export function renderApp() {
   }
 
   const pages = {
-    home: () => renderHome(renderApp),
-    chat: () => renderChat(renderApp),
-    timetrust: () => renderTimeTrust(renderApp),
-    market: () => renderMarket(renderApp),
-    profile: () => renderProfile()
+    home: () =>
+      renderHome(
+        renderApp
+      ),
+
+    chat: () =>
+      renderChat(
+        renderApp
+      ),
+
+    timetrust: () =>
+      renderTimeTrust(
+        renderApp
+      ),
+
+    market: () =>
+      renderMarket(
+        renderApp
+      ),
+
+    profile: () =>
+      renderProfile()
   };
 
-  const fn = pages[state.page] || pages.home;
+  const fn =
+    pages[state.page] ||
+    pages.home;
 
   root.innerHTML = `
     <div class="app">
       <header class="topbar">
+
         <div class="brand">
-          <div class="brand-logo">M</div>
+          <div class="brand-logo">
+            M
+          </div>
+
           <div>
-            <div class="brand-name">Marvel Chat</div>
-            <div class="brand-sub">FUTURE COMMUNITY</div>
+            <div class="brand-name">
+              Marvel Chat
+            </div>
+
+            <div class="brand-sub">
+              FUTURE COMMUNITY
+            </div>
           </div>
         </div>
 
         <div class="top-actions">
-          <button class="icon-btn" id="searchBtn" title="Search">⌕</button>
+
+          <button
+            class="icon-btn"
+            id="searchBtn"
+            title="Search"
+          >
+            ⌕
+          </button>
 
           <button
             class="icon-btn"
@@ -58,6 +169,7 @@ export function renderApp() {
             style="position:relative;"
           >
             🔔
+
             <span
               id="notificationBadge"
               style="
@@ -70,85 +182,205 @@ export function renderApp() {
                 font-weight:bold;
                 padding:2px 5px;
                 border-radius:999px;
-                display:${state.unreadNotificationsCount > 0 ? "inline-block" : "none"};
+                display:${
+                  state.unreadNotificationsCount > 0
+                    ? "inline-block"
+                    : "none"
+                };
               "
             >
-              ${state.unreadNotificationsCount > 0 ? state.unreadNotificationsCount : ""}
+              ${
+                state.unreadNotificationsCount > 0
+                  ? state.unreadNotificationsCount
+                  : ""
+              }
             </span>
           </button>
 
-          <button class="icon-btn" id="themeBtn" title="Theme">
-            ${state.theme === "dark" ? "☀️" : "🌙"}
+          <button
+            class="icon-btn"
+            id="themeBtn"
+            title="Theme"
+          >
+            ${
+              state.theme === "dark"
+                ? "☀️"
+                : "🌙"
+            }
           </button>
+
         </div>
       </header>
 
-      <main class="main">${fn()}</main>
+      <main class="main">
+        ${fn()}
+      </main>
 
       <nav class="bottom-nav">
         <div class="bottom-inner">
-          ${navButton("home", "⌂", "Home")}
-          ${navButton("chat", "💬", "Chat")}
-          ${navButton("timetrust", "⏱", "TimeTrust")}
-          ${navButton("market", "🛍", "Market")}
-          ${navButton("profile", "◉", "Profile")}
+
+          ${navButton(
+            "home",
+            "⌂",
+            "Home"
+          )}
+
+          ${navButton(
+            "chat",
+            "💬",
+            "Chat"
+          )}
+
+          ${navButton(
+            "timetrust",
+            "⏱",
+            "TimeTrust"
+          )}
+
+          ${navButton(
+            "market",
+            "🛍",
+            "Market"
+          )}
+
+          ${navButton(
+            "profile",
+            "◉",
+            "Profile"
+          )}
+
         </div>
       </nav>
     </div>
   `;
 
-  document
-    .getElementById("searchBtn")
-    ?.addEventListener("click", showSearch);
 
   document
-    .getElementById("notificationBtn")
-    ?.addEventListener("click", showNotifications);
+    .getElementById(
+      "searchBtn"
+    )
+    ?.addEventListener(
+      "click",
+      showSearch
+    );
+
 
   document
-    .getElementById("themeBtn")
-    ?.addEventListener("click", () => {
-      state.theme = state.theme === "dark" ? "light" : "dark";
-      localStorage.setItem("marvel_theme", state.theme);
-      renderApp();
-    });
+    .getElementById(
+      "notificationBtn"
+    )
+    ?.addEventListener(
+      "click",
+      showNotifications
+    );
 
-  document.querySelectorAll("[data-nav]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      state.page = btn.dataset.nav;
 
-      if (state.page !== "chat" && state.activeConversation) {
-        state.unsubs.messages?.();
-        state.unsubs.messages = null;
-        state.activeConversation = null;
-        state.messages = [];
+  document
+    .getElementById(
+      "themeBtn"
+    )
+    ?.addEventListener(
+      "click",
+      () => {
+
+        state.theme =
+          state.theme === "dark"
+            ? "light"
+            : "dark";
+
+        localStorage.setItem(
+          "marvel_theme",
+          state.theme
+        );
+
+        renderApp();
       }
+    );
 
-      renderApp();
-    });
-  });
+
+  document
+    .querySelectorAll(
+      "[data-nav]"
+    )
+    .forEach(
+      btn => {
+
+        btn.addEventListener(
+          "click",
+          () => {
+
+            state.page =
+              btn.dataset.nav;
+
+            if (
+              state.page !== "chat" &&
+              state.activeConversation
+            ) {
+
+              state.unsubs.messages?.();
+
+              state.unsubs.messages =
+                null;
+
+              state.activeConversation =
+                null;
+
+              state.messages =
+                [];
+            }
+
+            renderApp();
+          }
+        );
+      }
+    );
+
 
   attachEvents();
 }
 
-function navButton(page, icon, label) {
+
+function navButton(
+  page,
+  icon,
+  label
+) {
   return `
-    <button class="nav-btn ${state.page === page ? "active" : ""}" data-nav="${page}">
-      <span class="nav-icon">${icon}</span>
-      <span>${label}</span>
+    <button
+      class="nav-btn ${
+        state.page === page
+          ? "active"
+          : ""
+      }"
+      data-nav="${page}"
+    >
+      <span class="nav-icon">
+        ${icon}
+      </span>
+
+      <span>
+        ${label}
+      </span>
     </button>
   `;
 }
+
 
 function renderAuth() {
   applyTheme();
 
   root.innerHTML = `
     <div class="auth-shell">
-      <div class="auth-card">
-        <div class="auth-logo">M</div>
 
-        <h1>Marvel Chat</h1>
+      <div class="auth-card">
+
+        <div class="auth-logo">
+          M
+        </div>
+
+        <h1>
+          Marvel Chat
+        </h1>
 
         <p>
           A futuristic community for people to connect, chat,
@@ -158,6 +390,7 @@ function renderAuth() {
         <div id="authMessage"></div>
 
         <div class="segmented">
+
           <button
             class="btn btn-primary"
             id="loginTab"
@@ -173,11 +406,16 @@ function renderAuth() {
           >
             Create account
           </button>
+
         </div>
 
         <form id="authForm">
+
           <div class="field">
-            <label for="authEmail">Email</label>
+
+            <label for="authEmail">
+              Email
+            </label>
 
             <input
               class="input"
@@ -187,12 +425,17 @@ function renderAuth() {
               placeholder="you@example.com"
               required
             >
+
           </div>
 
           <div class="field">
-            <label for="authPassword">Password</label>
+
+            <label for="authPassword">
+              Password
+            </label>
 
             <div style="position:relative;">
+
               <input
                 class="input"
                 id="authPassword"
@@ -228,12 +471,20 @@ function renderAuth() {
               >
                 👁️
               </button>
+
             </div>
           </div>
 
-          <div id="signupFields" class="hidden">
+          <div
+            id="signupFields"
+            class="hidden"
+          >
+
             <div class="field">
-              <label for="authUsername">Username</label>
+
+              <label for="authUsername">
+                Username
+              </label>
 
               <input
                 class="input"
@@ -241,10 +492,14 @@ function renderAuth() {
                 placeholder="Choose a username"
                 autocomplete="username"
               >
+
             </div>
 
             <div class="field">
-              <label for="authDisplayName">Display name</label>
+
+              <label for="authDisplayName">
+                Display name
+              </label>
 
               <input
                 class="input"
@@ -252,7 +507,9 @@ function renderAuth() {
                 placeholder="Your name"
                 autocomplete="name"
               >
+
             </div>
+
           </div>
 
           <button
@@ -262,6 +519,7 @@ function renderAuth() {
           >
             Sign in
           </button>
+
         </form>
 
         <div
@@ -270,101 +528,192 @@ function renderAuth() {
         >
           🚀 Your account is powered by Firebase Authentication.
         </div>
+
       </div>
     </div>
   `;
 
-  let signup = false;
 
-  const loginTab = document.getElementById("loginTab");
-  const signupTab = document.getElementById("signupTab");
-  const signupFields = document.getElementById("signupFields");
-  const submit = document.getElementById("authSubmit");
+  let signup =
+    false;
 
-  const passwordInput = document.getElementById("authPassword");
-  const togglePassword = document.getElementById("togglePassword");
 
-  togglePassword?.addEventListener("click", () => {
-    const isHidden = passwordInput.type === "password";
-
-    passwordInput.type = isHidden ? "text" : "password";
-
-    togglePassword.textContent = isHidden ? "🙈" : "👁️";
-
-    togglePassword.setAttribute(
-      "aria-label",
-      isHidden ? "Hide password" : "Show password"
+  const loginTab =
+    document.getElementById(
+      "loginTab"
     );
 
-    togglePassword.setAttribute(
-      "title",
-      isHidden ? "Hide password" : "Show password"
+  const signupTab =
+    document.getElementById(
+      "signupTab"
     );
-  });
+
+  const signupFields =
+    document.getElementById(
+      "signupFields"
+    );
+
+  const submit =
+    document.getElementById(
+      "authSubmit"
+    );
+
+  const passwordInput =
+    document.getElementById(
+      "authPassword"
+    );
+
+  const togglePassword =
+    document.getElementById(
+      "togglePassword"
+    );
+
+
+  togglePassword?.addEventListener(
+    "click",
+    () => {
+
+      const isHidden =
+        passwordInput.type ===
+        "password";
+
+      passwordInput.type =
+        isHidden
+          ? "text"
+          : "password";
+
+      togglePassword.textContent =
+        isHidden
+          ? "🙈"
+          : "👁️";
+
+      togglePassword.setAttribute(
+        "aria-label",
+        isHidden
+          ? "Hide password"
+          : "Show password"
+      );
+
+      togglePassword.setAttribute(
+        "title",
+        isHidden
+          ? "Hide password"
+          : "Show password"
+      );
+    }
+  );
+
 
   function setMode(v) {
+
     signup = v;
 
-    loginTab.className = v
-      ? "btn btn-ghost"
-      : "btn btn-primary";
+    loginTab.className =
+      v
+        ? "btn btn-ghost"
+        : "btn btn-primary";
 
-    signupTab.className = v
-      ? "btn btn-primary"
-      : "btn btn-ghost";
+    signupTab.className =
+      v
+        ? "btn btn-primary"
+        : "btn btn-ghost";
 
-    signupFields.classList.toggle("hidden", !v);
+    signupFields.classList.toggle(
+      "hidden",
+      !v
+    );
 
-    submit.textContent = v
-      ? "Create account"
-      : "Sign in";
+    submit.textContent =
+      v
+        ? "Create account"
+        : "Sign in";
 
-    passwordInput.autocomplete = v
-      ? "new-password"
-      : "current-password";
+    passwordInput.autocomplete =
+      v
+        ? "new-password"
+        : "current-password";
   }
 
-  loginTab.addEventListener("click", () => setMode(false));
-  signupTab.addEventListener("click", () => setMode(true));
 
-  document.getElementById("authForm").onsubmit = async e => {
+  loginTab.addEventListener(
+    "click",
+    () =>
+      setMode(false)
+  );
+
+  signupTab.addEventListener(
+    "click",
+    () =>
+      setMode(true)
+  );
+
+
+  document.getElementById(
+    "authForm"
+  ).onsubmit = async e => {
+
     e.preventDefault();
 
     const email =
-      document.getElementById("authEmail").value.trim();
+      document
+        .getElementById(
+          "authEmail"
+        )
+        .value
+        .trim();
 
     const password =
       passwordInput.value;
 
     const message =
-      document.getElementById("authMessage");
+      document.getElementById(
+        "authMessage"
+      );
 
-    message.innerHTML = "";
+    message.innerHTML =
+      "";
 
-    submit.disabled = true;
-    submit.textContent = "Connecting…";
+    submit.disabled =
+      true;
+
+    submit.textContent =
+      "Connecting…";
+
 
     try {
+
       if (signup) {
+
         const username =
           document
-            .getElementById("authUsername")
+            .getElementById(
+              "authUsername"
+            )
             .value
             .trim();
 
         const displayName =
           document
-            .getElementById("authDisplayName")
+            .getElementById(
+              "authDisplayName"
+            )
             .value
             .trim();
 
         if (!username) {
-          throw new Error("Username is required.");
+          throw new Error(
+            "Username is required."
+          );
         }
+
 
         const {
           createUserWithEmailAndPassword
-        } = await import("./firebase/auth.js");
+        } =
+          await import(
+            "./firebase/auth.js"
+          );
+
 
         const cred =
           await createUserWithEmailAndPassword(
@@ -373,30 +722,63 @@ function renderAuth() {
             password
           );
 
-        await updateProfile(cred.user, {
-          displayName: displayName || username
-        });
 
-        await setDoc(
-          doc(db, "users", cred.user.uid),
+        await updateProfile(
+          cred.user,
           {
-            uid: cred.user.uid,
-            displayName: displayName || username,
-            username,
-            email,
-            country: "",
-            bio: "",
-            createdAt: serverTimestamp()
-          },
-          { merge: true }
+            displayName:
+              displayName ||
+              username
+          }
         );
 
-        toast("Account created successfully 🚀");
+
+        await setDoc(
+          doc(
+            db,
+            "users",
+            cred.user.uid
+          ),
+          {
+            uid:
+              cred.user.uid,
+
+            displayName:
+              displayName ||
+              username,
+
+            username,
+
+            email,
+
+            country:
+              "",
+
+            bio:
+              "",
+
+            createdAt:
+              serverTimestamp()
+          },
+          {
+            merge: true
+          }
+        );
+
+
+        toast(
+          "Account created successfully 🚀"
+        );
 
       } else {
+
         const {
           signInWithEmailAndPassword
-        } = await import("./firebase/auth.js");
+        } =
+          await import(
+            "./firebase/auth.js"
+          );
+
 
         await signInWithEmailAndPassword(
           auth,
@@ -404,30 +786,47 @@ function renderAuth() {
           password
         );
 
-        toast("Welcome back 👋");
+
+        toast(
+          "Welcome back 👋"
+        );
       }
 
     } catch (err) {
+
       message.innerHTML =
-        `<div class="status error">${escapeHtml(friendly(err))}</div>`;
+        `<div class="status error">${escapeHtml(
+          friendly(err)
+        )}</div>`;
 
     } finally {
-      submit.disabled = false;
 
-      submit.textContent = signup
-        ? "Create account"
-        : "Sign in";
+      submit.disabled =
+        false;
+
+      submit.textContent =
+        signup
+          ? "Create account"
+          : "Sign in";
     }
   };
 }
 
+
 function renderOnboarding() {
+
   root.innerHTML = `
     <div class="auth-shell">
-      <div class="auth-card">
-        <div class="auth-logo">🌍</div>
 
-        <h1>Welcome to Marvel Chat</h1>
+      <div class="auth-card">
+
+        <div class="auth-logo">
+          🌍
+        </div>
+
+        <h1>
+          Welcome to Marvel Chat
+        </h1>
 
         <p>
           One last thing before entering the community:
@@ -435,6 +834,7 @@ function renderOnboarding() {
         </p>
 
         <div class="country-grid">
+
           ${countries
             .map(
               c => `
@@ -442,11 +842,14 @@ function renderOnboarding() {
                   class="country-option"
                   data-country="${c[0]}"
                 >
-                  ${escapeHtml(c[1])}
+                  ${escapeHtml(
+                    c[1]
+                  )}
                 </button>
               `
             )
             .join("")}
+
         </div>
 
         <div
@@ -472,344 +875,713 @@ function renderOnboarding() {
         >
           Sign out
         </button>
+
       </div>
     </div>
   `;
 
-  let selected = "";
+
+  let selected =
+    "";
+
 
   document
-    .querySelectorAll("[data-country]")
-    .forEach(btn => {
-      btn.addEventListener("click", () => {
-        selected = btn.dataset.country;
+    .querySelectorAll(
+      "[data-country]"
+    )
+    .forEach(
+      btn => {
 
-        document
-          .querySelectorAll("[data-country]")
-          .forEach(x => x.classList.remove("selected"));
+        btn.addEventListener(
+          "click",
+          () => {
 
-        btn.classList.add("selected");
+            selected =
+              btn.dataset.country;
 
-        const label =
-          countries.find(x => x[0] === selected)?.[1] ||
-          selected;
+            document
+              .querySelectorAll(
+                "[data-country]"
+              )
+              .forEach(
+                x =>
+                  x.classList.remove(
+                    "selected"
+                  )
+              );
 
-        document.getElementById(
-          "selectedCountry"
-        ).textContent = `Selected: ${label}`;
+            btn.classList.add(
+              "selected"
+            );
 
-        document.getElementById(
-          "continueCountry"
-        ).disabled = false;
-      });
-    });
+            const label =
+              countries.find(
+                x =>
+                  x[0] ===
+                  selected
+              )?.[1] ||
+              selected;
 
-  document
-    .getElementById("continueCountry")
-    .addEventListener("click", async () => {
-      if (!selected) return;
+            document.getElementById(
+              "selectedCountry"
+            ).textContent =
+              `Selected: ${label}`;
 
-      try {
-        await updateDoc(
-          doc(db, "users", state.user.uid),
-          { country: selected }
+            document.getElementById(
+              "continueCountry"
+            ).disabled =
+              false;
+          }
         );
-
-        state.profile.country = selected;
-
-        toast("Welcome to the community 🌍");
-
-        renderApp();
-      } catch (e) {
-        toast(friendly(e));
       }
-    });
+    );
+
 
   document
-    .getElementById("onboardingLogout")
-    .addEventListener("click", () => signOut());
+    .getElementById(
+      "continueCountry"
+    )
+    .addEventListener(
+      "click",
+      async () => {
+
+        if (!selected)
+          return;
+
+        try {
+
+          await updateDoc(
+            doc(
+              db,
+              "users",
+              state.user.uid
+            ),
+            {
+              country:
+                selected
+            }
+          );
+
+          state.profile.country =
+            selected;
+
+          toast(
+            "Welcome to the community 🌍"
+          );
+
+          renderApp();
+
+        } catch (e) {
+
+          toast(
+            friendly(e)
+          );
+        }
+      }
+    );
+
+
+  document
+    .getElementById(
+      "onboardingLogout"
+    )
+    .addEventListener(
+      "click",
+      () =>
+        signOut()
+    );
 }
 
+
 function attachEvents() {
-  if (state.page === "home") {
-    document
-      .getElementById("createPostBtn")
-      ?.addEventListener("click", showCreatePost);
+
+  if (
+    state.page ===
+    "home"
+  ) {
 
     document
-      .getElementById("emptyCreatePost")
-      ?.addEventListener("click", showCreatePost);
-
-    document
-      .querySelectorAll("[data-like]")
-      .forEach(b =>
-        b.addEventListener(
-          "click",
-          () => toggleLike(b.dataset.like)
-        )
+      .getElementById(
+        "createPostBtn"
+      )
+      ?.addEventListener(
+        "click",
+        showCreatePost
       );
 
+
     document
-      .querySelectorAll("[data-comment]")
-      .forEach(b =>
-        b.addEventListener(
-          "click",
-          () => showComments(b.dataset.comment)
-        )
+      .getElementById(
+        "emptyCreatePost"
+      )
+      ?.addEventListener(
+        "click",
+        showCreatePost
       );
 
+
     document
-      .querySelectorAll("[data-share]")
-      .forEach(b =>
-        b.addEventListener(
-          "click",
-          () => sharePost(b.dataset.share)
-        )
+      .querySelectorAll(
+        "[data-like]"
+      )
+      .forEach(
+        b =>
+          b.addEventListener(
+            "click",
+            () =>
+              toggleLike(
+                b.dataset.like
+              )
+          )
       );
 
+
     document
-      .querySelectorAll("[data-save]")
-      .forEach(b =>
-        b.addEventListener(
-          "click",
-          () => savePost(b.dataset.save)
-        )
+      .querySelectorAll(
+        "[data-comment]"
+      )
+      .forEach(
+        b =>
+          b.addEventListener(
+            "click",
+            () =>
+              showComments(
+                b.dataset.comment
+              )
+          )
       );
 
-    document
-      .querySelectorAll(".post-menu-btn")
-      .forEach(btn => {
-        btn.addEventListener("click", e => {
-          e.stopPropagation();
-
-          const postId = btn.dataset.menuPost;
-          const menu =
-            document.getElementById(`postMenu-${postId}`);
-
-          if (menu) {
-            document
-              .querySelectorAll(".dropdown-menu")
-              .forEach(m => {
-                if (m !== menu) {
-                  m.classList.add("hidden");
-                }
-              });
-
-            menu.classList.toggle("hidden");
-          }
-        });
-      });
 
     document
-      .querySelectorAll("[data-edit-post]")
-      .forEach(btn => {
-        btn.addEventListener(
-          "click",
-          () => showEditPost(btn.dataset.editPost)
-        );
-      });
+      .querySelectorAll(
+        "[data-share]"
+      )
+      .forEach(
+        b =>
+          b.addEventListener(
+            "click",
+            () =>
+              sharePost(
+                b.dataset.share
+              )
+          )
+      );
+
 
     document
-      .querySelectorAll("[data-delete-post]")
-      .forEach(btn => {
-        btn.addEventListener(
-          "click",
-          () =>
-            showDeletePostConfirmation(
-              btn.dataset.deletePost
-            )
-        );
-      });
+      .querySelectorAll(
+        "[data-save]"
+      )
+      .forEach(
+        b =>
+          b.addEventListener(
+            "click",
+            () =>
+              savePost(
+                b.dataset.save
+              )
+          )
+      );
+
 
     document
-      .querySelectorAll("[data-quick]")
-      .forEach(b =>
-        b.addEventListener("click", () => {
-          const a = b.dataset.quick;
+      .querySelectorAll(
+        ".post-menu-btn"
+      )
+      .forEach(
+        btn => {
 
-          if (a === "post") {
-            showCreatePost();
-          }
+          btn.addEventListener(
+            "click",
+            e => {
 
-          if (a === "chat") {
-            state.page = "chat";
-            renderApp();
-            setTimeout(showNewChat, 50);
-          }
+              e.stopPropagation();
 
-          if (a === "skill") {
-            showSkillModal("offer");
-          }
+              const postId =
+                btn.dataset.menuPost;
 
-          if (a === "sell") {
-            showSellModal();
-          }
-        })
+              const menu =
+                document.getElementById(
+                  `postMenu-${postId}`
+                );
+
+              if (menu) {
+
+                document
+                  .querySelectorAll(
+                    ".dropdown-menu"
+                  )
+                  .forEach(
+                    m => {
+
+                      if (
+                        m !==
+                        menu
+                      ) {
+                        m.classList.add(
+                          "hidden"
+                        );
+                      }
+                    }
+                  );
+
+                menu.classList.toggle(
+                  "hidden"
+                );
+              }
+            }
+          );
+        }
+      );
+
+
+    document
+      .querySelectorAll(
+        "[data-edit-post]"
+      )
+      .forEach(
+        btn => {
+
+          btn.addEventListener(
+            "click",
+            () =>
+              showEditPost(
+                btn.dataset.editPost
+              )
+          );
+        }
+      );
+
+
+    document
+      .querySelectorAll(
+        "[data-delete-post]"
+      )
+      .forEach(
+        btn => {
+
+          btn.addEventListener(
+            "click",
+            () =>
+              showDeletePostConfirmation(
+                btn.dataset.deletePost
+              )
+          );
+        }
+      );
+
+
+    document
+      .querySelectorAll(
+        "[data-quick]"
+      )
+      .forEach(
+        b => {
+
+          b.addEventListener(
+            "click",
+            () => {
+
+              const a =
+                b.dataset.quick;
+
+
+              if (
+                a ===
+                "post"
+              ) {
+                showCreatePost();
+              }
+
+
+              if (
+                a ===
+                "chat"
+              ) {
+
+                state.page =
+                  "chat";
+
+                renderApp();
+
+                setTimeout(
+                  showNewChat,
+                  50
+                );
+              }
+
+
+              if (
+                a ===
+                "skill"
+              ) {
+                showSkillModal(
+                  "offer"
+                );
+              }
+
+
+              if (
+                a ===
+                "sell"
+              ) {
+                showSellModal();
+              }
+            }
+          );
+        }
       );
   }
 
-  if (state.page === "chat") {
-    if (state.activeConversation) {
-      document
-        .getElementById("backChats")
-        ?.addEventListener("click", () => {
-          state.unsubs.messages?.();
-          state.unsubs.messages = null;
-          state.activeConversation = null;
-          state.messages = [];
-          renderApp();
-        });
+
+  if (
+    state.page ===
+    "chat"
+  ) {
+
+    if (
+      state.activeConversation
+    ) {
 
       document
-        .getElementById("sendMessage")
-        ?.addEventListener("click", sendMessage);
+        .getElementById(
+          "backChats"
+        )
+        ?.addEventListener(
+          "click",
+          () => {
 
-      document
-        .getElementById("messageInput")
-        ?.addEventListener("keydown", e => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            sendMessage();
+            state.unsubs.messages?.();
+
+            state.unsubs.messages =
+              null;
+
+            state.activeConversation =
+              null;
+
+            state.messages =
+              [];
+
+            renderApp();
           }
-        });
-
-      document
-        .querySelectorAll("[data-copy-msg]")
-        .forEach(btn =>
-          btn.addEventListener(
-            "click",
-            () => copyMessage(btn.dataset.copyMsg)
-          )
         );
 
-      document
-        .querySelectorAll("[data-edit-msg]")
-        .forEach(btn =>
-          btn.addEventListener(
-            "click",
-            () => editMessage(btn.dataset.editMsg)
-          )
-        );
 
       document
-        .querySelectorAll("[data-delete-msg]")
-        .forEach(btn =>
-          btn.addEventListener(
-            "click",
-            () => deleteMessage(btn.dataset.deleteMsg)
-          )
+        .getElementById(
+          "sendMessage"
+        )
+        ?.addEventListener(
+          "click",
+          sendMessage
+        );
+
+
+      document
+        .getElementById(
+          "messageInput"
+        )
+        ?.addEventListener(
+          "keydown",
+          e => {
+
+            if (
+              e.key ===
+              "Enter"
+            ) {
+
+              e.preventDefault();
+
+              sendMessage();
+            }
+          }
+        );
+
+
+      document
+        .querySelectorAll(
+          "[data-copy-msg]"
+        )
+        .forEach(
+          btn =>
+            btn.addEventListener(
+              "click",
+              () =>
+                copyMessage(
+                  btn.dataset.copyMsg
+                )
+            )
+        );
+
+
+      document
+        .querySelectorAll(
+          "[data-edit-msg]"
+        )
+        .forEach(
+          btn =>
+            btn.addEventListener(
+              "click",
+              () =>
+                editMessage(
+                  btn.dataset.editMsg
+                )
+            )
+        );
+
+
+      document
+        .querySelectorAll(
+          "[data-delete-msg]"
+        )
+        .forEach(
+          btn =>
+            btn.addEventListener(
+              "click",
+              () =>
+                deleteMessage(
+                  btn.dataset.deleteMsg
+                )
+            )
         );
 
     } else {
+
       document
-        .getElementById("newChatBtn")
+        .getElementById(
+          "newChatBtn"
+        )
         ?.addEventListener(
           "click",
-          () => showNewChat(renderApp)
-        );
-
-      document
-        .getElementById("newChatEmpty")
-        ?.addEventListener(
-          "click",
-          () => showNewChat(renderApp)
-        );
-
-      document
-        .querySelectorAll("[data-conversation]")
-        .forEach(x => {
-          x.addEventListener("click", e => {
-            if (
-              e.target.closest("[data-pin-toggle]")
-            ) {
-              return;
-            }
-
-            openConversation(
-              x.dataset.conversation,
+          () =>
+            showNewChat(
               renderApp
-            );
-          });
-        });
+            )
+        );
+
 
       document
-        .querySelectorAll("[data-pin-toggle]")
-        .forEach(btn => {
-          btn.addEventListener("click", e => {
-            e.stopPropagation();
-            togglePinConversation(
-              btn.dataset.pinToggle
-            );
-          });
-        });
+        .getElementById(
+          "newChatEmpty"
+        )
+        ?.addEventListener(
+          "click",
+          () =>
+            showNewChat(
+              renderApp
+            )
+        );
+
 
       document
-        .getElementById("chatSearch")
-        ?.addEventListener("input", e => {
-          state.chatSearchQuery = e.target.value;
-          renderApp();
-        });
+        .querySelectorAll(
+          "[data-conversation]"
+        )
+        .forEach(
+          x => {
+
+            x.addEventListener(
+              "click",
+              e => {
+
+                if (
+                  e.target.closest(
+                    "[data-pin-toggle]"
+                  )
+                ) {
+                  return;
+                }
+
+                /*
+                 * IMPORTANT:
+                 * Chat menu buttons/options are
+                 * handled by the delegated menu
+                 * listener inside chat.js.
+                 *
+                 * Do not manually handle those
+                 * clicks here.
+                 */
+
+                if (
+                  e.target.closest(
+                    "[data-chat-menu]"
+                  ) ||
+                  e.target.closest(
+                    "[data-chat-action]"
+                  ) ||
+                  e.target.closest(
+                    "[data-chat-options]"
+                  )
+                ) {
+                  return;
+                }
+
+                openConversation(
+                  x.dataset.conversation,
+                  renderApp
+                );
+              }
+            );
+          }
+        );
+
+
+      document
+        .querySelectorAll(
+          "[data-pin-toggle]"
+        )
+        .forEach(
+          btn => {
+
+            btn.addEventListener(
+              "click",
+              e => {
+
+                e.stopPropagation();
+
+                togglePinConversation(
+                  btn.dataset.pinToggle
+                );
+              }
+            );
+          }
+        );
+
+
+      document
+        .getElementById(
+          "chatSearch"
+        )
+        ?.addEventListener(
+          "input",
+          e => {
+
+            state.chatSearchQuery =
+              e.target.value;
+
+            renderApp();
+          }
+        );
     }
   }
 
-  if (state.page === "timetrust") {
-    attachTimeTrustEvents(renderApp);
+
+  if (
+    state.page ===
+    "timetrust"
+  ) {
+    attachTimeTrustEvents(
+      renderApp
+    );
   }
 
-  if (state.page === "market") {
-    attachMarketEvents(renderApp);
+
+  if (
+    state.page ===
+    "market"
+  ) {
+    attachMarketEvents(
+      renderApp
+    );
   }
 
-  if (state.page === "profile") {
+
+  if (
+    state.page ===
+    "profile"
+  ) {
+
     document
-      .getElementById("editProfileBtn")
+      .getElementById(
+        "editProfileBtn"
+      )
       ?.addEventListener(
         "click",
-        () => showEditProfile(renderApp)
+        () =>
+          showEditProfile(
+            renderApp
+          )
       );
 
-    document
-      .getElementById("savedBtn")
-      ?.addEventListener("click", showSaved);
 
     document
-      .getElementById("settingsBtn")
+      .getElementById(
+        "savedBtn"
+      )
       ?.addEventListener(
         "click",
-        () => showSettings(renderApp)
+        showSaved
       );
 
+
     document
-      .getElementById("logoutBtn")
+      .getElementById(
+        "settingsBtn"
+      )
       ?.addEventListener(
         "click",
-        () => signOut()
+        () =>
+          showSettings(
+            renderApp
+          )
+      );
+
+
+    document
+      .getElementById(
+        "logoutBtn"
+      )
+      ?.addEventListener(
+        "click",
+        () =>
+          signOut()
       );
   }
 }
 
-async function startApplication(user) {
-  state.user = user;
+
+async function startApplication(
+  user
+) {
+
+  state.user =
+    user;
 
   try {
-    await loadProfile(user);
-    subscribeAll(renderApp);
+
+    await loadProfile(
+      user
+    );
+
+    subscribeAll(
+      renderApp
+    );
+
     renderApp();
 
   } catch (e) {
+
     root.innerHTML = `
       <div class="auth-shell">
-        <div class="auth-card">
-          <div class="auth-logo">!</div>
 
-          <h1>Connection problem</h1>
+        <div class="auth-card">
+
+          <div class="auth-logo">
+            !
+          </div>
+
+          <h1>
+            Connection problem
+          </h1>
 
           <p>
             Marvel Chat could not load your profile.
           </p>
 
           <div class="status error">
-            ${escapeHtml(friendly(e))}
+            ${escapeHtml(
+              friendly(e)
+            )}
           </div>
 
           <button
@@ -827,114 +1599,235 @@ async function startApplication(user) {
           >
             Sign out
           </button>
+
         </div>
       </div>
     `;
 
-    document
-      .getElementById("retryApp")
-      ?.addEventListener(
-        "click",
-        () => startApplication(user)
-      );
 
     document
-      .getElementById("retryLogout")
-      ?.addEventListener(
-        "click",
-        () => signOut()
-      );
-  }
-}
-
-onAuthStateChanged(auth, async user => {
-  state.user = user;
-
-  if (!user) {
-    Object
-      .values(state.unsubs)
-      .forEach(fn => fn?.());
-
-    state.unsubs = {
-      posts: null,
-      conversations: null,
-      messages: null,
-      skills: null,
-      requests: null,
-      listings: null,
-      notifications: null,
-      preferences: null
-    };
-
-    state.profile = null;
-    state.posts = [];
-    state.conversations = [];
-    state.skills = [];
-    state.requests = [];
-    state.listings = [];
-    state.notifications = [];
-    state.unreadNotificationsCount = 0;
-    state.activeConversation = null;
-    state.messages = [];
-    state.conversationPreferences = {};
-
-    renderAuth();
-    return;
-  }
-
-  await startApplication(user);
-});
-
-window.addEventListener("online", () => {
-  if (state.user) {
-    toast("Back online ⚡");
-    renderApp();
-  }
-});
-
-window.addEventListener("offline", () => {
-  if (state.user) {
-    toast("Offline mode. Some features may be unavailable.");
-    renderApp();
-  }
-});
-
-window.addEventListener("beforeinstallprompt", e => {
-  e.preventDefault();
-  state.installPrompt = e;
-});
-
-window.addEventListener("appinstalled", () => {
-  state.installPrompt = null;
-  toast("MarvelChat installed 📲");
-});
-
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker
-      .register("./serviceworker.js", {
-        scope: "./",
-        updateViaCache: "none"
-      })
-      .then(r =>
-        console.log(
-          "Service worker:",
-          r.scope
-        )
+      .getElementById(
+        "retryApp"
       )
-      .catch(e =>
-        console.warn(
-          "Service worker:",
-          e
-        )
+      ?.addEventListener(
+        "click",
+        () =>
+          startApplication(
+            user
+          )
       );
-  });
+
+
+    document
+      .getElementById(
+        "retryLogout"
+      )
+      ?.addEventListener(
+        "click",
+        () =>
+          signOut()
+      );
+  }
 }
+
+
+onAuthStateChanged(
+  auth,
+  async user => {
+
+    state.user =
+      user;
+
+    if (!user) {
+
+      Object
+        .values(
+          state.unsubs
+        )
+        .forEach(
+          fn =>
+            fn?.()
+        );
+
+
+      state.unsubs = {
+        posts:
+          null,
+
+        conversations:
+          null,
+
+        messages:
+          null,
+
+        skills:
+          null,
+
+        requests:
+          null,
+
+        listings:
+          null,
+
+        notifications:
+          null,
+
+        preferences:
+          null
+      };
+
+
+      state.profile =
+        null;
+
+      state.posts =
+        [];
+
+      state.conversations =
+        [];
+
+      state.skills =
+        [];
+
+      state.requests =
+        [];
+
+      state.listings =
+        [];
+
+      state.notifications =
+        [];
+
+      state.unreadNotificationsCount =
+        0;
+
+      state.activeConversation =
+        null;
+
+      state.messages =
+        [];
+
+      state.conversationPreferences =
+        {};
+
+      renderAuth();
+
+      return;
+    }
+
+
+    await startApplication(
+      user
+    );
+  }
+);
+
+
+window.addEventListener(
+  "online",
+  () => {
+
+    if (state.user) {
+
+      toast(
+        "Back online ⚡"
+      );
+
+      renderApp();
+    }
+  }
+);
+
+
+window.addEventListener(
+  "offline",
+  () => {
+
+    if (state.user) {
+
+      toast(
+        "Offline mode. Some features may be unavailable."
+      );
+
+      renderApp();
+    }
+  }
+);
+
+
+window.addEventListener(
+  "beforeinstallprompt",
+  e => {
+
+    e.preventDefault();
+
+    state.installPrompt =
+      e;
+  }
+);
+
+
+window.addEventListener(
+  "appinstalled",
+  () => {
+
+    state.installPrompt =
+      null;
+
+    toast(
+      "MarvelChat installed 📲"
+    );
+  }
+);
+
+
+if (
+  "serviceWorker" in
+  navigator
+) {
+
+  window.addEventListener(
+    "load",
+    () => {
+
+      navigator.serviceWorker
+        .register(
+          "./serviceworker.js",
+          {
+            scope: "./",
+            updateViaCache:
+              "none"
+          }
+        )
+        .then(
+          r =>
+            console.log(
+              "Service worker:",
+              r.scope
+            )
+        )
+        .catch(
+          e =>
+            console.warn(
+              "Service worker:",
+              e
+            )
+        );
+    }
+  );
+}
+
 
 const startupStatus =
-  document.getElementById("startupStatus");
+  document.getElementById(
+    "startupStatus"
+  );
 
-if (startupStatus) {
+
+if (
+  startupStatus
+) {else 
+
   startupStatus.textContent =
     "Initializing the MarvelChat universe…";
 }
