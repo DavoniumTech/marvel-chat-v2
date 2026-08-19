@@ -2065,16 +2065,25 @@ export function renderConversation() {
 /* =========================================================
    CHAT LIST MENU EVENT DELEGATION
    =========================================================
-   This is the corrected version of the existing
-   three-dot chat menu system.
+   FIX:
+   The menu is handled here through one document-level
+   delegated click listener.
 
-   IMPORTANT:
-   - No Firebase structure changes.
-   - No Firestore collection changes.
-   - No message structure changes.
-   - No offline persistence changes.
-   - No UI redesign.
-   - No global undefined renderApp reference.
+   The old capture-phase guard that called
+   stopPropagation() BEFORE this listener could run
+   has been removed.
+
+   This allows:
+   - three-dot menu opening
+   - Pin / Unpin
+   - Copy all chat
+   - Delete chat
+
+   No Firebase structure changes.
+   No Firestore collection changes.
+   No message structure changes.
+   No offline persistence changes.
+   No UI redesign.
    ========================================================= */
 
 if (
@@ -2379,44 +2388,6 @@ if (
 
 
 /* =========================================================
-   PREVENT CHAT MENU FROM OPENING THE CONVERSATION
-   ========================================================= */
-
-if (
-  !window.__marvelChatContainerGuardInstalledV2
-) {
-  window.__marvelChatContainerGuardInstalledV2 =
-    true;
-
-  document.addEventListener(
-    "click",
-    event => {
-
-      const menuButton =
-        event.target.closest(
-          "[data-chat-menu]"
-        );
-
-      const menuOption =
-        event.target.closest(
-          "[data-chat-action]"
-        );
-
-      if (
-        menuButton ||
-        menuOption
-      ) {
-        event.preventDefault();
-        event.stopPropagation();
-      }
-
-    },
-    true
-  );
-}
-
-
-/* =========================================================
    END OF CHAT.JS
    =========================================================
 
@@ -2430,11 +2401,8 @@ if (
    renderApp belongs to app.js and is passed into the
    exported chat functions when needed.
 
-   The previous line caused:
-
-       ReferenceError:
-       renderApp is not defined
-
-   during module initialization.
+   The conflicting capture-phase menu guard has also
+   intentionally been removed because it prevented the
+   delegated menu listener above from receiving the click.
 
    ========================================================= */
