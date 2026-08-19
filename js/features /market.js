@@ -215,7 +215,7 @@ export function showSellModal(renderApp, existingListing = null) {
 
       <div class="field">
         <label>Location / City</label>
-        <input class="input" id="listingLocation" value="${escapeHtml(existingListing?.location || "")}" placeholder="e.g. Ikeja, Lagos">
+        <input class="input" id="listingLocation" value="${escapeHtml(existingListing?.location || "")}" placeholder="e.g. Kano, Nigeria ">
       </div>
 
       <button class="btn btn-primary btn-block" id="publishListing">
