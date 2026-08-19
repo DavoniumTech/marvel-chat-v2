@@ -63,7 +63,7 @@ export function showSettings(renderApp) {
         <div class="feature-icon">🔐</div>
         <div>
           <strong>Security</strong>
-          <div class="small">Authentication is handled by Firebase Authentication. Community data is stored through Cloud Firestore according to your Firebase security rules.</div>
+          <div class="small">Authentication is handled by Firebase Authentication. Community data is stored through Cloud Firestore.</div>
         </div>
       </div>
       <div class="feature-line">
