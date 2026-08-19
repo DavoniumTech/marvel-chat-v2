@@ -217,7 +217,7 @@ self.addEventListener(
       './assets/icon-192.png';
 
     let targetUrl =
-      'https://devonim.github.io/marvel-chat-v2/';
+      'https://davoniumtech.github.io/marvel-chat-v2/';
 
 
     try {
@@ -341,7 +341,7 @@ self.addEventListener(
 
     const clickTargetUrl =
       event.notification.data?.url ||
-      'https://devonim.github.io/marvel-chat-v2/';
+      'https://davoniumtech.github.io/marvel-chat-v2/';
 
 
     event.waitUntil(
@@ -359,7 +359,7 @@ self.addEventListener(
 
           if (
             client.url.startsWith(
-              'https://devonim.github.io/marvel-chat-v2/'
+              'https://davoniumtech.github.io/marvel-chat-v2/' 
             ) &&
             'focus' in client
           ) {
