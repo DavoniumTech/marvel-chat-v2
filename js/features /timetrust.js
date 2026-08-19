@@ -327,9 +327,21 @@ export function showSkillDetails(item, renderApp) {
         if (!userSnap.empty) {
           profile = { id: userSnap.docs[0].id, ...userSnap.docs[0].data() };
         }
+
+        await addDoc(collection(db, "users", targetUid, "notifications"), {
+          actorUid: state.user.uid,
+          actorName: state.profile?.displayName || state.profile?.username || "A community member",
+          text: `is interested in your TimeTrust skill offer "${item.title}" ⏱️`,
+          type: "timetrust_interest",
+          skillId: item.id,
+          skillTitle: item.title,
+          read: false,
+          createdAt: serverTimestamp()
+        });
         
         closeModal();
         await createConversation(profile, renderApp);
+        toast(`Interest sent to @${item.username} ⏱️`);
       } catch (e) {
         console.error("CONNECT PROVIDER ERROR:", e);
         toast("Could not open this conversation. Please try again.");
