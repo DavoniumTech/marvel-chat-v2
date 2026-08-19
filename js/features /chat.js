@@ -1611,275 +1611,323 @@ export function renderConversation() {
   `;
 }
 
-
 /* =========================================================
-   CHAT LIST EVENT DELEGATION
+   CHAT LIST MENU EVENT DELEGATION
    =========================================================
-   This is intentionally installed once.
-   It means app.js does NOT need a new chat-menu listener
-   just for these new menu actions.
+   Surgical replacement for the chat-list three-dot menu.
+
+   IMPORTANT:
+   - Does not change Firebase structure.
+   - Does not change message functionality.
+   - Does not change conversation creation.
+   - Does not change the existing chat container.
+   - The normal chat container still opens the conversation.
+   - The three-dot button only controls the menu.
    ========================================================= */
 
-if (!window.__marvelChatListMenuInstalled) {
-  window.__marvelChatListMenuInstalled = true;
+if (!window.__marvelChatListMenuInstalledV2) {
+  window.__marvelChatListMenuInstalledV2 = true;
 
-  document.addEventListener(
-    "click",
-    async event => {
+  document.addEventListener("click", async event => {
 
-      /* -----------------------------------------
-         THREE DOTS BUTTON
-         ----------------------------------------- */
+    /* =====================================================
+       1. THREE-DOT BUTTON
+       ===================================================== */
 
-      const menuButton =
-        event.target.closest(
-          "[data-chat-menu]"
+    const menuButton = event.target.closest(
+      "[data-chat-menu]"
+    );
+
+    if (menuButton) {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const conversationId =
+        menuButton.dataset.chatMenu;
+
+      const menu = document.querySelector(
+        `[data-chat-options="${CSS.escape(conversationId)}"]`
+      );
+
+      if (!menu) {
+        console.warn(
+          "Chat menu not found:",
+          conversationId
         );
-
-      if (menuButton) {
-        event.stopPropagation();
-
-        const conversationId =
-          menuButton.dataset.chatMenu;
-
-        const menu =
-          document.querySelector(
-            `[data-chat-options="${CSS.escape(
-              conversationId
-            )}"]`
-          );
-
-        if (!menu) {
-          return;
-        }
-
-        const currentlyOpen =
-          menu.style.display === "block";
-
-        /*
-         * Close every other menu first.
-         */
-        document
-          .querySelectorAll(
-            "[data-chat-options]"
-          )
-          .forEach(m => {
-            m.style.display = "none";
-          });
-
-        document
-          .querySelectorAll(
-            "[data-chat-menu]"
-          )
-          .forEach(btn => {
-            btn.setAttribute(
-              "aria-expanded",
-              "false"
-            );
-          });
-
-        if (!currentlyOpen) {
-          menu.style.display = "block";
-
-          menuButton.setAttribute(
-            "aria-expanded",
-            "true"
-          );
-        }
-
         return;
       }
 
+      const isOpen =
+        menu.getAttribute("data-open") === "true";
 
-      /* -----------------------------------------
-         MENU OPTION
-         ----------------------------------------- */
+      /*
+       * Close every chat menu first.
+       */
+      document
+        .querySelectorAll("[data-chat-options]")
+        .forEach(otherMenu => {
+          otherMenu.style.display = "none";
+          otherMenu.setAttribute(
+            "data-open",
+            "false"
+          );
+        });
 
-      const option =
-        event.target.closest(
-          "[data-chat-action]"
+      document
+        .querySelectorAll("[data-chat-menu]")
+        .forEach(button => {
+          button.setAttribute(
+            "aria-expanded",
+            "false"
+          );
+        });
+
+      /*
+       * If this menu was closed, open it.
+       */
+      if (!isOpen) {
+        menu.style.display = "block";
+        menu.setAttribute(
+          "data-open",
+          "true"
         );
 
-      if (option) {
-        event.stopPropagation();
+        menuButton.setAttribute(
+          "aria-expanded",
+          "true"
+        );
+      }
 
-        const action =
-          option.dataset.chatAction;
-
-        const conversationId =
-          option.dataset.chatId;
-
-        /*
-         * Close menu immediately.
-         */
-        document
-          .querySelectorAll(
-            "[data-chat-options]"
-          )
-          .forEach(m => {
-            m.style.display = "none";
-          });
-
-        document
-          .querySelectorAll(
-            "[data-chat-menu]"
-          )
-          .forEach(btn => {
-            btn.setAttribute(
-              "aria-expanded",
-              "false"
-            );
-          });
+      return;
+    }
 
 
-        if (action === "pin") {
+    /* =====================================================
+       2. MENU ACTION
+       ===================================================== */
+
+    const option = event.target.closest(
+      "[data-chat-action]"
+    );
+
+    if (option) {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const action =
+        option.dataset.chatAction;
+
+      const conversationId =
+        option.dataset.chatId;
+
+      if (!conversationId) {
+        return;
+      }
+
+      /*
+       * Close the menu immediately.
+       */
+      document
+        .querySelectorAll("[data-chat-options]")
+        .forEach(menu => {
+          menu.style.display = "none";
+          menu.setAttribute(
+            "data-open",
+            "false"
+          );
+        });
+
+      document
+        .querySelectorAll("[data-chat-menu]")
+        .forEach(button => {
+          button.setAttribute(
+            "aria-expanded",
+            "false"
+          );
+        });
+
+
+      /* ===================================================
+         PIN / UNPIN
+         =================================================== */
+
+      if (action === "pin") {
+        try {
           await togglePinConversation(
             conversationId
           );
 
           /*
-           * Re-render the current chat page
-           * so Pin becomes Unpin immediately.
+           * Re-render the chat list directly.
+           *
+           * This does NOT create a new Firebase listener.
+           * It only redraws the existing application UI.
            */
           if (
             state.page === "chat" &&
             !state.activeConversation
           ) {
             const root =
-              document.getElementById(
-                "root"
-              );
+              document.getElementById("root");
 
             if (root) {
               /*
-               * Locate app controller indirectly
-               * through the existing navigation.
-               * The next state update will also keep
-               * the data correct.
+               * app.js owns renderApp().
+               * We retrieve it from the current
+               * application instance if available.
                */
-              window.dispatchEvent(
-                new CustomEvent(
-                  "marvel-chat-refresh"
-                )
-              );
-            }
-          }
-
-          return;
-        }
-
-
-        if (action === "copy") {
-          await copyAllChat(
-            conversationId
-          );
-
-          return;
-        }
-
-
-        if (action === "delete") {
-          /*
-           * renderApp is not directly available
-           * inside this global listener.
-           *
-           * The conversation is removed from the
-           * visible state immediately and the normal
-           * application listener will reflect it.
-           */
-          await deleteChat(
-            conversationId,
-            () => {
-              const root =
-                document.getElementById(
-                  "root"
-                );
-
               if (
-                root &&
-                state.page === "chat" &&
-                !state.activeConversation
+                typeof window.renderApp ===
+                "function"
               ) {
-                /*
-                 * The app's normal rendering lifecycle
-                 * remains untouched.
-                 */
-                window.dispatchEvent(
-                  new CustomEvent(
-                    "marvel-chat-refresh"
-                  )
-                );
+                window.renderApp();
               }
             }
+          }
+        } catch (e) {
+          console.error(
+            "CHAT PIN ACTION ERROR:",
+            e
           );
 
-          return;
+          toast(
+            "Could not update chat pin."
+          );
         }
 
         return;
       }
 
 
-      /* -----------------------------------------
-         CLICK OUTSIDE MENU
-         ----------------------------------------- */
+      /* ===================================================
+         COPY ALL CHAT
+         =================================================== */
 
-      if (
-        !event.target.closest(
-          "[data-chat-options]"
-        )
-      ) {
-        document
-          .querySelectorAll(
-            "[data-chat-options]"
-          )
-          .forEach(menu => {
-            menu.style.display = "none";
-          });
+      if (action === "copy") {
+        try {
+          await copyAllChat(
+            conversationId
+          );
+        } catch (e) {
+          console.error(
+            "CHAT COPY ACTION ERROR:",
+            e
+          );
 
-        document
-          .querySelectorAll(
-            "[data-chat-menu]"
-          )
-          .forEach(btn => {
-            btn.setAttribute(
-              "aria-expanded",
-              "false"
-            );
-          });
+          toast(
+            "Could not copy the chat."
+          );
+        }
+
+        return;
       }
 
+
+      /* ===================================================
+         DELETE CHAT
+         =================================================== */
+
+      if (action === "delete") {
+        try {
+          /*
+           * deleteChat already displays the
+           * confirmation modal.
+           */
+          await deleteChat(
+            conversationId,
+            () => {
+              if (
+                typeof window.renderApp ===
+                "function"
+              ) {
+                window.renderApp();
+              }
+            }
+          );
+        } catch (e) {
+          console.error(
+            "CHAT DELETE ACTION ERROR:",
+            e
+          );
+
+          toast(
+            "Could not delete chat."
+          );
+        }
+
+        return;
+      }
+
+      return;
     }
-  );
+
+
+    /* =====================================================
+       3. CLICK OUTSIDE
+       ===================================================== */
+
+    if (
+      !event.target.closest(
+        "[data-chat-options]"
+      )
+    ) {
+      document
+        .querySelectorAll(
+          "[data-chat-options]"
+        )
+        .forEach(menu => {
+          menu.style.display = "none";
+          menu.setAttribute(
+            "data-open",
+            "false"
+          );
+        });
+
+      document
+        .querySelectorAll(
+          "[data-chat-menu]"
+        )
+        .forEach(button => {
+          button.setAttribute(
+            "aria-expanded",
+            "false"
+          );
+        });
+    }
+
+  });
 }
 
 
 /* =========================================================
-   PREVENT MENU CLICKS FROM OPENING CHAT
+   PREVENT CHAT MENU FROM OPENING THE CONVERSATION
    ========================================================= */
 
-if (!window.__marvelChatContainerGuardInstalled) {
-  window.__marvelChatContainerGuardInstalled = true;
+if (!window.__marvelChatContainerGuardInstalledV2) {
+  window.__marvelChatContainerGuardInstalledV2 = true;
 
   document.addEventListener(
     "click",
     event => {
-      const insideMenu =
-        event.target.closest(
-          "[data-chat-options]"
-        );
 
       const menuButton =
         event.target.closest(
           "[data-chat-menu]"
         );
 
+      const menuOption =
+        event.target.closest(
+          "[data-chat-action]"
+        );
+
       if (
-        insideMenu ||
-        menuButton
+        menuButton ||
+        menuOption
       ) {
+        event.preventDefault();
         event.stopPropagation();
       }
+
     },
     true
   );
@@ -1887,28 +1935,16 @@ if (!window.__marvelChatContainerGuardInstalled) {
 
 
 /* =========================================================
-   OPTIONAL APP REFRESH BRIDGE
+   OPTIONAL GLOBAL RENDER BRIDGE
+   =========================================================
+   app.js can expose renderApp() here without changing
+   any of its existing application logic.
    ========================================================= */
 
-if (!window.__marvelChatRefreshBridgeInstalled) {
-  window.__marvelChatRefreshBridgeInstalled = true;
-
-  window.addEventListener(
-    "marvel-chat-refresh",
-    () => {
-      /*
-       * app.js already owns renderApp().
-       *
-       * If app.js exposes renderApp globally,
-       * use it. Otherwise the current state remains
-       * correct and the next normal render reflects it.
-       */
-      if (
-        typeof window.renderApp ===
-        "function"
-      ) {
-        window.renderApp();
-      }
-    }
-  );
+if (
+  typeof window.renderApp !== "function"
+) {
+  window.renderApp = renderApp;
 }
+           
+
