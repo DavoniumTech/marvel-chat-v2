@@ -1,13 +1,67 @@
-import { state, escapeHtml, initials, formatDate, friendly } from "../state.js";
-import { db, collection, doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc, query, where, orderBy, limit, getDocs, onSnapshot, serverTimestamp } from "../firebase/firestore.js";
-import { showModal, closeModal } from "../components/modal.js";
-import { toast } from "../components/toast.js";
+import {
+  state,
+  escapeHtml,
+  initials,
+  formatDate,
+  friendly
+} from "../state.js";
+
+import {
+  db,
+  collection,
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  addDoc,
+  query,
+  where,
+  orderBy,
+  limit,
+  getDocs,
+  onSnapshot,
+  serverTimestamp
+} from "../firebase/firestore.js";
+
+import {
+  showModal,
+  closeModal
+} from "../components/modal.js";
+
+import {
+  toast
+} from "../components/toast.js";
+
+
+/* =========================================================
+   INTERNAL APP RENDER BRIDGE
+   =========================================================
+   app.js owns renderApp().
+
+   chat.js receives renderApp() as a function argument.
+   We remember the latest valid function here so the
+   document-level chat menu event delegation can use it.
+
+   IMPORTANT:
+   This does NOT create a new render system.
+   It does NOT replace app.js.
+   It does NOT expose an undefined renderApp variable.
+   ========================================================= */
+
+let currentRenderApp = null;
+
 
 /* =========================================================
    NEW CHAT
    ========================================================= */
 
 export function showNewChat(renderApp) {
+  currentRenderApp =
+    typeof renderApp === "function"
+      ? renderApp
+      : currentRenderApp;
+
   showModal(
     "Start a new chat",
     `
@@ -15,92 +69,195 @@ export function showNewChat(renderApp) {
         <label>Enter the person's username</label>
         <input class="input" id="chatUsername" placeholder="username">
       </div>
-      <button class="btn btn-primary btn-block" id="findChatUser">Find user</button>
-      <div id="chatUserResult" style="margin-top:14px"></div>
+
+      <button
+        class="btn btn-primary btn-block"
+        id="findChatUser"
+      >
+        Find user
+      </button>
+
+      <div
+        id="chatUserResult"
+        style="margin-top:14px"
+      ></div>
     `
   );
 
-  document.getElementById("findChatUser")?.addEventListener("click", async () => {
-    const username = document.getElementById("chatUsername").value.trim();
-    const result = document.getElementById("chatUserResult");
+  document
+    .getElementById("findChatUser")
+    ?.addEventListener(
+      "click",
+      async () => {
+        const username =
+          document
+            .getElementById("chatUsername")
+            ?.value
+            .trim();
 
-    if (!username) {
-      result.innerHTML = `<div class="status error">Enter a username.</div>`;
-      return;
-    }
+        const result =
+          document.getElementById(
+            "chatUserResult"
+          );
 
-    result.innerHTML = `<div class="empty">Searching…</div>`;
-
-    try {
-      const snap = await getDocs(
-        query(
-          collection(db, "users"),
-          where("username", "==", username),
-          limit(5)
-        )
-      );
-
-      if (snap.empty) {
-        result.innerHTML = `<div class="empty">No user found.</div>`;
-        return;
-      }
-
-      result.innerHTML = snap.docs
-        .filter(d => d.id !== state.user.uid)
-        .map(d => {
-          const u = { id: d.id, ...d.data() };
-
-          return `
-            <div class="list-item">
-              <div class="profile-row">
-                <div class="avatar">
-                  ${escapeHtml(initials(u.displayName || u.username))}
-                </div>
-
-                <div class="profile-meta">
-                  <strong>${escapeHtml(u.displayName || u.username || "User")}</strong>
-                  <span class="small">@${escapeHtml(u.username || "")}</span>
-                </div>
-
-                <button class="btn btn-primary" data-start-chat="${u.id}">
-                  Chat
-                </button>
-              </div>
-            </div>
-          `;
-        })
-        .join("");
-
-      result.querySelectorAll("[data-start-chat]").forEach(btn => {
-        btn.addEventListener("click", async () => {
-          const uid = btn.dataset.startChat;
-
-          try {
-            const profileSnap = await getDoc(doc(db, "users", uid));
-
-            if (!profileSnap.exists()) {
-              toast("User profile disappeared.");
-              return;
-            }
-
-            await createConversation(
-              { uid, ...profileSnap.data() },
-              renderApp
-            );
-          } catch (e) {
-            console.error("START CHAT ERROR:", e);
-            toast(friendly(e));
+        if (!username) {
+          if (result) {
+            result.innerHTML =
+              `<div class="status error">Enter a username.</div>`;
           }
-        });
-      });
-    } catch (e) {
-      result.innerHTML = `
-        <div class="status error">
-          ${escapeHtml(friendly(e))}
-        </div>
-      `;
-    }
-  });
+          return;
+        }
+
+        if (result) {
+          result.innerHTML =
+            `<div class="empty">Searching…</div>`;
+        }
+
+        try {
+          const snap =
+            await getDocs(
+              query(
+                collection(db, "users"),
+                where(
+                  "username",
+                  "==",
+                  username
+                ),
+                limit(5)
+              )
+            );
+
+          if (snap.empty) {
+            if (result) {
+              result.innerHTML =
+                `<div class="empty">No user found.</div>`;
+            }
+            return;
+          }
+
+          if (result) {
+            result.innerHTML =
+              snap.docs
+                .filter(
+                  d =>
+                    d.id !==
+                    state.user.uid
+                )
+                .map(d => {
+                  const u = {
+                    id: d.id,
+                    ...d.data()
+                  };
+
+                  return `
+                    <div class="list-item">
+                      <div class="profile-row">
+
+                        <div class="avatar">
+                          ${escapeHtml(
+                            initials(
+                              u.displayName ||
+                              u.username
+                            )
+                          )}
+                        </div>
+
+                        <div class="profile-meta">
+                          <strong>
+                            ${escapeHtml(
+                              u.displayName ||
+                              u.username ||
+                              "User"
+                            )}
+                          </strong>
+
+                          <span class="small">
+                            @${escapeHtml(
+                              u.username ||
+                              ""
+                            )}
+                          </span>
+                        </div>
+
+                        <button
+                          class="btn btn-primary"
+                          data-start-chat="${escapeHtml(
+                            u.id
+                          )}"
+                        >
+                          Chat
+                        </button>
+
+                      </div>
+                    </div>
+                  `;
+                })
+                .join("");
+          }
+
+          result
+            ?.querySelectorAll(
+              "[data-start-chat]"
+            )
+            .forEach(btn => {
+              btn.addEventListener(
+                "click",
+                async () => {
+                  const uid =
+                    btn.dataset.startChat;
+
+                  try {
+                    const profileSnap =
+                      await getDoc(
+                        doc(
+                          db,
+                          "users",
+                          uid
+                        )
+                      );
+
+                    if (
+                      !profileSnap.exists()
+                    ) {
+                      toast(
+                        "User profile disappeared."
+                      );
+                      return;
+                    }
+
+                    await createConversation(
+                      {
+                        uid,
+                        ...profileSnap.data()
+                      },
+                      renderApp
+                    );
+                  } catch (e) {
+                    console.error(
+                      "START CHAT ERROR:",
+                      e
+                    );
+
+                    toast(
+                      friendly(e)
+                    );
+                  }
+                }
+              );
+            });
+        } catch (e) {
+          if (result) {
+            result.innerHTML = `
+              <div class="status error">
+                ${escapeHtml(
+                  friendly(e)
+                )}
+              </div>
+            `;
+          }
+        }
+      }
+    );
 }
 
 
@@ -108,77 +265,124 @@ export function showNewChat(renderApp) {
    CREATE CONVERSATION
    ========================================================= */
 
-export async function createConversation(other, renderApp) {
+export async function createConversation(
+  other,
+  renderApp
+) {
+  currentRenderApp =
+    typeof renderApp === "function"
+      ? renderApp
+      : currentRenderApp;
+
   try {
-    const existing = state.conversations.find(c =>
-      Array.isArray(c.participants) &&
-      c.participants.length === 2 &&
-      c.participants.includes(state.user.uid) &&
-      c.participants.includes(other.uid)
-    );
+    const existing =
+      state.conversations.find(
+        c =>
+          Array.isArray(
+            c.participants
+          ) &&
+          c.participants.length === 2 &&
+          c.participants.includes(
+            state.user.uid
+          ) &&
+          c.participants.includes(
+            other.uid
+          )
+      );
 
     if (existing) {
       /*
-       * If this conversation was previously hidden by the user,
-       * restore it when they intentionally start the chat again.
+       * If this conversation was previously
+       * hidden by the user, restore it when
+       * they intentionally start the chat again.
        */
+
       const existingPref =
-        state.conversationPreferences[existing.id] || {};
+        state.conversationPreferences[
+          existing.id
+        ] || {};
 
       if (existingPref.deleted) {
-        const prefRef = doc(
-          db,
-          "users",
-          state.user.uid,
-          "conversationPreferences",
-          existing.id
-        );
+        const prefRef =
+          doc(
+            db,
+            "users",
+            state.user.uid,
+            "conversationPreferences",
+            existing.id
+          );
 
         await setDoc(
           prefRef,
           {
             deleted: false,
-            updatedAt: serverTimestamp()
+            updatedAt:
+              serverTimestamp()
           },
           { merge: true }
         );
 
-        state.conversationPreferences[existing.id] = {
+        state.conversationPreferences[
+          existing.id
+        ] = {
           ...existingPref,
           deleted: false
         };
       }
 
       closeModal();
-      await openConversation(existing, renderApp);
+
+      await openConversation(
+        existing,
+        renderApp
+      );
+
       return;
     }
 
-    const ref = await addDoc(collection(db, "conversations"), {
-      participants: [state.user.uid, other.uid],
+    const ref =
+      await addDoc(
+        collection(
+          db,
+          "conversations"
+        ),
+        {
+          participants: [
+            state.user.uid,
+            other.uid
+          ],
 
-      participantProfiles: {
-        [state.user.uid]: {
-          displayName:
-            state.profile.displayName ||
-            state.profile.username ||
-            "User",
-          username: state.profile.username || ""
-        },
+          participantProfiles: {
+            [state.user.uid]: {
+              displayName:
+                state.profile.displayName ||
+                state.profile.username ||
+                "User",
 
-        [other.uid]: {
-          displayName:
-            other.displayName ||
-            other.username ||
-            "User",
-          username: other.username || ""
+              username:
+                state.profile.username ||
+                ""
+            },
+
+            [other.uid]: {
+              displayName:
+                other.displayName ||
+                other.username ||
+                "User",
+
+              username:
+                other.username ||
+                ""
+            }
+          },
+
+          lastMessage: "",
+          updatedAt:
+            serverTimestamp(),
+          createdAt:
+            serverTimestamp()
         }
-      },
-
-      lastMessage: "",
-      updatedAt: serverTimestamp(),
-      createdAt: serverTimestamp()
-    });
+      );
 
     const localConversation = {
       id: ref.id,
@@ -194,7 +398,10 @@ export async function createConversation(other, renderApp) {
             state.profile.displayName ||
             state.profile.username ||
             "User",
-          username: state.profile.username || ""
+
+          username:
+            state.profile.username ||
+            ""
         },
 
         [other.uid]: {
@@ -202,7 +409,10 @@ export async function createConversation(other, renderApp) {
             other.displayName ||
             other.username ||
             "User",
-          username: other.username || ""
+
+          username:
+            other.username ||
+            ""
         }
       },
 
@@ -213,15 +423,28 @@ export async function createConversation(other, renderApp) {
 
     state.conversations = [
       localConversation,
-      ...state.conversations.filter(c => c.id !== ref.id)
+      ...state.conversations.filter(
+        c =>
+          c.id !==
+          ref.id
+      )
     ];
 
     closeModal();
 
-    await openConversation(localConversation, renderApp);
+    await openConversation(
+      localConversation,
+      renderApp
+    );
   } catch (e) {
-    console.error("CREATE CONVERSATION ERROR:", e);
-    toast(friendly(e));
+    console.error(
+      "CREATE CONVERSATION ERROR:",
+      e
+    );
+
+    toast(
+      friendly(e)
+    );
   }
 }
 
@@ -230,48 +453,74 @@ export async function createConversation(other, renderApp) {
    OPEN CONVERSATION
    ========================================================= */
 
-export async function openConversation(conversation, renderApp) {
+export async function openConversation(
+  conversation,
+  renderApp
+) {
+  currentRenderApp =
+    typeof renderApp === "function"
+      ? renderApp
+      : currentRenderApp;
+
   let c =
     typeof conversation === "string"
-      ? state.conversations.find(x => x.id === conversation)
+      ? state.conversations.find(
+          x =>
+            x.id ===
+            conversation
+        )
       : conversation;
 
   if (!c) {
-    toast("Conversation could not be opened.");
+    toast(
+      "Conversation could not be opened."
+    );
     return;
   }
 
   /*
-   * Opening a conversation means the user intentionally wants
-   * to see it again, so restore it if it was hidden.
+   * Opening a conversation means the user
+   * intentionally wants to see it again,
+   * so restore it if it was hidden.
    */
-  const pref = state.conversationPreferences[c.id];
+
+  const pref =
+    state.conversationPreferences[
+      c.id
+    ];
 
   if (pref?.deleted) {
-    const prefRef = doc(
-      db,
-      "users",
-      state.user.uid,
-      "conversationPreferences",
-      c.id
-    );
+    const prefRef =
+      doc(
+        db,
+        "users",
+        state.user.uid,
+        "conversationPreferences",
+        c.id
+      );
 
     try {
       await setDoc(
         prefRef,
         {
           deleted: false,
-          updatedAt: serverTimestamp()
+          updatedAt:
+            serverTimestamp()
         },
         { merge: true }
       );
 
-      state.conversationPreferences[c.id] = {
+      state.conversationPreferences[
+        c.id
+      ] = {
         ...pref,
         deleted: false
       };
     } catch (e) {
-      console.warn("Could not restore conversation:", e);
+      console.warn(
+        "Could not restore conversation:",
+        e
+      );
     }
   }
 
@@ -281,81 +530,141 @@ export async function openConversation(conversation, renderApp) {
   state.unsubs.messages?.();
   state.unsubs.messages = null;
 
-  state.unsubs.messages = onSnapshot(
-    query(
-      collection(
-        db,
-        "conversations",
-        c.id,
-        "messages"
+  state.unsubs.messages =
+    onSnapshot(
+      query(
+        collection(
+          db,
+          "conversations",
+          c.id,
+          "messages"
+        ),
+        orderBy(
+          "createdAt",
+          "asc"
+        ),
+        limit(100)
       ),
-      orderBy("createdAt", "asc"),
-      limit(100)
-    ),
 
-    snap => {
-      state.messages = snap.docs.map(d => ({
-        id: d.id,
-        ...d.data()
-      }));
-
-      const latest =
-        state.messages[state.messages.length - 1];
-
-      if (latest) {
-        const index =
-          state.conversations.findIndex(
-            x => x.id === c.id
+      snap => {
+        state.messages =
+          snap.docs.map(
+            d => ({
+              id: d.id,
+              ...d.data()
+            })
           );
 
-        if (index >= 0) {
-          state.conversations[index] = {
-            ...state.conversations[index],
-            lastMessage: latest.text || "",
-            updatedAt: latest.createdAt || null
-          };
+        const latest =
+          state.messages[
+            state.messages.length - 1
+          ];
 
-          state.activeConversation =
-            state.conversations[index];
-        }
-      }
+        if (latest) {
+          const index =
+            state.conversations.findIndex(
+              x =>
+                x.id ===
+                c.id
+            );
 
-      if (state.page === "chat") {
-        renderApp();
+          if (index >= 0) {
+            state.conversations[
+              index
+            ] = {
+              ...state.conversations[
+                index
+              ],
 
-        setTimeout(() => {
-          const el =
-            document.getElementById("messages");
+              lastMessage:
+                latest.text ||
+                "",
 
-          if (el) {
-            el.scrollTop = el.scrollHeight;
+              updatedAt:
+                latest.createdAt ||
+                null
+            };
+
+            state.activeConversation =
+              state.conversations[
+                index
+              ];
           }
-        }, 50);
+        }
+
+        if (
+          state.page ===
+          "chat"
+        ) {
+          if (
+            typeof renderApp ===
+            "function"
+          ) {
+            renderApp();
+          } else if (
+            typeof currentRenderApp ===
+            "function"
+          ) {
+            currentRenderApp();
+          }
+
+          setTimeout(
+            () => {
+              const el =
+                document.getElementById(
+                  "messages"
+                );
+
+              if (el) {
+                el.scrollTop =
+                  el.scrollHeight;
+              }
+            },
+            50
+          );
+        }
+      },
+
+      err => {
+        console.error(
+          "MESSAGE LISTENER ERROR:",
+          err
+        );
+
+        toast(
+          friendly(err)
+        );
       }
-    },
-
-    err => {
-      console.error(
-        "MESSAGE LISTENER ERROR:",
-        err
-      );
-
-      toast(friendly(err));
-    }
-  );
+    );
 
   state.page = "chat";
 
-  renderApp();
+  if (
+    typeof renderApp ===
+    "function"
+  ) {
+    renderApp();
+  } else if (
+    typeof currentRenderApp ===
+    "function"
+  ) {
+    currentRenderApp();
+  }
 
-  setTimeout(() => {
-    const el =
-      document.getElementById("messages");
+  setTimeout(
+    () => {
+      const el =
+        document.getElementById(
+          "messages"
+        );
 
-    if (el) {
-      el.scrollTop = el.scrollHeight;
-    }
-  }, 50);
+      if (el) {
+        el.scrollTop =
+          el.scrollHeight;
+      }
+    },
+    50
+  );
 }
 
 
@@ -365,12 +674,17 @@ export async function openConversation(conversation, renderApp) {
 
 export async function sendMessage() {
   const input =
-    document.getElementById("messageInput");
+    document.getElementById(
+      "messageInput"
+    );
 
   const text =
     input?.value.trim();
 
-  if (!text || !state.activeConversation) {
+  if (
+    !text ||
+    !state.activeConversation
+  ) {
     return;
   }
 
@@ -380,41 +694,59 @@ export async function sendMessage() {
   try {
     input.disabled = true;
 
-    const docRef = await addDoc(
-      collection(
-        db,
-        "conversations",
-        id,
-        "messages"
-      ),
-      {
-        uid: state.user.uid,
-        text,
-        createdAt: serverTimestamp()
-      }
-    );
+    const docRef =
+      await addDoc(
+        collection(
+          db,
+          "conversations",
+          id,
+          "messages"
+        ),
+        {
+          uid:
+            state.user.uid,
+
+          text,
+
+          createdAt:
+            serverTimestamp()
+        }
+      );
 
     await updateDoc(
-      doc(db, "conversations", id),
+      doc(
+        db,
+        "conversations",
+        id
+      ),
       {
         lastMessage: text,
-        updatedAt: serverTimestamp()
+        updatedAt:
+          serverTimestamp()
       }
     );
 
     const newMsg = {
       id: docRef.id,
-      uid: state.user.uid,
+      uid:
+        state.user.uid,
       text,
-      createdAt: new Date()
+      createdAt:
+        new Date()
     };
 
-    state.messages.push(newMsg);
+    state.messages.push(
+      newMsg
+    );
 
     const recipientUid =
-      state.activeConversation.participants?.find(
-        x => x !== state.user.uid
-      );
+      state.activeConversation
+        .participants
+        ?.find(
+          x =>
+            x !==
+            state.user.uid
+        );
 
     if (recipientUid) {
       try {
@@ -431,16 +763,30 @@ export async function sendMessage() {
             "notifications"
           ),
           {
-            type: "message",
-            actorUid: state.user.uid,
+            type:
+              "message",
+
+            actorUid:
+              state.user.uid,
+
             actorName,
-            targetId: id,
-            text: `${actorName} sent you a message.`,
-            read: false,
-            createdAt: serverTimestamp()
+
+            targetId:
+              id,
+
+            text:
+              `${actorName} sent you a message.`,
+
+            read:
+              false,
+
+            createdAt:
+              serverTimestamp()
           }
         );
-      } catch (notifErr) {
+      } catch (
+        notifErr
+      ) {
         console.warn(
           "Could not create message notification:",
           notifErr
@@ -455,9 +801,13 @@ export async function sendMessage() {
       e
     );
 
-    toast(friendly(e));
+    toast(
+      friendly(e)
+    );
   } finally {
-    input.disabled = false;
+    input.disabled =
+      false;
+
     input.focus();
   }
 }
@@ -467,15 +817,20 @@ export async function sendMessage() {
    EDIT MESSAGE
    ========================================================= */
 
-export async function editMessage(messageId) {
+export async function editMessage(
+  messageId
+) {
   const msg =
     state.messages.find(
-      m => m.id === messageId
+      m =>
+        m.id ===
+        messageId
     );
 
   if (
     !msg ||
-    msg.uid !== state.user.uid
+    msg.uid !==
+      state.user.uid
   ) {
     return;
   }
@@ -488,7 +843,9 @@ export async function editMessage(messageId) {
           class="textarea"
           id="editMessageText"
           maxlength="5000"
-        >${escapeHtml(msg.text || "")}</textarea>
+        >${escapeHtml(
+          msg.text || ""
+        )}</textarea>
       </div>
 
       <button
@@ -501,7 +858,9 @@ export async function editMessage(messageId) {
   );
 
   document
-    .getElementById("saveEditMessage")
+    .getElementById(
+      "saveEditMessage"
+    )
     ?.addEventListener(
       "click",
       async () => {
@@ -510,10 +869,13 @@ export async function editMessage(messageId) {
             .getElementById(
               "editMessageText"
             )
-            ?.value.trim();
+            ?.value
+            .trim();
 
         if (!text) {
-          toast("Message cannot be empty.");
+          toast(
+            "Message cannot be empty."
+          );
           return;
         }
 
@@ -528,25 +890,31 @@ export async function editMessage(messageId) {
             ),
             {
               text,
-              editedAt: serverTimestamp()
+
+              editedAt:
+                serverTimestamp()
             }
           );
 
           state.messages =
             state.messages.map(
               m =>
-                m.id === messageId
+                m.id ===
+                messageId
                   ? {
                       ...m,
                       text,
-                      editedAt: new Date()
+                      editedAt:
+                        new Date()
                     }
                   : m
             );
 
           closeModal();
 
-          toast("Message updated");
+          toast(
+            "Message updated"
+          );
         } catch (e) {
           console.error(
             "EDIT MESSAGE ERROR:",
@@ -566,15 +934,20 @@ export async function editMessage(messageId) {
    DELETE MESSAGE
    ========================================================= */
 
-export async function deleteMessage(messageId) {
+export async function deleteMessage(
+  messageId
+) {
   const msg =
     state.messages.find(
-      m => m.id === messageId
+      m =>
+        m.id ===
+        messageId
     );
 
   if (
     !msg ||
-    msg.uid !== state.user.uid
+    msg.uid !==
+      state.user.uid
   ) {
     return;
   }
@@ -613,14 +986,18 @@ export async function deleteMessage(messageId) {
   );
 
   document
-    .getElementById("cancelDelMsg")
+    .getElementById(
+      "cancelDelMsg"
+    )
     ?.addEventListener(
       "click",
       closeModal
     );
 
   document
-    .getElementById("confirmDelMsg")
+    .getElementById(
+      "confirmDelMsg"
+    )
     ?.addEventListener(
       "click",
       async () => {
@@ -637,7 +1014,9 @@ export async function deleteMessage(messageId) {
 
           state.messages =
             state.messages.filter(
-              m => m.id !== messageId
+              m =>
+                m.id !==
+                messageId
             );
 
           const latest =
@@ -657,7 +1036,9 @@ export async function deleteMessage(messageId) {
               state.activeConversation.id
             ),
             {
-              lastMessage: newLastMsg,
+              lastMessage:
+                newLastMsg,
+
               updatedAt:
                 latest
                   ? latest.createdAt
@@ -689,7 +1070,9 @@ export async function deleteMessage(messageId) {
    COPY SINGLE MESSAGE
    ========================================================= */
 
-export async function copyMessage(text) {
+export async function copyMessage(
+  text
+) {
   try {
     await navigator.clipboard.writeText(
       text
@@ -714,25 +1097,28 @@ export async function togglePinConversation(
   conversationId
 ) {
   const isPinned =
-    !!state.conversationPreferences[
-      conversationId
-    ]?.pinned;
+    !!state
+      .conversationPreferences[
+        conversationId
+      ]?.pinned;
 
   try {
-    const prefRef = doc(
-      db,
-      "users",
-      state.user.uid,
-      "conversationPreferences",
-      conversationId
-    );
+    const prefRef =
+      doc(
+        db,
+        "users",
+        state.user.uid,
+        "conversationPreferences",
+        conversationId
+      );
 
     if (isPinned) {
       await setDoc(
         prefRef,
         {
           pinned: false,
-          updatedAt: serverTimestamp()
+          updatedAt:
+            serverTimestamp()
         },
         { merge: true }
       );
@@ -741,10 +1127,12 @@ export async function togglePinConversation(
         conversationId
       ] = {
         ...(
-          state.conversationPreferences[
-            conversationId
-          ] || {}
+          state
+            .conversationPreferences[
+              conversationId
+            ] || {}
         ),
+
         pinned: false
       };
 
@@ -757,7 +1145,8 @@ export async function togglePinConversation(
         {
           pinned: true,
           deleted: false,
-          updatedAt: serverTimestamp()
+          updatedAt:
+            serverTimestamp()
         },
         { merge: true }
       );
@@ -766,10 +1155,12 @@ export async function togglePinConversation(
         conversationId
       ] = {
         ...(
-          state.conversationPreferences[
-            conversationId
-          ] || {}
+          state
+            .conversationPreferences[
+              conversationId
+            ] || {}
         ),
+
         pinned: true,
         deleted: false
       };
@@ -778,33 +1169,15 @@ export async function togglePinConversation(
         "Conversation pinned 📌"
       );
     }
-
-    /*
-     * Re-render the chat list so the visual state updates
-     * immediately without requiring a page refresh.
-     */
-    if (
-      state.page === "chat" &&
-      !state.activeConversation
-    ) {
-      const root =
-        document.getElementById("root");
-
-      if (root) {
-        /*
-         * app.js normally handles rendering.
-         * Triggering a click is intentionally avoided here.
-         * The listener/state update is enough for the next render.
-         */
-      }
-    }
   } catch (e) {
     console.error(
       "PIN ERROR:",
       e
     );
 
-    toast(friendly(e));
+    toast(
+      friendly(e)
+    );
   }
 }
 
@@ -834,7 +1207,9 @@ export async function copyAllChat(
         )
       );
 
-    if (messagesSnap.empty) {
+    if (
+      messagesSnap.empty
+    ) {
       toast(
         "There are no messages to copy."
       );
@@ -842,11 +1217,17 @@ export async function copyAllChat(
     }
 
     const lines =
-      messagesSnap.docs.map(d => {
-        const data = d.data();
+      messagesSnap.docs.map(
+        d => {
+          const data =
+            d.data();
 
-        return data.text || "";
-      });
+          return (
+            data.text ||
+            ""
+          );
+        }
+      );
 
     const text =
       lines
@@ -888,6 +1269,11 @@ export async function deleteChat(
   conversationId,
   renderApp
 ) {
+  currentRenderApp =
+    typeof renderApp === "function"
+      ? renderApp
+      : currentRenderApp;
+
   showModal(
     "Delete this chat?",
     `
@@ -923,38 +1309,43 @@ export async function deleteChat(
   );
 
   document
-    .getElementById("cancelDeleteChat")
+    .getElementById(
+      "cancelDeleteChat"
+    )
     ?.addEventListener(
       "click",
       closeModal
     );
 
   document
-    .getElementById("confirmDeleteChat")
+    .getElementById(
+      "confirmDeleteChat"
+    )
     ?.addEventListener(
       "click",
       async () => {
         try {
-          const prefRef = doc(
-            db,
-            "users",
-            state.user.uid,
-            "conversationPreferences",
-            conversationId
-          );
+          const prefRef =
+            doc(
+              db,
+              "users",
+              state.user.uid,
+              "conversationPreferences",
+              conversationId
+            );
 
           /*
-           * We intentionally hide the conversation for this
-           * user instead of deleting the shared Firestore
-           * conversation and damaging the other participant's
-           * chat.
+           * Hide the conversation only for
+           * the current user.
            */
+
           await setDoc(
             prefRef,
             {
               deleted: true,
               pinned: false,
-              updatedAt: serverTimestamp()
+              updatedAt:
+                serverTimestamp()
             },
             { merge: true }
           );
@@ -963,24 +1354,32 @@ export async function deleteChat(
             conversationId
           ] = {
             ...(
-              state.conversationPreferences[
-                conversationId
-              ] || {}
+              state
+                .conversationPreferences[
+                  conversationId
+                ] || {}
             ),
+
             deleted: true,
             pinned: false
           };
 
           /*
-           * If the user somehow deletes the currently opened
-           * conversation, safely leave it.
+           * If the user somehow deletes the
+           * currently opened conversation,
+           * safely leave it.
            */
+
           if (
-            state.activeConversation?.id ===
+            state
+              .activeConversation
+              ?.id ===
             conversationId
           ) {
             state.unsubs.messages?.();
-            state.unsubs.messages = null;
+
+            state.unsubs.messages =
+              null;
 
             state.activeConversation =
               null;
@@ -994,8 +1393,17 @@ export async function deleteChat(
             "Chat deleted from your list."
           );
 
-          if (typeof renderApp === "function") {
-            renderApp();
+          const renderer =
+            typeof renderApp ===
+            "function"
+              ? renderApp
+              : currentRenderApp;
+
+          if (
+            typeof renderer ===
+            "function"
+          ) {
+            renderer();
           }
         } catch (e) {
           console.error(
@@ -1016,97 +1424,130 @@ export async function deleteChat(
    CHAT LIST
    ========================================================= */
 
-export function renderChat(renderApp) {
-  if (state.activeConversation) {
+export function renderChat(
+  renderApp
+) {
+  currentRenderApp =
+    typeof renderApp === "function"
+      ? renderApp
+      : currentRenderApp;
+
+  if (
+    state.activeConversation
+  ) {
     return renderConversation();
   }
 
   const searchQuery =
-    (state.chatSearchQuery || "")
-      .toLowerCase();
+    (
+      state.chatSearchQuery ||
+      ""
+    ).toLowerCase();
 
   /*
-   * Deleted conversations are hidden only for the current user.
+   * Deleted conversations are hidden
+   * only for the current user.
    */
+
   let conversations =
-    state.conversations.filter(c => {
-      const preference =
-        state.conversationPreferences[
-          c.id
-        ] || {};
+    state.conversations.filter(
+      c => {
+        const preference =
+          state
+            .conversationPreferences[
+              c.id
+            ] || {};
 
-      if (preference.deleted) {
-        return false;
-      }
+        if (
+          preference.deleted
+        ) {
+          return false;
+        }
 
-      if (!searchQuery) {
-        return true;
-      }
+        if (!searchQuery) {
+          return true;
+        }
 
-      const other =
-        c.participants?.find(
-          x => x !== state.user.uid
+        const other =
+          c.participants?.find(
+            x =>
+              x !==
+              state.user.uid
+          );
+
+        const profile =
+          c
+            .participantProfiles?.[
+              other
+            ] || {};
+
+        const name =
+          (
+            profile.displayName ||
+            ""
+          ).toLowerCase();
+
+        const username =
+          (
+            profile.username ||
+            ""
+          ).toLowerCase();
+
+        const lastMsg =
+          (
+            c.lastMessage ||
+            ""
+          ).toLowerCase();
+
+        return (
+          name.includes(
+            searchQuery
+          ) ||
+          username.includes(
+            searchQuery
+          ) ||
+          lastMsg.includes(
+            searchQuery
+          )
         );
-
-      const profile =
-        c.participantProfiles?.[other] ||
-        {};
-
-      const name =
-        (
-          profile.displayName ||
-          ""
-        ).toLowerCase();
-
-      const username =
-        (
-          profile.username ||
-          ""
-        ).toLowerCase();
-
-      const lastMsg =
-        (
-          c.lastMessage ||
-          ""
-        ).toLowerCase();
-
-      return (
-        name.includes(searchQuery) ||
-        username.includes(searchQuery) ||
-        lastMsg.includes(searchQuery)
-      );
-    });
+      }
+    );
 
   /*
    * Pinned chats remain at the top.
    */
-  conversations.sort((a, b) => {
-    const aPinned =
-      !!state.conversationPreferences[
-        a.id
-      ]?.pinned;
 
-    const bPinned =
-      !!state.conversationPreferences[
-        b.id
-      ]?.pinned;
+  conversations.sort(
+    (a, b) => {
+      const aPinned =
+        !!state
+          .conversationPreferences[
+            a.id
+          ]?.pinned;
 
-    if (
-      aPinned &&
-      !bPinned
-    ) {
-      return -1;
+      const bPinned =
+        !!state
+          .conversationPreferences[
+            b.id
+          ]?.pinned;
+
+      if (
+        aPinned &&
+        !bPinned
+      ) {
+        return -1;
+      }
+
+      if (
+        !aPinned &&
+        bPinned
+      ) {
+        return 1;
+      }
+
+      return 0;
     }
-
-    if (
-      !aPinned &&
-      bPinned
-    ) {
-      return 1;
-    }
-
-    return 0;
-  });
+  );
 
   return `
     <div class="page">
@@ -1114,6 +1555,7 @@ export function renderChat(renderApp) {
       <div class="section-title">
         <div>
           <h2>Messages</h2>
+
           <div class="small">
             Private conversations
           </div>
@@ -1133,7 +1575,8 @@ export function renderChat(renderApp) {
           id="chatSearch"
           placeholder="Search conversations…"
           value="${escapeHtml(
-            state.chatSearchQuery || ""
+            state.chatSearchQuery ||
+            ""
           )}"
         >
       </div>
@@ -1155,9 +1598,10 @@ export function renderChat(renderApp) {
                     );
 
                   const profile =
-                    c.participantProfiles?.[
-                      other
-                    ] || {};
+                    c
+                      .participantProfiles?.[
+                        other
+                      ] || {};
 
                   const name =
                     profile.displayName ||
@@ -1215,6 +1659,7 @@ export function renderChat(renderApp) {
                           ${escapeHtml(
                             name
                           )}
+
                           ${
                             pinned
                               ? " 📌"
@@ -1232,7 +1677,7 @@ export function renderChat(renderApp) {
                         >
                           ${escapeHtml(
                             c.lastMessage ||
-                              "Start chatting"
+                            "Start chatting"
                           )}
                         </p>
                       </div>
@@ -1255,7 +1700,6 @@ export function renderChat(renderApp) {
                           )}
                         </span>
 
-                        <!-- THREE DOTS MENU -->
                         <button
                           type="button"
                           class="icon-btn chat-menu-btn"
@@ -1279,7 +1723,6 @@ export function renderChat(renderApp) {
                         </button>
                       </div>
 
-                      <!-- CHAT OPTIONS MENU -->
                       <div
                         class="chat-options-menu"
                         data-chat-options="${escapeHtml(
@@ -1381,6 +1824,7 @@ export function renderChat(renderApp) {
           `
           : `
             <div class="card empty">
+
               <div
                 style="font-size:42px"
               >
@@ -1402,6 +1846,7 @@ export function renderChat(renderApp) {
               >
                 Start a chat
               </button>
+
             </div>
           `
       }
@@ -1421,13 +1866,16 @@ export function renderConversation() {
 
   const other =
     c?.participants?.find(
-      x => x !== state.user.uid
+      x =>
+        x !==
+        state.user.uid
     );
 
   const profile =
-    c?.participantProfiles?.[
-      other
-    ] || {};
+    c
+      ?.participantProfiles?.[
+        other
+      ] || {};
 
   const name =
     profile.displayName ||
@@ -1499,7 +1947,8 @@ export function renderConversation() {
 
                         <div>
                           ${escapeHtml(
-                            m.text || ""
+                            m.text ||
+                            ""
                           )}
                         </div>
 
@@ -1538,7 +1987,8 @@ export function renderConversation() {
                           <button
                             class="btn-text"
                             data-copy-msg="${escapeHtml(
-                              m.text || ""
+                              m.text ||
+                              ""
                             )}"
                           >
                             Copy
@@ -1611,291 +2061,320 @@ export function renderConversation() {
   `;
 }
 
+
 /* =========================================================
    CHAT LIST MENU EVENT DELEGATION
    =========================================================
-   Surgical replacement for the chat-list three-dot menu.
+   This is the corrected version of the existing
+   three-dot chat menu system.
 
    IMPORTANT:
-   - Does not change Firebase structure.
-   - Does not change message functionality.
-   - Does not change conversation creation.
-   - Does not change the existing chat container.
-   - The normal chat container still opens the conversation.
-   - The three-dot button only controls the menu.
+   - No Firebase structure changes.
+   - No Firestore collection changes.
+   - No message structure changes.
+   - No offline persistence changes.
+   - No UI redesign.
+   - No global undefined renderApp reference.
    ========================================================= */
 
-if (!window.__marvelChatListMenuInstalledV2) {
-  window.__marvelChatListMenuInstalledV2 = true;
+if (
+  !window.__marvelChatListMenuInstalledV2
+) {
+  window.__marvelChatListMenuInstalledV2 =
+    true;
 
-  document.addEventListener("click", async event => {
+  document.addEventListener(
+    "click",
+    async event => {
 
-    /* =====================================================
-       1. THREE-DOT BUTTON
-       ===================================================== */
+      /* =====================================================
+         1. THREE-DOT BUTTON
+         ===================================================== */
 
-    const menuButton = event.target.closest(
-      "[data-chat-menu]"
-    );
-
-    if (menuButton) {
-      event.preventDefault();
-      event.stopPropagation();
-
-      const conversationId =
-        menuButton.dataset.chatMenu;
-
-      const menu = document.querySelector(
-        `[data-chat-options="${CSS.escape(conversationId)}"]`
-      );
-
-      if (!menu) {
-        console.warn(
-          "Chat menu not found:",
-          conversationId
+      const menuButton =
+        event.target.closest(
+          "[data-chat-menu]"
         );
-        return;
-      }
 
-      const isOpen =
-        menu.getAttribute("data-open") === "true";
+      if (menuButton) {
+        event.preventDefault();
+        event.stopPropagation();
 
-      /*
-       * Close every chat menu first.
-       */
-      document
-        .querySelectorAll("[data-chat-options]")
-        .forEach(otherMenu => {
-          otherMenu.style.display = "none";
-          otherMenu.setAttribute(
-            "data-open",
-            "false"
+        const conversationId =
+          menuButton.dataset.chatMenu;
+
+        const menu =
+          document.querySelector(
+            `[data-chat-options="${CSS.escape(
+              conversationId
+            )}"]`
           );
-        });
 
-      document
-        .querySelectorAll("[data-chat-menu]")
-        .forEach(button => {
-          button.setAttribute(
-            "aria-expanded",
-            "false"
+        if (!menu) {
+          console.warn(
+            "Chat menu not found:",
+            conversationId
           );
-        });
 
-      /*
-       * If this menu was closed, open it.
-       */
-      if (!isOpen) {
-        menu.style.display = "block";
-        menu.setAttribute(
-          "data-open",
-          "true"
-        );
+          return;
+        }
 
-        menuButton.setAttribute(
-          "aria-expanded",
-          "true"
-        );
-      }
+        const isOpen =
+          menu.getAttribute(
+            "data-open"
+          ) === "true";
 
-      return;
-    }
+        /*
+         * Close every chat menu first.
+         */
 
+        document
+          .querySelectorAll(
+            "[data-chat-options]"
+          )
+          .forEach(
+            otherMenu => {
+              otherMenu.style.display =
+                "none";
 
-    /* =====================================================
-       2. MENU ACTION
-       ===================================================== */
+              otherMenu.setAttribute(
+                "data-open",
+                "false"
+              );
+            }
+          );
 
-    const option = event.target.closest(
-      "[data-chat-action]"
-    );
+        document
+          .querySelectorAll(
+            "[data-chat-menu]"
+          )
+          .forEach(
+            button => {
+              button.setAttribute(
+                "aria-expanded",
+                "false"
+              );
+            }
+          );
 
-    if (option) {
-      event.preventDefault();
-      event.stopPropagation();
+        /*
+         * If this menu was closed,
+         * open it.
+         */
 
-      const action =
-        option.dataset.chatAction;
+        if (!isOpen) {
+          menu.style.display =
+            "block";
 
-      const conversationId =
-        option.dataset.chatId;
-
-      if (!conversationId) {
-        return;
-      }
-
-      /*
-       * Close the menu immediately.
-       */
-      document
-        .querySelectorAll("[data-chat-options]")
-        .forEach(menu => {
-          menu.style.display = "none";
           menu.setAttribute(
             "data-open",
-            "false"
+            "true"
           );
-        });
 
-      document
-        .querySelectorAll("[data-chat-menu]")
-        .forEach(button => {
-          button.setAttribute(
+          menuButton.setAttribute(
             "aria-expanded",
-            "false"
+            "true"
           );
-        });
+        }
+
+        return;
+      }
 
 
-      /* ===================================================
-         PIN / UNPIN
-         =================================================== */
+      /* =====================================================
+         2. MENU ACTION
+         ===================================================== */
 
-      if (action === "pin") {
-        try {
-          await togglePinConversation(
-            conversationId
-          );
+      const option =
+        event.target.closest(
+          "[data-chat-action]"
+        );
 
-          /*
-           * Re-render the chat list directly.
-           *
-           * This does NOT create a new Firebase listener.
-           * It only redraws the existing application UI.
-           */
-          if (
-            state.page === "chat" &&
-            !state.activeConversation
-          ) {
-            const root =
-              document.getElementById("root");
+      if (option) {
+        event.preventDefault();
+        event.stopPropagation();
 
-            if (root) {
-              /*
-               * app.js owns renderApp().
-               * We retrieve it from the current
-               * application instance if available.
-               */
-              if (
-                typeof window.renderApp ===
-                "function"
-              ) {
-                window.renderApp();
-              }
+        const action =
+          option.dataset.chatAction;
+
+        const conversationId =
+          option.dataset.chatId;
+
+        if (!conversationId) {
+          return;
+        }
+
+        /*
+         * Close the menu immediately.
+         */
+
+        document
+          .querySelectorAll(
+            "[data-chat-options]"
+          )
+          .forEach(
+            menu => {
+              menu.style.display =
+                "none";
+
+              menu.setAttribute(
+                "data-open",
+                "false"
+              );
             }
+          );
+
+        document
+          .querySelectorAll(
+            "[data-chat-menu]"
+          )
+          .forEach(
+            button => {
+              button.setAttribute(
+                "aria-expanded",
+                "false"
+              );
+            }
+          );
+
+
+        /* ===================================================
+           PIN / UNPIN
+           =================================================== */
+
+        if (
+          action === "pin"
+        ) {
+          try {
+            await togglePinConversation(
+              conversationId
+            );
+
+            /*
+             * Use the valid renderApp function
+             * supplied by app.js.
+             */
+
+            if (
+              state.page === "chat" &&
+              !state.activeConversation &&
+              typeof currentRenderApp ===
+                "function"
+            ) {
+              currentRenderApp();
+            }
+          } catch (e) {
+            console.error(
+              "CHAT PIN ACTION ERROR:",
+              e
+            );
+
+            toast(
+              "Could not update chat pin."
+            );
           }
-        } catch (e) {
-          console.error(
-            "CHAT PIN ACTION ERROR:",
-            e
-          );
 
-          toast(
-            "Could not update chat pin."
-          );
+          return;
+        }
+
+
+        /* ===================================================
+           COPY ALL CHAT
+           =================================================== */
+
+        if (
+          action === "copy"
+        ) {
+          try {
+            await copyAllChat(
+              conversationId
+            );
+          } catch (e) {
+            console.error(
+              "CHAT COPY ACTION ERROR:",
+              e
+            );
+
+            toast(
+              "Could not copy the chat."
+            );
+          }
+
+          return;
+        }
+
+
+        /* ===================================================
+           DELETE CHAT
+           =================================================== */
+
+        if (
+          action === "delete"
+        ) {
+          try {
+            await deleteChat(
+              conversationId,
+              currentRenderApp
+            );
+          } catch (e) {
+            console.error(
+              "CHAT DELETE ACTION ERROR:",
+              e
+            );
+
+            toast(
+              "Could not delete chat."
+            );
+          }
+
+          return;
         }
 
         return;
       }
 
 
-      /* ===================================================
-         COPY ALL CHAT
-         =================================================== */
+      /* =====================================================
+         3. CLICK OUTSIDE
+         ===================================================== */
 
-      if (action === "copy") {
-        try {
-          await copyAllChat(
-            conversationId
-          );
-        } catch (e) {
-          console.error(
-            "CHAT COPY ACTION ERROR:",
-            e
-          );
-
-          toast(
-            "Could not copy the chat."
-          );
-        }
-
-        return;
-      }
-
-
-      /* ===================================================
-         DELETE CHAT
-         =================================================== */
-
-      if (action === "delete") {
-        try {
-          /*
-           * deleteChat already displays the
-           * confirmation modal.
-           */
-          await deleteChat(
-            conversationId,
-            () => {
-              if (
-                typeof window.renderApp ===
-                "function"
-              ) {
-                window.renderApp();
-              }
-            }
-          );
-        } catch (e) {
-          console.error(
-            "CHAT DELETE ACTION ERROR:",
-            e
-          );
-
-          toast(
-            "Could not delete chat."
-          );
-        }
-
-        return;
-      }
-
-      return;
-    }
-
-
-    /* =====================================================
-       3. CLICK OUTSIDE
-       ===================================================== */
-
-    if (
-      !event.target.closest(
-        "[data-chat-options]"
-      )
-    ) {
-      document
-        .querySelectorAll(
+      if (
+        !event.target.closest(
           "[data-chat-options]"
         )
-        .forEach(menu => {
-          menu.style.display = "none";
-          menu.setAttribute(
-            "data-open",
-            "false"
-          );
-        });
+      ) {
+        document
+          .querySelectorAll(
+            "[data-chat-options]"
+          )
+          .forEach(
+            menu => {
+              menu.style.display =
+                "none";
 
-      document
-        .querySelectorAll(
-          "[data-chat-menu]"
-        )
-        .forEach(button => {
-          button.setAttribute(
-            "aria-expanded",
-            "false"
+              menu.setAttribute(
+                "data-open",
+                "false"
+              );
+            }
           );
-        });
+
+        document
+          .querySelectorAll(
+            "[data-chat-menu]"
+          )
+          .forEach(
+            button => {
+              button.setAttribute(
+                "aria-expanded",
+                "false"
+              );
+            }
+          );
+      }
+
     }
-
-  });
+  );
 }
 
 
@@ -1903,8 +2382,11 @@ if (!window.__marvelChatListMenuInstalledV2) {
    PREVENT CHAT MENU FROM OPENING THE CONVERSATION
    ========================================================= */
 
-if (!window.__marvelChatContainerGuardInstalledV2) {
-  window.__marvelChatContainerGuardInstalledV2 = true;
+if (
+  !window.__marvelChatContainerGuardInstalledV2
+) {
+  window.__marvelChatContainerGuardInstalledV2 =
+    true;
 
   document.addEventListener(
     "click",
@@ -1935,16 +2417,24 @@ if (!window.__marvelChatContainerGuardInstalledV2) {
 
 
 /* =========================================================
-   OPTIONAL GLOBAL RENDER BRIDGE
+   END OF CHAT.JS
    =========================================================
-   app.js can expose renderApp() here without changing
-   any of its existing application logic.
+
+   IMPORTANT:
+   There is intentionally NO:
+
+       window.renderApp = renderApp;
+
+   here.
+
+   renderApp belongs to app.js and is passed into the
+   exported chat functions when needed.
+
+   The previous line caused:
+
+       ReferenceError:
+       renderApp is not defined
+
+   during module initialization.
+
    ========================================================= */
-
-if (
-  typeof window.renderApp !== "function"
-) {
-  window.renderApp = renderApp;
-}
-           
-
