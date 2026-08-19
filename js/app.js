@@ -366,6 +366,10 @@ function navButton(
 }
 
 
+/* =========================================================
+   AUTHENTICATION PAGE
+   ========================================================= */
+
 function renderAuth() {
   applyTheme();
 
@@ -529,6 +533,81 @@ function renderAuth() {
           🚀 Your account is powered by Firebase Authentication.
         </div>
 
+        <!-- LEGAL / INFORMATION LINKS -->
+        <div
+          style="
+            margin-top:18px;
+            text-align:center;
+            font-size:12px;
+            line-height:1.6;
+            color:var(--muted);
+          "
+        >
+          <button
+            type="button"
+            id="privacyLink"
+            style="
+              border:0;
+              background:transparent;
+              color:var(--muted);
+              cursor:pointer;
+              padding:2px 4px;
+              font:inherit;
+              text-decoration:underline;
+            "
+          >
+            Privacy
+          </button>
+
+          <span>•</span>
+
+          <button
+            type="button"
+            id="termsLink"
+            style="
+              border:0;
+              background:transparent;
+              color:var(--muted);
+              cursor:pointer;
+              padding:2px 4px;
+              font:inherit;
+              text-decoration:underline;
+            "
+          >
+            Terms
+          </button>
+
+          <span>•</span>
+
+          <button
+            type="button"
+            id="contactLink"
+            style="
+              border:0;
+              background:transparent;
+              color:var(--muted);
+              cursor:pointer;
+              padding:2px 4px;
+              font:inherit;
+              text-decoration:underline;
+            "
+          >
+            Contact
+          </button>
+        </div>
+
+        <div
+          style="
+            margin-top:8px;
+            text-align:center;
+            font-size:11px;
+            color:var(--muted);
+          "
+        >
+          © ${new Date().getFullYear()} Davonium Technologies.
+          All rights reserved.
+        </div>
+
       </div>
     </div>
   `;
@@ -646,6 +725,49 @@ function renderAuth() {
     () =>
       setMode(true)
   );
+
+
+  /* =======================================================
+     LEGAL / INFORMATION PAGE EVENTS
+     ======================================================= */
+
+  document
+    .getElementById(
+      "privacyLink"
+    )
+    ?.addEventListener(
+      "click",
+      () =>
+        renderLegalPage(
+          "privacy"
+        )
+    );
+
+
+  document
+    .getElementById(
+      "termsLink"
+    )
+    ?.addEventListener(
+      "click",
+      () =>
+        renderLegalPage(
+          "terms"
+        )
+    );
+
+
+  document
+    .getElementById(
+      "contactLink"
+    )
+    ?.addEventListener(
+      "click",
+      () =>
+        renderLegalPage(
+          "contact"
+        )
+    );
 
 
   document.getElementById(
@@ -810,6 +932,373 @@ function renderAuth() {
           : "Sign in";
     }
   };
+}
+
+
+/* =========================================================
+   LEGAL / INFORMATION PAGE
+   ========================================================= */
+
+function renderLegalPage(
+  section = "privacy"
+) {
+
+  applyTheme();
+
+  const content = {
+
+    privacy: {
+      title:
+        "Privacy Policy",
+
+      icon:
+        "🔐",
+
+      body: `
+        <h2>Your Privacy Matters</h2>
+
+        <p>
+          Marvel Chat is designed to provide a community
+          experience while respecting the privacy of its users.
+        </p>
+
+        <h3>Information We Collect</h3>
+
+        <p>
+          When you create an account, Marvel Chat may store
+          information that you provide, such as your email
+          address, username, display name, country and profile
+          information.
+        </p>
+
+        <h3>How Information Is Used</h3>
+
+        <p>
+          Information associated with your account is used to
+          operate the Marvel Chat service, provide community
+          features, maintain your profile and improve the
+          experience.
+        </p>
+
+        <h3>Firebase Services</h3>
+
+        <p>
+          Marvel Chat uses Firebase services for authentication
+          and application data. Information necessary for these
+          services may be processed through the relevant Firebase
+          infrastructure.
+        </p>
+
+        <h3>Your Responsibility</h3>
+
+        <p>
+          Do not share passwords, private credentials or other
+          sensitive information publicly through the community.
+        </p>
+
+        <h3>Policy Updates</h3>
+
+        <p>
+          This privacy information may be updated as Marvel Chat
+          develops. Important changes should be reflected on this
+          page.
+        </p>
+      `
+    },
+
+    terms: {
+      title:
+        "Terms of Use",
+
+      icon:
+        "📜",
+
+      body: `
+        <h2>Using Marvel Chat</h2>
+
+        <p>
+          By using Marvel Chat, you agree to use the service
+          responsibly and respectfully.
+        </p>
+
+        <h3>Community Conduct</h3>
+
+        <p>
+          Users should not use Marvel Chat to harass, threaten,
+          deceive, impersonate or intentionally harm other users.
+        </p>
+
+        <h3>Your Account</h3>
+
+        <p>
+          You are responsible for maintaining the security of
+          your account and for activity performed through your
+          account.
+        </p>
+
+        <h3>Content</h3>
+
+        <p>
+          Users are responsible for content they create,
+          publish, send or otherwise share through Marvel Chat.
+        </p>
+
+        <h3>Service Changes</h3>
+
+        <p>
+          Marvel Chat may be improved, changed, expanded or
+          temporarily unavailable as development and maintenance
+          take place.
+        </p>
+
+        <h3>Responsible Use</h3>
+
+        <p>
+          Use Marvel Chat in accordance with applicable laws and
+          respect the rights and privacy of other members of the
+          community.
+        </p>
+      `
+    },
+
+    contact: {
+      title:
+        "Contact & About",
+
+      icon:
+        "📬",
+
+      body: `
+        <h2>About Marvel Chat</h2>
+
+        <p>
+          Marvel Chat is a community platform created to help
+          people connect, communicate, exchange skills and
+          discover opportunities.
+        </p>
+
+        <h3>Built By</h3>
+
+        <p>
+          <strong>Davonium Technologies</strong>
+        </p>
+
+        <p>
+          Marvel Chat is an independent product and platform
+          developed under Davonium Technologies.
+        </p>
+
+        <h3>Contact</h3>
+
+        <p>
+          For questions, feedback, partnership discussions,
+          support requests or other enquiries, contact the
+          Marvel Chat team through the official contact channel
+          provided by Davonium Technologies.
+        </p>
+
+        <p>
+          Your official contact email or support address can be
+          added to this section when you are ready.
+        </p>
+
+        <h3>Copyright</h3>
+
+        <p>
+          © ${new Date().getFullYear()}
+          Davonium Technologies.
+          All rights reserved.
+        </p>
+
+        <p>
+          Marvel Chat, its branding, interface, original
+          application code and original product materials are
+          associated with Davonium Technologies, subject to
+          applicable rights and ownership.
+        </p>
+      `
+    }
+
+  };
+
+
+  const active =
+    content[section] ||
+    content.privacy;
+
+
+  root.innerHTML = `
+    <div class="auth-shell">
+
+      <div
+        class="auth-card"
+        style="
+          max-width:720px;
+          text-align:left;
+        "
+      >
+
+        <div
+          style="
+            text-align:center;
+            margin-bottom:20px;
+          "
+        >
+
+          <div class="auth-logo">
+            ${active.icon}
+          </div>
+
+          <h1>
+            ${escapeHtml(
+              active.title
+            )}
+          </h1>
+
+          <p>
+            Marvel Chat • Davonium Technologies
+          </p>
+
+        </div>
+
+
+        <div
+          class="notice"
+          style="
+            line-height:1.75;
+            margin-bottom:18px;
+          "
+        >
+
+          ${active.body}
+
+        </div>
+
+
+        <div
+          style="
+            display:flex;
+            gap:8px;
+            flex-wrap:wrap;
+            margin-bottom:18px;
+          "
+        >
+
+          <button
+            class="btn ${
+              section === "privacy"
+                ? "btn-primary"
+                : "btn-ghost"
+            }"
+            id="legalPrivacy"
+            type="button"
+          >
+            🔐 Privacy
+          </button>
+
+          <button
+            class="btn ${
+              section === "terms"
+                ? "btn-primary"
+                : "btn-ghost"
+            }"
+            id="legalTerms"
+            type="button"
+          >
+            📜 Terms
+          </button>
+
+          <button
+            class="btn ${
+              section === "contact"
+                ? "btn-primary"
+                : "btn-ghost"
+            }"
+            id="legalContact"
+            type="button"
+          >
+            📬 Contact
+          </button>
+
+        </div>
+
+
+        <button
+          class="btn btn-primary btn-block"
+          id="backToAuth"
+          type="button"
+        >
+          ← Back to Sign in
+        </button>
+
+
+        <div
+          style="
+            text-align:center;
+            margin-top:15px;
+            font-size:11px;
+            color:var(--muted);
+          "
+        >
+          © ${new Date().getFullYear()}
+          Davonium Technologies.
+          All rights reserved.
+        </div>
+
+      </div>
+
+    </div>
+  `;
+
+
+  document
+    .getElementById(
+      "legalPrivacy"
+    )
+    ?.addEventListener(
+      "click",
+      () =>
+        renderLegalPage(
+          "privacy"
+        )
+    );
+
+
+  document
+    .getElementById(
+      "legalTerms"
+    )
+    ?.addEventListener(
+      "click",
+      () =>
+        renderLegalPage(
+          "terms"
+        )
+    );
+
+
+  document
+    .getElementById(
+      "legalContact"
+    )
+    ?.addEventListener(
+      "click",
+      () =>
+        renderLegalPage(
+          "contact"
+        )
+    );
+
+
+  document
+    .getElementById(
+      "backToAuth"
+    )
+    ?.addEventListener(
+      "click",
+      () =>
+        renderAuth()
+    );
 }
 
 
@@ -1824,9 +2313,10 @@ const startupStatus =
   );
 
 
-if (startupStatus) {
+if (
+  startupStatus
+) {
+
   startupStatus.textContent =
     "Initializing the MarvelChat universe…";
 }
- 
-
