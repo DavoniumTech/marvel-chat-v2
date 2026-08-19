@@ -174,7 +174,7 @@ export function showSkillModal(type = "offer", renderApp, existingItem = null) {
     `
       <div class="field">
         <label>Skill title *</label>
-        <input class="input" id="skillTitle" placeholder="e.g. Advanced JavaScript & React Mentorship" value="${escapeHtml(existingItem?.title || existingItem?.skill || "")}">
+        <input class="input" id="skillTitle" placeholder="e.g. Advanced Coding assisting" value="${escapeHtml(existingItem?.title || existingItem?.skill || "")}">
       </div>
 
       <div class="grid grid2">
