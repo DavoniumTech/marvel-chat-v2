@@ -5,8 +5,8 @@ const admin = require("firebase-admin");
 
 admin.initializeApp();
 
-const DEFAULT_ICON = "https://devonim.github.io/marvel-chat-v2/assets/icon-192.png";
-const DEFAULT_URL = "https://devonim.github.io/marvel-chat-v2/";
+const DEFAULT_ICON ="https://davoniumtech.github.io/marvel-chat-v2/assets/icon-192.png";
+const DEFAULT_URL = "https://davoniumtech.github.io/marvel-chat-v2/";
 
 /**
  * Helper to dispatch FCM multicast messages to all active push tokens for a given user UID.
