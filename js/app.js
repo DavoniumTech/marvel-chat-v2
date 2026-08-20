@@ -1098,8 +1098,8 @@ function renderLegalPage(
         </p>
 
         <p>
-          Your official contact email or support address can be
-          added to this section when you are ready.
+          Our official contact email or support address can be
+          added to this section when We are ready.
         </p>
 
         <h3>Copyright</h3>
