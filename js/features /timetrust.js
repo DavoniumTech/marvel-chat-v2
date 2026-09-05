@@ -96,13 +96,13 @@ export function renderTimeTrust(renderApp) {
     <div class="page timetrust-page">
       <section class="hero">
         <h1>TimeTrust ⏱️</h1>
-        <p>Discover skilled community members, offer your own expertise, and exchange useful knowledge.</p>
+        <p>Discover skilled community members, offer your own expertise, and discover useful knowledge.</p>
       </section>
 
       <div class="grid grid2" style="margin-bottom: 16px;">
         <div class="card stat" style="padding: 14px; margin:0;">
           <span class="small">Provider Marketplace</span>
-          <strong style="font-size: 18px; display:block; margin: 4px 0;">Skill Exchange</strong>
+          <strong style="font-size: 18px; display:block; margin: 4px 0;">Discover Skills </strong>
           <span class="small">Connect directly with expert peers.</span>
         </div>
 
