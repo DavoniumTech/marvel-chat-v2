@@ -24,7 +24,8 @@ import {
 } from "./firebase/firestore.js";
 
 import {
-  subscribeAll
+  subscribeForPage,
+  stopAllListeners
 } from "./firebase/listeners.js";
 
 import {
@@ -99,9 +100,27 @@ export function renderApp() {
   }
 
   if (!state.profile?.country) {
-    renderOnboarding();
-    return;
-  }
+  renderOnboarding();
+  return;
+}
+
+
+/*
+ * PAGE-SCOPED FIRESTORE LISTENERS
+ *
+ * Only the data required by the current page
+ * is subscribed to.
+ *
+ * subscribeForPage() is idempotent, so repeated
+ * renderApp() calls do NOT create duplicate listeners.
+ */
+subscribeForPage(
+  state.page,
+  renderApp
+);
+
+
+
 
   const pages = {
     home: () =>
@@ -2042,11 +2061,14 @@ async function startApplication(
       user
     );
 
-    subscribeAll(
-      renderApp
-    );
+    
 
-    renderApp();
+    subscribeForPage(
+  state.page,
+  renderApp
+);
+
+renderApp();
 
   } catch (e) {
 
@@ -2129,80 +2151,50 @@ onAuthStateChanged(
 
     if (!user) {
 
-      Object
-        .values(
-          state.unsubs
-        )
-        .forEach(
-          fn =>
-            fn?.()
-        );
+  stopAllListeners();
 
 
-      state.unsubs = {
-        posts:
-          null,
+  state.profile =
+    null;
 
-        conversations:
-          null,
+  state.posts =
+    [];
 
-        messages:
-          null,
+  state.conversations =
+    [];
 
-        skills:
-          null,
+  state.skills =
+    [];
 
-        requests:
-          null,
+  state.requests =
+    [];
 
-        listings:
-          null,
+  state.listings =
+    [];
 
-        notifications:
-          null,
+  state.notifications =
+    [];
 
-        preferences:
-          null
-      };
+  state.unreadNotificationsCount =
+    0;
+
+  state.activeConversation =
+    null;
+
+  state.messages =
+    [];
+
+  state.conversationPreferences =
+    {};
 
 
-      state.profile =
-        null;
+  renderAuth();
 
-      state.posts =
-        [];
+  return;
+}
 
-      state.conversations =
-        [];
-
-      state.skills =
-        [];
-
-      state.requests =
-        [];
-
-      state.listings =
-        [];
-
-      state.notifications =
-        [];
-
-      state.unreadNotificationsCount =
-        0;
-
-      state.activeConversation =
-        null;
-
-      state.messages =
-        [];
-
-      state.conversationPreferences =
-        {};
-
-      renderAuth();
-
-      return;
-    }
+        
+          
 
 
     await startApplication(
