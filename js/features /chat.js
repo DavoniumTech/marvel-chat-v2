@@ -16,7 +16,7 @@ deleteDoc,
 addDoc,
 query,
 where,
-orderBy,
+orderBy, 
 limit,
 getDocs,
 onSnapshot,
@@ -2536,7 +2536,7 @@ menu.style.display =
 button => {
 button.setAttribute(
 "aria-expanded",
-"false"
+"false" 
 );
 }
 );
