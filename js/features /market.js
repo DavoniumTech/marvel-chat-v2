@@ -71,7 +71,9 @@ function getUid() {
 function getMyListings() {
   const uid = getUid();
 
-  if (!uid) return [];
+  if (!uid) {
+    return [];
+  }
 
   return (state.listings || []).filter(
     listing => listing.uid === uid
@@ -80,17 +82,25 @@ function getMyListings() {
 
 
 /*
- * A Market Account is normally stored on the user profile.
+ * A user is considered a Market Account holder when:
  *
- * Existing sellers are also recognized automatically from
- * their existing listings. This prevents old sellers from
- * losing access when the new account system is introduced.
+ * 1. Their profile explicitly contains an active
+ *    Market Account.
+ *
+ * OR
+ *
+ * 2. They already own listings.
+ *
+ * The second condition preserves existing sellers
+ * from before the Market Account system existed.
  */
 
 export function hasMarketAccount() {
   const uid = getUid();
 
-  if (!uid) return false;
+  if (!uid) {
+    return false;
+  }
 
   if (
     state.profile?.marketAccount?.active === true
@@ -102,18 +112,26 @@ export function hasMarketAccount() {
 }
 
 
+/* =========================================================
+   EXISTING SELLER MIGRATION
+   ========================================================= */
+
 /*
- * This migration is additive only.
+ * This is intentionally additive.
  *
- * It NEVER modifies existing listings.
- * It only creates marketAccount on the user's profile
- * when an existing seller is detected.
+ * Existing listings are NEVER modified.
+ *
+ * If an existing seller is detected from listings already
+ * loaded into state, only the user's profile receives the
+ * Market Account flag.
  */
 
 async function migrateExistingSeller() {
   const uid = getUid();
 
-  if (!uid || !state.profile) return;
+  if (!uid || !state.profile) {
+    return;
+  }
 
   if (
     state.profile.marketAccount?.active === true
@@ -121,9 +139,12 @@ async function migrateExistingSeller() {
     return;
   }
 
-  const existingListings = getMyListings();
+  const existingListings =
+    getMyListings();
 
-  if (!existingListings.length) return;
+  if (!existingListings.length) {
+    return;
+  }
 
   const account = {
     active: true,
@@ -140,30 +161,41 @@ async function migrateExistingSeller() {
 
     migratedFromListing: true,
 
-    createdAt: serverTimestamp(),
+    createdAt:
+      serverTimestamp(),
 
-    updatedAt: serverTimestamp()
+    updatedAt:
+      serverTimestamp()
   };
 
   try {
+
     await updateDoc(
-      doc(db, "users", uid),
+      doc(
+        db,
+        "users",
+        uid
+      ),
       {
         marketAccount: account
       }
     );
 
     /*
-     * Do not wait for another global listener.
      * Update local state immediately.
      */
 
     state.profile = {
       ...state.profile,
+
       marketAccount: {
         ...account,
-        createdAt: new Date(),
-        updatedAt: new Date()
+
+        createdAt:
+          new Date(),
+
+        updatedAt:
+          new Date()
       }
     };
 
@@ -181,24 +213,35 @@ async function migrateExistingSeller() {
    MARKET ACCOUNT MODAL
    ========================================================= */
 
-export function showMarketAccountModal(renderApp) {
+export function showMarketAccountModal(
+  renderApp
+) {
 
   if (!state.user) {
-    toast("Please sign in first.");
+
+    toast(
+      "Please sign in first."
+    );
+
     return;
   }
+
 
   const account =
     state.profile?.marketAccount || {};
 
+
   const existingSeller =
     getMyListings().length > 0;
+
 
   const accountExists =
     account.active === true ||
     existingSeller;
 
+
   showModal(
+
     accountExists
       ? "Manage Marketplace Account"
       : "Create Marketplace Account",
@@ -206,7 +249,9 @@ export function showMarketAccountModal(renderApp) {
     `
       <div class="field">
 
-        <label>Seller / Store name *</label>
+        <label>
+          Seller / Store name *
+        </label>
 
         <input
           class="input"
@@ -226,7 +271,9 @@ export function showMarketAccountModal(renderApp) {
 
       <div class="field">
 
-        <label>Seller description</label>
+        <label>
+          Seller description
+        </label>
 
         <textarea
           class="textarea"
@@ -243,7 +290,9 @@ export function showMarketAccountModal(renderApp) {
 
       <div class="field">
 
-        <label>Seller location</label>
+        <label>
+          Seller location
+        </label>
 
         <input
           class="input"
@@ -310,7 +359,9 @@ export function showMarketAccountModal(renderApp) {
 
 
   document
-    .getElementById("saveMarketAccount")
+    .getElementById(
+      "saveMarketAccount"
+    )
     ?.addEventListener(
       "click",
       async () => {
@@ -329,6 +380,7 @@ export function showMarketAccountModal(renderApp) {
           document.getElementById(
             "marketSellerLocation"
           );
+
 
         const storeName =
           nameInput?.value.trim() || "";
@@ -357,7 +409,11 @@ export function showMarketAccountModal(renderApp) {
             "saveMarketAccount"
           );
 
-        if (!button) return;
+
+        if (!button) {
+          return;
+        }
+
 
         button.disabled = true;
 
@@ -370,6 +426,7 @@ export function showMarketAccountModal(renderApp) {
           const oldCreatedAt =
             account.createdAt ||
             new Date();
+
 
           const marketAccount = {
 
@@ -407,14 +464,19 @@ export function showMarketAccountModal(renderApp) {
             ...state.profile,
 
             marketAccount: {
+
               ...marketAccount,
-              updatedAt: new Date()
+
+              updatedAt:
+                new Date()
+
             }
 
           };
 
 
           closeModal();
+
 
           toast(
             accountExists
@@ -437,11 +499,15 @@ export function showMarketAccountModal(renderApp) {
             error
           );
 
+
           toast(
             friendly(error)
           );
 
-          button.disabled = false;
+
+          button.disabled =
+            false;
+
 
           button.textContent =
             accountExists
@@ -463,9 +529,13 @@ function isBrowseMode() {
 }
 
 
-function enterBrowseMode(renderApp) {
+function enterBrowseMode(
+  renderApp
+) {
 
-  state.marketBrowseMode = true;
+  state.marketBrowseMode =
+    true;
+
 
   if (
     typeof renderApp ===
@@ -476,11 +546,16 @@ function enterBrowseMode(renderApp) {
 }
 
 
-function exitBrowseMode(renderApp) {
+function exitBrowseMode(
+  renderApp
+) {
 
-  state.marketBrowseMode = false;
+  state.marketBrowseMode =
+    false;
+
 
   state.search = "";
+
 
   if (
     typeof renderApp ===
@@ -495,31 +570,31 @@ function exitBrowseMode(renderApp) {
    MARKET RENDER
    ========================================================= */
 
-export function renderMarket(renderApp) {
+export function renderMarket(
+  renderApp
+) {
 
   /*
-   * Existing sellers are silently migrated.
+   * Existing sellers are migrated silently.
    *
-   * This does not read Firestore again.
-   * It uses listings already present in state.
+   * No additional Firestore listing read happens here.
    */
+
   migrateExistingSeller();
 
 
   const seller =
     hasMarketAccount();
 
+
   const browse =
     isBrowseMode();
 
 
   /*
-   * Normal users start with a clean marketplace.
+   * Sellers automatically receive the full Market UI.
    *
-   * They only see the browse/search tools after
-   * explicitly entering Browse Market.
-   *
-   * Sellers automatically get the full interface.
+   * Normal users must explicitly choose Browse Market.
    */
 
   const showMarketplaceTools =
@@ -535,71 +610,83 @@ export function renderMarket(renderApp) {
 
 
   const selectedCategory =
-    state.marketCategory || "All";
+    state.marketCategory ||
+    "All";
 
 
   const marketTab =
     seller
-      ? (state.marketTab || "browse")
+      ? (
+          state.marketTab ||
+          "browse"
+        )
       : "browse";
 
 
   const sortBy =
-    state.marketSort || "newest";
+    state.marketSort ||
+    "newest";
 
 
   let filtered =
     (state.listings || [])
-      .filter(listing => {
+      .filter(
+        listing => {
 
-        /*
-         * Normal users only see active listings
-         * in Browse Market.
-         */
+          /*
+           * Sold listings are not shown
+           * in Browse Market.
+           */
 
-        if (
-          listing.status === "sold"
-        ) {
-          return false;
+          if (
+            listing.status ===
+            "sold"
+          ) {
+            return false;
+          }
+
+
+          const matchesSearch =
+            !queryText ||
+            (
+              `${listing.title || ""} ${
+                listing.description || ""
+              } ${
+                listing.username || ""
+              } ${
+                listing.category || ""
+              } ${
+                listing.location || ""
+              } ${
+                listing.country || ""
+              }`
+            )
+              .toLowerCase()
+              .includes(
+                queryText
+              );
+
+
+          const matchesCategory =
+            selectedCategory ===
+              "All" ||
+            (
+              listing.category ||
+              "Other"
+            ) === selectedCategory;
+
+
+          return (
+            matchesSearch &&
+            matchesCategory
+          );
+
         }
-
-
-        const matchesSearch =
-          !queryText ||
-          (
-            `${listing.title || ""} ${
-              listing.description || ""
-            } ${
-              listing.username || ""
-            } ${
-              listing.category || ""
-            } ${
-              listing.location || ""
-            } ${
-              listing.country || ""
-            }`
-          )
-            .toLowerCase()
-            .includes(queryText);
-
-
-        const matchesCategory =
-          selectedCategory === "All" ||
-          (
-            listing.category ||
-            "Other"
-          ) === selectedCategory;
-
-
-        return (
-          matchesSearch &&
-          matchesCategory
-        );
-      });
+      );
 
 
   /*
-   * My Listings is only a seller feature.
+   * Seller → My Listings.
    */
 
   if (
@@ -624,11 +711,14 @@ export function renderMarket(renderApp) {
                 }`
               )
                 .toLowerCase()
-                .includes(queryText);
+                .includes(
+                  queryText
+                );
 
 
             const matchesCategory =
-              selectedCategory === "All" ||
+              selectedCategory ===
+                "All" ||
               (
                 listing.category ||
                 "Other"
@@ -639,14 +729,14 @@ export function renderMarket(renderApp) {
               matchesSearch &&
               matchesCategory
             );
+
           }
         );
   }
 
 
   /*
-   * Sort only the listings already loaded in state.
-   * No additional Firestore reads.
+   * Sort only data already loaded.
    */
 
   filtered.sort(
@@ -676,9 +766,11 @@ export function renderMarket(renderApp) {
             );
 
 
-      return sortBy === "oldest"
+      return sortBy ===
+        "oldest"
         ? timeA - timeB
         : timeB - timeA;
+
     }
   );
 
@@ -711,7 +803,7 @@ export function renderMarket(renderApp) {
 
 
       <!-- =================================================
-           SELLER ACCOUNT HEADER
+           SELLER HEADER
            ================================================= -->
 
       ${
@@ -730,27 +822,27 @@ export function renderMarket(renderApp) {
 
               <div
                 style="
-                  display: flex;
-                  align-items: center;
-                  justify-content: space-between;
-                  gap: 10px;
-                  flex-wrap: wrap;
+                  display:flex;
+                  align-items:center;
+                  justify-content:space-between;
+                  gap:10px;
+                  flex-wrap:wrap;
                 "
               >
 
                 <div>
 
                   <strong>
-                    🛍️ ${
-                      escapeHtml(
-                        state.profile
-                          ?.marketAccount
-                          ?.storeName ||
-                        state.profile
-                          ?.displayName ||
-                        "Market Seller"
-                      )
-                    }
+
+                    🛍️ ${escapeHtml(
+                      state.profile
+                        ?.marketAccount
+                        ?.storeName ||
+                      state.profile
+                        ?.displayName ||
+                      "Market Seller"
+                    )}
+
                   </strong>
 
                   <div class="small">
@@ -763,7 +855,8 @@ export function renderMarket(renderApp) {
                 <button
                   class="btn btn-ghost"
                   id="manageMarketAccountBtn"
-                  style="font-size: 13px;"
+                  type="button"
+                  style="font-size:13px;"
                 >
                   Manage
                 </button>
@@ -778,7 +871,7 @@ export function renderMarket(renderApp) {
 
 
       <!-- =================================================
-           BROWSE BUTTON
+           NORMAL USER BROWSE ENTRY
            ================================================= -->
 
       ${
@@ -788,43 +881,47 @@ export function renderMarket(renderApp) {
             <div
               class="card"
               style="
-                padding: 28px 20px;
-                text-align: center;
-                margin-bottom: 14px;
+                padding:28px 20px;
+                text-align:center;
+                margin-bottom:14px;
               "
             >
 
               <div
                 style="
-                  font-size: 44px;
-                  margin-bottom: 8px;
+                  font-size:44px;
+                  margin-bottom:8px;
                 "
               >
                 🛍️
               </div>
 
+
               <h3
                 style="
-                  margin: 0 0 6px;
+                  margin:0 0 6px;
                 "
               >
                 Explore Marvel Market
               </h3>
 
+
               <p
                 class="small"
                 style="
-                  max-width: 420px;
-                  margin: 0 auto 18px;
+                  max-width:420px;
+                  margin:0 auto 18px;
                 "
               >
                 Browse products and services
                 from community members.
               </p>
 
+
               <button
                 class="btn btn-primary"
                 id="browseMarketBtn"
+                type="button"
               >
                 Browse Market
               </button>
@@ -846,9 +943,7 @@ export function renderMarket(renderApp) {
 
             <div
               class="search"
-              style="
-                margin-bottom: 12px;
-              "
+              style="margin-bottom:12px;"
             >
 
               <input
@@ -864,12 +959,15 @@ export function renderMarket(renderApp) {
               ${
                 seller
                   ? `
+
                     <button
                       class="btn btn-primary"
                       id="sellBtn"
+                      type="button"
                     >
                       + Sell
                     </button>
+
                   `
                   : ""
               }
@@ -877,17 +975,13 @@ export function renderMarket(renderApp) {
             </div>
 
 
-            <!-- TABS -->
-
             ${
               seller
                 ? `
 
                   <div
                     class="segmented"
-                    style="
-                      margin-bottom: 12px;
-                    "
+                    style="margin-bottom:12px;"
                   >
 
                     <button
@@ -897,6 +991,7 @@ export function renderMarket(renderApp) {
                           : "btn-ghost"
                       }"
                       id="browseTabBtn"
+                      type="button"
                       style="flex:1;"
                     >
                       Browse Market
@@ -910,6 +1005,7 @@ export function renderMarket(renderApp) {
                           : "btn-ghost"
                       }"
                       id="myListingsTabBtn"
+                      type="button"
                       style="flex:1;"
                     >
                       My Listings
@@ -923,15 +1019,13 @@ export function renderMarket(renderApp) {
             }
 
 
-            <!-- SORT + CATEGORY -->
-
             <div
               style="
-                display: flex;
-                gap: 8px;
-                align-items: center;
-                margin-bottom: 14px;
-                flex-wrap: wrap;
+                display:flex;
+                gap:8px;
+                align-items:center;
+                margin-bottom:14px;
+                flex-wrap:wrap;
               "
             >
 
@@ -939,16 +1033,17 @@ export function renderMarket(renderApp) {
                 class="select"
                 id="marketSortSelect"
                 style="
-                  width: auto;
-                  padding: 6px 12px;
-                  font-size: 13px;
+                  width:auto;
+                  padding:6px 12px;
+                  font-size:13px;
                 "
               >
 
                 <option
                   value="newest"
                   ${
-                    sortBy === "newest"
+                    sortBy ===
+                    "newest"
                       ? "selected"
                       : ""
                   }
@@ -956,10 +1051,12 @@ export function renderMarket(renderApp) {
                   Newest
                 </option>
 
+
                 <option
                   value="oldest"
                   ${
-                    sortBy === "oldest"
+                    sortBy ===
+                    "oldest"
                       ? "selected"
                       : ""
                   }
@@ -972,12 +1069,12 @@ export function renderMarket(renderApp) {
 
               <div
                 style="
-                  display: flex;
-                  gap: 5px;
-                  overflow-x: auto;
-                  flex: 1;
-                  padding-bottom: 4px;
-                  white-space: nowrap;
+                  display:flex;
+                  gap:5px;
+                  overflow-x:auto;
+                  flex:1;
+                  padding-bottom:4px;
+                  white-space:nowrap;
                 "
               >
 
@@ -996,10 +1093,11 @@ export function renderMarket(renderApp) {
                           data-market-category="${escapeHtml(
                             category
                           )}"
+                          type="button"
                           style="
-                            padding: 4px 10px;
-                            font-size: 12px;
-                            border-radius: 999px;
+                            padding:4px 10px;
+                            font-size:12px;
+                            border-radius:999px;
                           "
                         >
                           ${escapeHtml(
@@ -1024,9 +1122,10 @@ export function renderMarket(renderApp) {
                   <button
                     class="btn btn-ghost"
                     id="closeBrowseMarketBtn"
+                    type="button"
                     style="
-                      margin-bottom: 12px;
-                      font-size: 13px;
+                      margin-bottom:12px;
+                      font-size:13px;
                     "
                   >
                     ← Back
@@ -1060,34 +1159,34 @@ export function renderMarket(renderApp) {
 
                         <div
                           class="list-item"
-                          style="cursor: pointer;"
                           data-view-listing="${escapeHtml(
                             listing.id
                           )}"
+                          style="cursor:pointer;"
                         >
 
                           <div
                             class="profile-row"
                             style="
-                              align-items: flex-start;
-                              justify-content: space-between;
+                              align-items:flex-start;
+                              justify-content:space-between;
                             "
                           >
 
                             <div
                               style="
-                                display: flex;
-                                gap: 10px;
-                                align-items: flex-start;
-                                flex: 1;
-                                min-width: 0;
+                                display:flex;
+                                gap:10px;
+                                align-items:flex-start;
+                                flex:1;
+                                min-width:0;
                               "
                             >
 
                               <div
                                 class="avatar"
                                 style="
-                                  font-size: 16px;
+                                  font-size:16px;
                                 "
                               >
                                 🛍️
@@ -1097,24 +1196,24 @@ export function renderMarket(renderApp) {
                               <div
                                 class="profile-meta"
                                 style="
-                                  flex: 1;
-                                  min-width: 0;
+                                  flex:1;
+                                  min-width:0;
                                 "
                               >
 
                                 <div
                                   style="
-                                    display: flex;
-                                    align-items: center;
-                                    gap: 6px;
-                                    flex-wrap: wrap;
+                                    display:flex;
+                                    align-items:center;
+                                    gap:6px;
+                                    flex-wrap:wrap;
                                   "
                                 >
 
                                   <strong
                                     style="
-                                      font-size: 15px;
-                                      overflow-wrap: anywhere;
+                                      font-size:15px;
+                                      overflow-wrap:anywhere;
                                     "
                                   >
                                     ${escapeHtml(
@@ -1124,13 +1223,7 @@ export function renderMarket(renderApp) {
                                   </strong>
 
 
-                                  <span
-                                    class="badge"
-                                    style="
-                                      background:
-                                        var(--surface2);
-                                    "
-                                  >
+                                  <span class="badge">
                                     ${escapeHtml(
                                       listing.category ||
                                       "Other"
@@ -1159,8 +1252,8 @@ export function renderMarket(renderApp) {
                                 <span
                                   class="small"
                                   style="
-                                    display: block;
-                                    margin-top: 2px;
+                                    display:block;
+                                    margin-top:2px;
                                   "
                                 >
 
@@ -1198,15 +1291,15 @@ export function renderMarket(renderApp) {
                                 <p
                                   class="small"
                                   style="
-                                    margin: 6px 0;
+                                    margin:6px 0;
                                     color:
                                       var(--text-secondary);
                                     display:
                                       -webkit-box;
-                                    -webkit-line-clamp: 2;
+                                    -webkit-line-clamp:2;
                                     -webkit-box-orient:
                                       vertical;
-                                    overflow: hidden;
+                                    overflow:hidden;
                                   "
                                 >
                                   ${escapeHtml(
@@ -1226,8 +1319,7 @@ export function renderMarket(renderApp) {
                                         style="
                                           background:
                                             var(--danger);
-                                          color:
-                                            #fff;
+                                          color:#fff;
                                         "
                                       >
                                         Sold
@@ -1244,18 +1336,15 @@ export function renderMarket(renderApp) {
 
                             <strong
                               style="
-                                color:
-                                  var(--primary);
-                                font-size:
-                                  16px;
-                                white-space:
-                                  nowrap;
-                                margin-left:
-                                  8px;
+                                color:var(--primary);
+                                font-size:16px;
+                                white-space:nowrap;
+                                margin-left:8px;
                               "
                             >
                               ₦${Number(
-                                listing.price || 0
+                                listing.price ||
+                                0
                               ).toLocaleString()}
                             </strong>
 
@@ -1276,15 +1365,15 @@ export function renderMarket(renderApp) {
               <div
                 class="card empty"
                 style="
-                  padding: 40px 20px;
-                  text-align: center;
+                  padding:40px 20px;
+                  text-align:center;
                 "
               >
 
                 <div
                   style="
-                    font-size: 40px;
-                    margin-bottom: 8px;
+                    font-size:40px;
+                    margin-bottom:8px;
                   "
                 >
                   🛍️
@@ -1292,40 +1381,50 @@ export function renderMarket(renderApp) {
 
 
                 <h3>
+
                   ${
                     seller &&
-                    marketTab === "mine"
+                    marketTab ===
+                    "mine"
                       ? "No listings yet"
                       : "No products found"
                   }
+
                 </h3>
 
 
                 <p
                   class="small"
                   style="
-                    margin-bottom: 16px;
+                    margin-bottom:16px;
                     color:
                       var(--text-secondary);
                   "
                 >
+
                   ${
                     seller &&
-                    marketTab === "mine"
+                    marketTab ===
+                    "mine"
+
                       ? "Create your first marketplace listing."
+
                       : "Try another search or category."
                   }
+
                 </p>
 
 
                 ${
                   seller &&
-                  marketTab === "mine"
+                  marketTab ===
+                  "mine"
                     ? `
 
                       <button
                         class="btn btn-primary"
                         id="emptySellBtn"
+                        type="button"
                       >
                         Sell something
                       </button>
@@ -1361,12 +1460,13 @@ export function showSellModal(
 
 
   /*
-   * Ownership protection.
+   * Never allow editing another user's listing.
    */
 
   if (
     editing &&
-    existingListing.uid !== getUid()
+    existingListing.uid !==
+      getUid()
   ) {
 
     toast(
@@ -1378,7 +1478,8 @@ export function showSellModal(
 
 
   /*
-   * Creating requires a Market Account.
+   * Creating a listing requires
+   * a Market Account.
    */
 
   if (
@@ -1390,16 +1491,19 @@ export function showSellModal(
       "Create a Marketplace Account before selling."
     );
 
+
     showMarketAccountModal(
       renderApp
     );
+
 
     return;
   }
 
 
   const account =
-    state.profile?.marketAccount || {};
+    state.profile?.marketAccount ||
+    {};
 
 
   const defaultCountry =
@@ -1425,7 +1529,8 @@ export function showSellModal(
           class="input"
           id="listingTitle"
           value="${escapeHtml(
-            existingListing?.title || ""
+            existingListing?.title ||
+            ""
           )}"
           placeholder="What are you selling?"
         >
@@ -1445,7 +1550,8 @@ export function showSellModal(
           rows="4"
           placeholder="Describe your product clearly..."
         >${escapeHtml(
-          existingListing?.description || ""
+          existingListing?.description ||
+          ""
         )}</textarea>
 
       </div>
@@ -1466,7 +1572,8 @@ export function showSellModal(
             min="0"
             step="1"
             value="${
-              existingListing?.price ?? ""
+              existingListing?.price ??
+              ""
             }"
             placeholder="25000"
           >
@@ -1489,7 +1596,8 @@ export function showSellModal(
               marketCategories
                 .filter(
                   category =>
-                    category !== "All"
+                    category !==
+                    "All"
                 )
                 .map(
                   category => `
@@ -1612,6 +1720,7 @@ export function showSellModal(
       <button
         class="btn btn-primary btn-block"
         id="publishListing"
+        type="button"
       >
         ${
           editing
@@ -1669,11 +1778,12 @@ export function showSellModal(
 
 
         const title =
-          titleInput?.value.trim() || "";
+          titleInput?.value.trim() ||
+          "";
 
         const description =
-          descriptionInput
-            ?.value.trim() || "";
+          descriptionInput?.value.trim() ||
+          "";
 
         const price =
           Number(
@@ -1681,16 +1791,20 @@ export function showSellModal(
           );
 
         const category =
-          categoryInput?.value || "";
+          categoryInput?.value ||
+          "";
 
         const condition =
-          conditionInput?.value || "";
+          conditionInput?.value ||
+          "";
 
         const country =
-          countryInput?.value.trim() || "";
+          countryInput?.value.trim() ||
+          "";
 
         const location =
-          locationInput?.value.trim() || "";
+          locationInput?.value.trim() ||
+          "";
 
 
         if (!title) {
@@ -1765,7 +1879,7 @@ export function showSellModal(
 
 
         /*
-         * Final seller check.
+         * Final seller check before publishing.
          */
 
         if (
@@ -1775,13 +1889,16 @@ export function showSellModal(
 
           closeModal();
 
+
           showMarketAccountModal(
             renderApp
           );
 
+
           toast(
             "A Marketplace Account is required to sell."
           );
+
 
           return;
         }
@@ -1793,10 +1910,14 @@ export function showSellModal(
           );
 
 
-        if (!button) return;
+        if (!button) {
+          return;
+        }
 
 
-        button.disabled = true;
+        button.disabled =
+          true;
+
 
         button.textContent =
           editing
@@ -1917,11 +2038,15 @@ export function showSellModal(
             error
           );
 
+
           toast(
             friendly(error)
           );
 
-          button.disabled = false;
+
+          button.disabled =
+            false;
+
 
           button.textContent =
             editing
@@ -1947,7 +2072,8 @@ export async function showListingDetails(
     (state.listings || [])
       .find(
         item =>
-          item.id === listingId
+          item.id ===
+          listingId
       );
 
 
@@ -1962,7 +2088,8 @@ export async function showListingDetails(
 
 
   const isOwner =
-    listing.uid === getUid();
+    listing.uid ===
+    getUid();
 
 
   const postedDate =
@@ -1988,20 +2115,19 @@ export async function showListingDetails(
 
       <div
         style="
-          display: flex;
-          flex-direction: column;
-          gap: 16px;
+          display:flex;
+          flex-direction:column;
+          gap:16px;
         "
       >
 
-
         <div
           style="
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            gap: 12px;
-            flex-wrap: wrap;
+            display:flex;
+            justify-content:space-between;
+            align-items:flex-start;
+            gap:12px;
+            flex-wrap:wrap;
           "
         >
 
@@ -2009,15 +2135,15 @@ export async function showListingDetails(
 
             <div
               style="
-                font-size: 28px;
-                font-weight: 900;
-                color:
-                  var(--primary);
-                margin-bottom: 4px;
+                font-size:28px;
+                font-weight:900;
+                color:var(--primary);
+                margin-bottom:4px;
               "
             >
               ₦${Number(
-                listing.price || 0
+                listing.price ||
+                0
               ).toLocaleString()}
             </div>
 
@@ -2059,9 +2185,9 @@ export async function showListingDetails(
 
           <div
             style="
-              display: flex;
-              gap: 6px;
-              flex-wrap: wrap;
+              display:flex;
+              gap:6px;
+              flex-wrap:wrap;
             "
           >
 
@@ -2076,10 +2202,8 @@ export async function showListingDetails(
             <span
               class="badge"
               style="
-                background:
-                  var(--surface2);
-                color:
-                  var(--text);
+                background:var(--surface2);
+                color:var(--text);
               "
             >
               ${escapeHtml(
@@ -2097,10 +2221,8 @@ export async function showListingDetails(
                   <span
                     class="badge"
                     style="
-                      background:
-                        var(--danger);
-                      color:
-                        #fff;
+                      background:var(--danger);
+                      color:#fff;
                     "
                   >
                     Sold
@@ -2118,23 +2240,20 @@ export async function showListingDetails(
         <div
           class="card"
           style="
-            background:
-              var(--surface2);
-            padding: 16px;
-            margin: 0;
-            box-shadow: none;
+            background:var(--surface2);
+            padding:16px;
+            margin:0;
+            box-shadow:none;
           "
         >
 
           <strong
             style="
-              display: block;
-              margin-bottom: 6px;
-              font-size: 13px;
-              text-transform:
-                uppercase;
-              color:
-                var(--muted);
+              display:block;
+              margin-bottom:6px;
+              font-size:13px;
+              text-transform:uppercase;
+              color:var(--muted);
             "
           >
             Description
@@ -2143,11 +2262,11 @@ export async function showListingDetails(
 
           <p
             style="
-              white-space: pre-wrap;
-              word-break: break-word;
-              margin: 0;
-              font-size: 14px;
-              line-height: 1.5;
+              white-space:pre-wrap;
+              word-break:break-word;
+              margin:0;
+              font-size:14px;
+              line-height:1.5;
             "
           >
             ${escapeHtml(
@@ -2162,23 +2281,25 @@ export async function showListingDetails(
         <div
           class="small"
           style="
-            background:
-              var(--surface2);
-            padding: 14px;
-            border-radius: 16px;
-            display: flex;
-            flex-direction: column;
-            gap: 5px;
+            background:var(--surface2);
+            padding:14px;
+            border-radius:16px;
+            display:flex;
+            flex-direction:column;
+            gap:5px;
           "
         >
 
           <div>
             📍 Location:
+
             <strong>
+
               ${escapeHtml(
                 listing.location ||
                 "Not specified"
               )}
+
               ${
                 listing.country
                   ? `, ${escapeHtml(
@@ -2186,20 +2307,27 @@ export async function showListingDetails(
                     )}`
                   : ""
               }
+
             </strong>
+
           </div>
 
 
           <div>
+
             📋 Status:
+
             <strong>
+
               ${
                 listing.status ===
                 "sold"
                   ? "Sold"
                   : "Active"
               }
+
             </strong>
+
           </div>
 
         </div>
@@ -2213,12 +2341,13 @@ export async function showListingDetails(
 
                 <div
                   class="grid grid3"
-                  style="gap: 8px;"
+                  style="gap:8px;"
                 >
 
                   <button
                     class="btn btn-secondary"
                     id="editListingBtn"
+                    type="button"
                   >
                     ✏️ Edit
                   </button>
@@ -2232,19 +2361,23 @@ export async function showListingDetails(
                         : "btn-ghost"
                     }"
                     id="toggleSoldBtn"
+                    type="button"
                   >
+
                     ${
                       listing.status ===
                       "sold"
                         ? "Reactivate"
                         : "Mark as Sold"
                     }
+
                   </button>
 
 
                   <button
                     class="btn btn-danger"
                     id="deleteListingBtn"
+                    type="button"
                   >
                     🗑️ Delete
                   </button>
@@ -2257,6 +2390,7 @@ export async function showListingDetails(
                 <button
                   class="btn btn-primary btn-block"
                   id="messageSellerBtn"
+                  type="button"
                 >
                   💬 Contact Seller
                 </button>
@@ -2288,6 +2422,7 @@ export async function showListingDetails(
 
           closeModal();
 
+
           showSellModal(
             renderApp,
             listing
@@ -2310,9 +2445,15 @@ export async function showListingDetails(
               "toggleSoldBtn"
             );
 
-          if (!button) return;
 
-          button.disabled = true;
+          if (!button) {
+            return;
+          }
+
+
+          button.disabled =
+            true;
+
 
           try {
 
@@ -2345,7 +2486,8 @@ export async function showListingDetails(
 
 
             toast(
-              newStatus === "sold"
+              newStatus ===
+              "sold"
                 ? "Listing marked as sold 🏷️"
                 : "Listing reactivated 🚀"
             );
@@ -2365,9 +2507,11 @@ export async function showListingDetails(
               error
             );
 
+
             toast(
               friendly(error)
             );
+
 
             button.disabled =
               false;
@@ -2392,21 +2536,25 @@ export async function showListingDetails(
             `
 
               <p class="small">
+
                 Delete
+
                 <strong>
                   "${escapeHtml(
                     listing.title
                   )}"
                 </strong>
+
                 permanently?
+
               </p>
 
 
               <div
                 style="
-                  display: flex;
-                  gap: 8px;
-                  margin-top: 15px;
+                  display:flex;
+                  gap:8px;
+                  margin-top:15px;
                 "
               >
 
@@ -2414,6 +2562,7 @@ export async function showListingDetails(
                   class="btn btn-ghost"
                   style="flex:1;"
                   id="cancelDeleteListing"
+                  type="button"
                 >
                   Cancel
                 </button>
@@ -2423,6 +2572,7 @@ export async function showListingDetails(
                   class="btn btn-danger"
                   style="flex:1;"
                   id="confirmDeleteListing"
+                  type="button"
                 >
                   Delete
                 </button>
@@ -2463,9 +2613,15 @@ export async function showListingDetails(
                     "confirmDeleteListing"
                   );
 
-                if (!button) return;
 
-                button.disabled = true;
+                if (!button) {
+                  return;
+                }
+
+
+                button.disabled =
+                  true;
+
 
                 button.textContent =
                   "Deleting...";
@@ -2483,6 +2639,7 @@ export async function showListingDetails(
 
 
                   closeModal();
+
 
                   toast(
                     "Listing deleted."
@@ -2503,12 +2660,15 @@ export async function showListingDetails(
                     error
                   );
 
+
                   toast(
                     friendly(error)
                   );
 
+
                   button.disabled =
                     false;
+
 
                   button.textContent =
                     "Delete";
@@ -2542,9 +2702,15 @@ export async function showListingDetails(
               "messageSellerBtn"
             );
 
-          if (!button) return;
 
-          button.disabled = true;
+          if (!button) {
+            return;
+          }
+
+
+          button.disabled =
+            true;
+
 
           button.textContent =
             "Opening chat...";
@@ -2565,20 +2731,22 @@ export async function showListingDetails(
                 "This is your listing."
               );
 
+
               button.disabled =
                 false;
 
+
               button.textContent =
                 "💬 Contact Seller";
+
 
               return;
             }
 
 
             /*
-             * One user document read.
-             * This is only performed when the buyer
-             * explicitly chooses Contact Seller.
+             * Seller profile is only read after
+             * the buyer explicitly contacts them.
              */
 
             const userSnapshot =
@@ -2588,11 +2756,13 @@ export async function showListingDetails(
                     db,
                     "users"
                   ),
+
                   where(
                     "uid",
                     "==",
                     sellerUid
                   ),
+
                   limit(1)
                 )
               );
@@ -2622,10 +2792,12 @@ export async function showListingDetails(
 
                 id:
                   userSnapshot
-                    .docs[0].id,
+                    .docs[0]
+                    .id,
 
                 ...userSnapshot
-                  .docs[0].data()
+                  .docs[0]
+                  .data()
 
               };
 
@@ -2697,12 +2869,15 @@ export async function showListingDetails(
               error
             );
 
+
             toast(
               "Could not contact seller."
             );
 
+
             button.disabled =
               false;
+
 
             button.textContent =
               "💬 Contact Seller";
@@ -2743,7 +2918,7 @@ export function attachMarketEvents(
 
 
   /* -------------------------------------------------------
-     Back from Browse
+     Back
      ------------------------------------------------------- */
 
   document
@@ -2783,7 +2958,7 @@ export function attachMarketEvents(
 
 
   /* -------------------------------------------------------
-     Empty My Listings
+     Empty My Listings → Sell
      ------------------------------------------------------- */
 
   document
@@ -2823,7 +2998,7 @@ export function attachMarketEvents(
 
 
   /* -------------------------------------------------------
-     Browse / My Listings
+     Browse Tab
      ------------------------------------------------------- */
 
   document
@@ -2842,6 +3017,10 @@ export function attachMarketEvents(
       }
     );
 
+
+  /* -------------------------------------------------------
+     My Listings Tab
+     ------------------------------------------------------- */
 
   document
     .getElementById(
@@ -2879,6 +3058,7 @@ export function attachMarketEvents(
         state.search =
           event.target.value;
 
+
         renderApp();
 
 
@@ -2890,9 +3070,14 @@ export function attachMarketEvents(
                 "marketSearch"
               );
 
-            if (!input) return;
+
+            if (!input) {
+              return;
+            }
+
 
             input.focus();
+
 
             input.selectionStart =
               input.selectionEnd =
@@ -2922,6 +3107,7 @@ export function attachMarketEvents(
         state.marketSort =
           event.target.value;
 
+
         renderApp();
 
       }
@@ -2946,6 +3132,7 @@ export function attachMarketEvents(
             state.marketCategory =
               button.dataset
                 .marketCategory;
+
 
             renderApp();
 
