@@ -6,6 +6,7 @@ import {
   friendly
 } from "../state.js";
 
+
 import {
   db,
   collection,
@@ -17,29 +18,33 @@ import {
   limit
 } from "../firebase/firestore.js";
 
+
 import {
   updateProfile,
   signOut
 } from "../firebase/auth.js";
+
 
 import {
   showModal,
   closeModal
 } from "../components/modal.js";
 
+
 import {
   toast
 } from "../components/toast.js";
+
 
 import {
   renderPost
 } from "./home.js";
 
+
 import {
   hasMarketAccount,
   showMarketAccountModal,
-  showListingDetails,
-  showSellModal
+  showListingDetails
 } from "./market.js";
 
 
@@ -47,10 +52,13 @@ import {
    PROFILE
    ========================================================= */
 
-export function renderProfile() {
+export function renderProfile(
+  renderApp
+) {
 
   const p =
     state.profile || {};
+
 
   const name =
     p.displayName ||
@@ -65,13 +73,14 @@ export function renderProfile() {
           post.savedBy
         ) &&
         post.savedBy.includes(
-          state.user.uid
+          state.user?.uid
         )
     ).length;
 
 
   const marketAccount =
     p.marketAccount || {};
+
 
   const marketActive =
     hasMarketAccount();
@@ -89,6 +98,10 @@ export function renderProfile() {
   return `
 
     <div class="page">
+
+      <!-- =================================================
+           PROFILE HERO
+           ================================================= -->
 
       <section class="hero">
 
@@ -127,7 +140,9 @@ export function renderProfile() {
       </section>
 
 
-      <!-- PROFILE STATS -->
+      <!-- =================================================
+           PROFILE STATS
+           ================================================= -->
 
       <div class="grid grid3">
 
@@ -142,7 +157,7 @@ export function renderProfile() {
               state.posts.filter(
                 post =>
                   post.uid ===
-                  state.user.uid
+                  state.user?.uid
               ).length
             }
           </strong>
@@ -185,7 +200,9 @@ export function renderProfile() {
       </div>
 
 
-      <!-- PROFILE -->
+      <!-- =================================================
+           PROFILE INFORMATION
+           ================================================= -->
 
       <div class="section-title">
 
@@ -201,9 +218,11 @@ export function renderProfile() {
         <div class="profile-row">
 
           <div class="avatar avatar-lg">
+
             ${escapeHtml(
               initials(name)
             )}
+
           </div>
 
 
@@ -254,7 +273,9 @@ export function renderProfile() {
       </div>
 
 
-      <!-- MARKET -->
+      <!-- =================================================
+           MARVEL MARKET
+           ================================================= -->
 
       <div class="section-title">
 
@@ -280,27 +301,37 @@ export function renderProfile() {
           <div>
 
             <strong>
+
               ${
                 marketActive
+
                   ? escapeHtml(
                       marketAccount.storeName ||
                       p.displayName ||
                       p.username ||
                       "Market Seller"
                     )
+
                   : "No Market Account"
+
               }
+
             </strong>
+
 
             <p
               class="small"
               style="margin:5px 0 0;"
             >
+
               ${
                 marketActive
-                  ? "Your seller account is active."
+
+                  ? "Your Market Account is active."
+
                   : "Create a Market Account to start selling."
               }
+
             </p>
 
           </div>
@@ -316,11 +347,13 @@ export function renderProfile() {
               }
             "
           >
+
             ${
               marketActive
                 ? "Seller"
                 : "Buyer"
             }
+
           </span>
 
         </div>
@@ -331,36 +364,64 @@ export function renderProfile() {
           style="margin-top:12px;"
         >
 
+          <!-- ============================================
+               MARKET ACCOUNT BUTTON
+               ============================================ -->
+
           <button
             class="btn btn-primary"
             id="marketAccountBtn"
+            type="button"
           >
+
             ${
               marketActive
-                ? "🏪 Manage Market Account"
+                ? "🏪 Market Account"
                 : "🏪 Create Market Account"
             }
+
           </button>
 
 
-          <button
-            class="btn btn-ghost"
-            id="myListingsBtn"
-          >
-            📋 My Listings
-            ${
-              ownListings.length
-                ? `(${ownListings.length})`
-                : ""
-            }
-          </button>
+          <!-- ============================================
+               MY LISTINGS
+               ============================================ -->
+
+          ${
+            marketActive
+
+              ? `
+
+                <button
+                  class="btn btn-ghost"
+                  id="myListingsBtn"
+                  type="button"
+                >
+
+                  📋 My Listings
+
+                  ${
+                    ownListings.length
+                      ? `(${ownListings.length})`
+                      : ""
+                  }
+
+                </button>
+
+              `
+
+              : ""
+
+          }
 
         </div>
 
       </div>
 
 
-      <!-- ACCOUNT -->
+      <!-- =================================================
+           ACCOUNT
+           ================================================= -->
 
       <div class="section-title">
 
@@ -376,6 +437,7 @@ export function renderProfile() {
         <button
           class="btn btn-ghost"
           id="editProfileBtn"
+          type="button"
         >
           ✏️ Edit profile
         </button>
@@ -384,6 +446,7 @@ export function renderProfile() {
         <button
           class="btn btn-ghost"
           id="savedBtn"
+          type="button"
         >
           🔖 Saved posts
         </button>
@@ -392,6 +455,7 @@ export function renderProfile() {
         <button
           class="btn btn-ghost"
           id="settingsBtn"
+          type="button"
         >
           ⚙️ Settings & About
         </button>
@@ -400,6 +464,7 @@ export function renderProfile() {
         <button
           class="btn btn-danger"
           id="logoutBtn"
+          type="button"
         >
           🚪 Sign out
         </button>
@@ -486,6 +551,7 @@ export function showEditProfile(
       <button
         class="btn btn-primary btn-block"
         id="saveProfile"
+        type="button"
       >
         Save changes
       </button>
@@ -509,6 +575,7 @@ export function showEditProfile(
             .value
             .trim();
 
+
         const username =
           document
             .getElementById(
@@ -516,6 +583,7 @@ export function showEditProfile(
             )
             .value
             .trim();
+
 
         const bio =
           document
@@ -570,6 +638,7 @@ export function showEditProfile(
 
           closeModal();
 
+
           toast(
             "Profile updated ✨"
           );
@@ -578,6 +647,12 @@ export function showEditProfile(
           renderApp?.();
 
         } catch (error) {
+
+          console.error(
+            "[Profile] Update error:",
+            error
+          );
+
 
           toast(
             friendly(error)
@@ -597,20 +672,21 @@ async function showMyListings(
 ) {
 
   if (!state.user) {
-    toast("Please sign in first.");
+
+    toast(
+      "Please sign in first."
+    );
+
     return;
   }
 
 
   /*
-   * IMPORTANT:
+   * My Listings is intentionally NOT
+   * a permanent Firestore listener.
    *
-   * We do NOT create a permanent listener here.
-   *
-   * We fetch only this user's listings
-   * when they actually open My Listings.
-   *
-   * limit(50) prevents an accidental large read.
+   * We only read the user's listings
+   * when the button is pressed.
    */
 
   const button =
@@ -618,8 +694,12 @@ async function showMyListings(
       "myListingsBtn"
     );
 
+
   if (button) {
-    button.disabled = true;
+
+    button.disabled =
+      true;
+
     button.textContent =
       "Loading listings…";
   }
@@ -634,11 +714,13 @@ async function showMyListings(
             db,
             "listings"
           ),
+
           where(
             "uid",
             "==",
             state.user.uid
           ),
+
           limit(50)
         )
       );
@@ -646,17 +728,19 @@ async function showMyListings(
 
     const listings =
       snapshot.docs.map(
-        document => ({
-          id: document.id,
-          ...document.data()
+        listingDoc => ({
+          id:
+            listingDoc.id,
+
+          ...listingDoc.data()
         })
       );
 
 
     /*
-     * Merge the user's listings into local state.
-     * This avoids another read when the user opens
-     * one of them.
+     * Merge only this user's
+     * freshly loaded listings
+     * into local state.
      */
 
     const otherListings =
@@ -678,6 +762,7 @@ async function showMyListings(
       renderApp
     );
 
+
   } catch (error) {
 
     console.error(
@@ -685,9 +770,11 @@ async function showMyListings(
       error
     );
 
+
     toast(
       friendly(error)
     );
+
 
   } finally {
 
@@ -696,7 +783,7 @@ async function showMyListings(
       button.disabled =
         false;
 
-      button.textContent =
+      button.innerHTML =
         "📋 My Listings";
     }
   }
@@ -721,6 +808,7 @@ function showProfileListingsModal(
 
 
   showModal(
+
     "My Listings",
 
     listings.length
@@ -789,7 +877,9 @@ function showProfileListingsModal(
                           ${
                             listing.status ===
                             "sold"
+
                               ? "🏷️ Sold"
+
                               : "🟢 Active"
                           }
 
@@ -829,13 +919,14 @@ function showProfileListingsModal(
         </div>
 
 
-        <button
-          class="btn btn-primary btn-block"
-          id="profileNewListingBtn"
+        <div
+          class="notice"
           style="margin-top:12px;"
         >
-          + Create New Listing
-        </button>
+          💡 To edit, mark as sold,
+          reactivate, or delete a listing,
+          open it from Marvel Market.
+        </div>
 
       `
 
@@ -858,33 +949,32 @@ function showProfileListingsModal(
             🛍️
           </div>
 
+
           <h3>
             No listings yet
           </h3>
 
+
           <p class="small">
-            Create a Market Account
-            and publish your first
-            listing.
+            Open Marvel Market to
+            create your first listing.
           </p>
-
-
-          <button
-            class="btn btn-primary"
-            id="profileNewListingBtn"
-          >
-            ${
-              hasMarketAccount()
-                ? "Create Listing"
-                : "Create Market Account"
-            }
-          </button>
 
         </div>
 
       `
   );
 
+
+  /*
+   * Profile is VIEW-ONLY.
+   *
+   * Clicking a listing opens its
+   * normal details page.
+   *
+   * Edit / Sold / Delete remain
+   * controlled by Market.
+   */
 
   document
     .querySelectorAll(
@@ -901,42 +991,18 @@ function showProfileListingsModal(
               item.dataset
                 .profileListing;
 
+
             closeModal();
+
 
             showListingDetails(
               listingId,
               renderApp
             );
+
           }
         );
-      }
-    );
 
-
-  document
-    .getElementById(
-      "profileNewListingBtn"
-    )
-    ?.addEventListener(
-      "click",
-      () => {
-
-        closeModal();
-
-        if (
-          hasMarketAccount()
-        ) {
-
-          showSellModal(
-            renderApp
-          );
-
-        } else {
-
-          showMarketAccountModal(
-            renderApp
-          );
-        }
       }
     );
 }
@@ -955,7 +1021,7 @@ export function showSaved() {
           post.savedBy
         ) &&
         post.savedBy.includes(
-          state.user.uid
+          state.user?.uid
         )
     );
 
@@ -1000,6 +1066,10 @@ export function attachProfileEvents(
   renderApp
 ) {
 
+  /* =======================================================
+     EDIT PROFILE
+     ======================================================= */
+
   document
     .getElementById(
       "editProfileBtn"
@@ -1013,6 +1083,10 @@ export function attachProfileEvents(
     );
 
 
+  /* =======================================================
+     SAVED POSTS
+     ======================================================= */
+
   document
     .getElementById(
       "savedBtn"
@@ -1023,18 +1097,43 @@ export function attachProfileEvents(
     );
 
 
+  /* =======================================================
+     MARKET ACCOUNT
+     ======================================================= */
+
   document
     .getElementById(
       "marketAccountBtn"
     )
     ?.addEventListener(
       "click",
-      () =>
+      () => {
+
+        /*
+         * This button has two states:
+         *
+         * No account:
+         *     Open Create Market Account.
+         *
+         * Existing account:
+         *     Open the existing Market Account
+         *     information/modal.
+         *
+         * The actual Market Account creation/update
+         * remains inside market.js.
+         */
+
         showMarketAccountModal(
           renderApp
-        )
+        );
+
+      }
     );
 
+
+  /* =======================================================
+     MY LISTINGS
+     ======================================================= */
 
   document
     .getElementById(
@@ -1049,24 +1148,18 @@ export function attachProfileEvents(
     );
 
 
-  document
-    .getElementById(
-      "settingsBtn"
-    )
-    ?.addEventListener(
-      "click",
-      () => {
+  /* =======================================================
+     SETTINGS
+     =======================================================
 
-        /*
-         * The existing app.js already handles
-         * Settings & About.
-         *
-         * This event is intentionally left for
-         * app.js to bind exactly as before.
-         */
-      }
-    );
+     app.js already handles Settings & About.
+     We intentionally do not duplicate that handler here.
+     ======================================================= */
 
+
+  /* =======================================================
+     SIGN OUT
+     ======================================================= */
 
   document
     .getElementById(
@@ -1081,6 +1174,12 @@ export function attachProfileEvents(
           await signOut();
 
         } catch (error) {
+
+          console.error(
+            "[Profile] Sign out error:",
+            error
+          );
+
 
           toast(
             friendly(error)
