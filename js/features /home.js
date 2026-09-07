@@ -1,1893 +1,484 @@
-import {
-  state,
-  escapeHtml,
-  initials,
-  formatDate,
-  friendly
-} from "../state.js";
+import { state, escapeHtml, initials, formatDate, friendly } from "../state.js";
+import { db, collection, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, increment, arrayUnion, arrayRemove, getDocs, query, orderBy, limit } from "../firebase/firestore.js";
+import { showModal, closeModal } from "../components/modal.js";
+import { toast } from "../components/toast.js";
 
-import {
-  db,
-  collection,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  doc,
-  serverTimestamp,
-  increment,
-  arrayUnion,
-  arrayRemove,
-  getDocs,
-  query,
-  orderBy,
-  limit
-} from "../firebase/firestore.js";
-
-import {
-  showModal,
-  closeModal
-} from "../components/modal.js";
-
-import {
-  toast
-} from "../components/toast.js";
-
-import {
-  showNewChat
-} from "./chat.js";
-
-/* =========================================================
-   HOME PAGE
-   ========================================================= */
+let discoveryTimer = null;
+let discoverySeconds = 40;
 
 export function renderHome(renderApp) {
-  const me =
-    state.profile?.displayName ||
-    state.profile?.username ||
-    "there";
+  const me = state.profile?.displayName || state.profile?.username || "there";
+  const posts = state.posts;
 
-  const posts = Array.isArray(state.posts)
-    ? state.posts
-    : [];
+  const discoverySeen = localStorage.getItem("marvel_chat_discovery_seen");
+  const showDiscovery = !discoverySeen;
+
+  if (showDiscovery && !discoveryTimer) {
+    discoverySeconds = 40;
+    discoveryTimer = setInterval(() => {
+      discoverySeconds -= 1;
+      const el = document.getElementById("discoveryCountdown");
+      if (el) {
+        el.textContent = `${discoverySeconds}s`;
+      }
+      if (discoverySeconds <= 0) {
+        closeDiscoveryOverlay();
+      }
+    }, 1000);
+  }
 
   return `
     <div class="page">
+      ${
+        showDiscovery
+          ? `
+            <div
+              id="discoveryOverlay"
+              class="card"
+              style="
+                position:relative;
+                background:var(--surface2, #211c38);
+                border:1px solid var(--border);
+                border-radius:16px;
+                padding:20px;
+                margin-bottom:20px;
+                box-shadow:var(--shadow);
+              "
+            >
+              <button
+                type="button"
+                id="closeDiscoveryBtn"
+                style="
+                  position:absolute;
+                  top:14px;
+                  right:14px;
+                  border:0;
+                  background:transparent;
+                  color:var(--muted);
+                  font-size:18px;
+                  font-weight:bold;
+                  cursor:pointer;
+                "
+              >
+                ✕
+              </button>
+
+              <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+                <span style="font-size:24px;">🚀</span>
+                <h3 style="margin:0; font-size:18px;">Welcome to Marvel Chat!</h3>
+                <span
+                  id="discoveryCountdown"
+                  style="
+                    margin-left:auto;
+                    margin-right:24px;
+                    font-size:12px;
+                    font-weight:bold;
+                    background:var(--surface);
+                    padding:2px 8px;
+                    border-radius:12px;
+                    color:var(--primary);
+                  "
+                >
+                  40s
+                </span>
+              </div>
+
+              <p class="small" style="margin-bottom:16px; line-height:1.5;">
+                Explore everything Marvel Chat has to offer: seamlessly <strong>Chat</strong> with friends, trade skills & time via <strong>TimeTrust</strong>, and buy or sell in the <strong>Market</strong>.
+              </p>
+
+              <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                <button class="btn btn-primary" id="discoveryMarketBtn">
+                  Explore Market
+                </button>
+                <button class="btn btn-ghost" id="discoveryTimeTrustBtn">
+                  Explore TimeTrust
+                </button>
+              </div>
+            </div>
+          `
+          : ""
+      }
 
       <section class="hero">
-        <h1>
-          Hey ${escapeHtml(me)} 👋
-        </h1>
-
-        <p>
-          Welcome to your futuristic community.
-          Connect, chat, trade skills and discover
-          what people around you are building.
-        </p>
+        <h1>Hey ${escapeHtml(me)} 👋</h1>
+        <p>Welcome to your futuristic community. Connect, chat, trade skills and discover what people around you are building.</p>
       </section>
 
-      <!-- =================================================
-           QUICK ACTIONS
-           ================================================= -->
-
       <div class="quick-grid">
-
-        <button
-          class="quick"
-          data-quick="post"
-          type="button"
-        >
-          <div class="quick-icon">
-            ✍️
-          </div>
-
-          <strong>
-            Create post
-          </strong>
-
-          <span>
-            Share something
-          </span>
+        <button class="quick" data-quick="post">
+          <div class="quick-icon">✍️</div>
+          <strong>Create post</strong>
+          <span>Share something</span>
         </button>
-
-
-        <button
-          class="quick"
-          data-quick="chat"
-          type="button"
-        >
-          <div class="quick-icon">
-            💬
-          </div>
-
-          <strong>
-            Start chat
-          </strong>
-
-          <span>
-            Talk to someone
-          </span>
+        <button class="quick" data-quick="chat">
+          <div class="quick-icon">💬</div>
+          <strong>Start chat</strong>
+          <span>Talk to someone</span>
         </button>
-
-
-        <button
-          class="quick"
-          data-quick="timetrust"
-          type="button"
-        >
-          <div class="quick-icon">
-            ⏱️
-          </div>
-
-          <strong>
-            Explore TimeTrust
-          </strong>
-
-          <span>
-            Trade time and skills
-          </span>
+        <button class="quick" data-quick="timetrust">
+          <div class="quick-icon">⏱️</div>
+          <strong>Explore TimeTrust</strong>
+          <span>Trade your time</span>
         </button>
-
-
-        <button
-          class="quick"
-          data-quick="market"
-          type="button"
-        >
-          <div class="quick-icon">
-            🛍️
-          </div>
-
-          <strong>
-            Explore Market
-          </strong>
-
-          <span>
-            Discover products
-          </span>
+        <button class="quick" data-quick="market">
+          <div class="quick-icon">🛍️</div>
+          <strong>Explore Market</strong>
+          <span>Open the market</span>
         </button>
-
       </div>
-
-
-      <!-- =================================================
-           COMMUNITY FEED
-           ================================================= -->
 
       <div class="section-title">
-
-        <h2>
-          Community feed
-        </h2>
-
-        <button
-          class="btn btn-primary"
-          id="createPostBtn"
-          type="button"
-        >
-          + Post
-        </button>
-
+        <h2>Community feed</h2>
+        <button class="btn btn-primary" id="createPostBtn">+ Post</button>
       </div>
-
 
       ${
         posts.length
-          ? posts
-              .map(renderPost)
-              .join("")
-
+          ? posts.map(renderPost).join("")
           : `
             <div class="card empty">
-
-              <div
-                style="font-size:38px"
-              >
-                🌌
-              </div>
-
-              <h3>
-                The community is quiet…
-              </h3>
-
-              <p>
-                Be the first person to start
-                the conversation.
-              </p>
-
-              <button
-                class="btn btn-primary"
-                id="emptyCreatePost"
-                type="button"
-              >
-                Create the first post
-              </button>
-
+              <div style="font-size:38px">🌌</div>
+              <h3>The community is quiet…</h3>
+              <p>Be the first person to start the conversation.</p>
+              <button class="btn btn-primary" id="emptyCreatePost">Create the first post</button>
             </div>
           `
       }
-
     </div>
   `;
 }
 
+export function closeDiscoveryOverlay() {
+  if (discoveryTimer) {
+    clearInterval(discoveryTimer);
+    discoveryTimer = null;
+  }
+  localStorage.setItem("marvel_chat_discovery_seen", "true");
+  const el = document.getElementById("discoveryOverlay");
+  if (el) {
+    el.remove();
+  }
+}
 
-/* =========================================================
-   POST CARD
-   ========================================================= */
+if (!window.__marvelHomeDiscoveryInstalled) {
+  window.__marvelHomeDiscoveryInstalled = true;
+
+  document.addEventListener("click", event => {
+    if (event.target.closest("#closeDiscoveryBtn")) {
+      event.preventDefault();
+      closeDiscoveryOverlay();
+    }
+  });
+}
 
 export function renderPost(p) {
-  const liked =
-    Array.isArray(p.likedBy) &&
-    p.likedBy.includes(state.user.uid);
-
-  const saved =
-    Array.isArray(p.savedBy) &&
-    p.savedBy.includes(state.user.uid);
-
-  const isOwner =
-    p.uid === state.user.uid;
+  const liked = Array.isArray(p.likedBy) && p.likedBy.includes(state.user.uid);
+  const saved = Array.isArray(p.savedBy) && p.savedBy.includes(state.user.uid);
+  const isOwner = p.uid === state.user.uid;
 
   return `
-    <article
-      class="card post"
-      data-post-id="${escapeHtml(p.id)}"
-    >
-
+    <article class="card post" data-post-id="${p.id}">
       <div class="post-head">
-
-        <div class="avatar">
-          ${escapeHtml(
-            initials(
-              p.username ||
-              p.displayName ||
-              "User"
-            )
-          )}
-        </div>
-
+        <div class="avatar">${escapeHtml(initials(p.username))}</div>
         <div class="profile-meta">
-
-          <strong>
-            ${escapeHtml(
-              p.username ||
-              p.displayName ||
-              "User"
-            )}
-          </strong>
-
-          <span class="small">
-            ${escapeHtml(
-              formatDate(p.createdAt)
-            )}
-
-            ${
-              p.editedAt
-                ? `
-                  <span class="edited-indicator">
-                    (Edited)
-                  </span>
-                `
-                : ""
-            }
-          </span>
-
+          <strong>${escapeHtml(p.username || "User")}</strong>
+          <span class="small">${escapeHtml(formatDate(p.createdAt))} ${p.editedAt ? `<span class="edited-indicator">(Edited)</span>` : ""}</span>
         </div>
-
-
-        ${
-          isOwner
-            ? `
-              <div
-                class="dropdown-container"
-                style="
-                  margin-left:auto;
-                  position:relative;
-                "
-              >
-
-                <button
-                  class="icon-btn post-menu-btn"
-                  aria-label="Post options"
-                  data-menu-post="${escapeHtml(p.id)}"
-                  type="button"
-                >
-                  ⋮
-                </button>
-
-                <div
-                  class="dropdown-menu hidden"
-                  id="postMenu-${escapeHtml(p.id)}"
-                  style="
-                    position:absolute;
-                    right:0;
-                    background:var(--surface2);
-                    border:1px solid var(--border);
-                    border-radius:12px;
-                    padding:6px;
-                    z-index:10;
-                    box-shadow:var(--shadow);
-                  "
-                >
-
-                  <button
-                    class="btn-text edit-post-btn"
-                    data-edit-post="${escapeHtml(p.id)}"
-                    type="button"
-                    style="
-                      display:block;
-                      width:100%;
-                      text-align:left;
-                      padding:8px 12px;
-                      background:none;
-                      border:none;
-                      color:var(--text);
-                      cursor:pointer;
-                      font-weight:700;
-                      font-size:13px;
-                    "
-                  >
-                    Edit post
-                  </button>
-
-                  <button
-                    class="btn-text delete-post-btn"
-                    data-delete-post="${escapeHtml(p.id)}"
-                    type="button"
-                    style="
-                      display:block;
-                      width:100%;
-                      text-align:left;
-                      padding:8px 12px;
-                      background:none;
-                      border:none;
-                      color:var(--danger);
-                      cursor:pointer;
-                      font-weight:700;
-                      font-size:13px;
-                    "
-                  >
-                    Delete post
-                  </button>
-
-                </div>
-
-              </div>
-            `
-            : ""
-        }
-
+        ${isOwner ? `
+          <div class="dropdown-container" style="margin-left: auto; position: relative;">
+            <button class="icon-btn post-menu-btn" aria-label="Post options" data-menu-post="${p.id}">⋮</button>
+            <div class="dropdown-menu hidden" id="postMenu-${p.id}" style="position: absolute; right: 0; background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; padding: 6px; z-index: 10; box-shadow: var(--shadow);">
+              <button class="btn-text edit-post-btn" data-edit-post="${p.id}" style="display: block; width: 100%; text-align: left; padding: 8px 12px; background: none; border: none; color: var(--text); cursor: pointer; font-weight: 700; font-size: 13px;">Edit post</button>
+              <button class="btn-text delete-post-btn" data-delete-post="${p.id}" style="display: block; width: 100%; text-align: left; padding: 8px 12px; background: none; border: none; color: var(--danger); cursor: pointer; font-weight: 700; font-size: 13px;">Delete post</button>
+            </div>
+          </div>
+        ` : ""}
       </div>
-
-
-      <div class="post-body">
-
-        <p>
-          ${escapeHtml(
-            p.text ||
-            p.content ||
-            ""
-          )}
-        </p>
-
-      </div>
-
-
-      <div
-        class="post-actions"
-        style="
-          display:flex;
-          gap:8px;
-          flex-wrap:wrap;
-          align-items:center;
-        "
-      >
-
-        <button
-          class="btn btn-ghost"
-          data-like="${escapeHtml(p.id)}"
-          type="button"
-        >
-          ${liked ? "❤️" : "🤍"}
-          ${Number(p.likesCount || 0)}
+      <div class="post-body">${escapeHtml(p.text || "")}</div>
+      <div class="post-actions">
+        <button class="action ${liked ? "active" : ""}" data-like="${p.id}">
+          ${liked ? "❤️" : "♡"} ${Number(p.likes || 0)}
         </button>
-
-
-        <button
-          class="btn btn-ghost"
-          data-comments="${escapeHtml(p.id)}"
-          type="button"
-        >
-          💬
-          ${Number(p.commentsCount || 0)}
+        <button class="action" data-comment="${p.id}">
+          💬 ${Number(p.comments || 0)}
         </button>
-
-
-        <button
-          class="btn btn-ghost"
-          data-save="${escapeHtml(p.id)}"
-          type="button"
-        >
+        <button class="action" data-share="${p.id}">↗ Share</button>
+        <button class="action ${saved ? "active" : ""}" data-save="${p.id}">
           ${saved ? "🔖 Saved" : "🔖 Save"}
         </button>
-
-
-        <button
-          class="btn btn-ghost"
-          data-share="${escapeHtml(p.id)}"
-          type="button"
-        >
-          ↗️ Share
-        </button>
-
       </div>
-
     </article>
   `;
 }
 
-
-/* =========================================================
-   CREATE POST
-   ========================================================= */
-
-export function showCreatePost(renderApp) {
+export function showCreatePost() {
   showModal(
-    "Create a post",
+    "Create a community post",
     `
       <div class="field">
-
-        <label for="postText">
-          What would you like to share?
-        </label>
-
-        <textarea
-          class="input"
-          id="postText"
-          rows="5"
-          maxlength="5000"
-          placeholder="Write something for the community…"
-        ></textarea>
-
+        <label>What's happening?</label>
+        <textarea class="textarea" id="postText" maxlength="1000" placeholder="Share an idea, question, achievement or opportunity…"></textarea>
       </div>
-
-      <button
-        class="btn btn-primary btn-block"
-        id="submitPost"
-        type="button"
-      >
-        Publish Post
-      </button>
+      <button class="btn btn-primary btn-block" id="publishPost">Publish 🚀</button>
     `
   );
 
-
-  document
-    .getElementById("submitPost")
-    ?.addEventListener(
-      "click",
-      async () => {
-
-        const button =
-          document.getElementById(
-            "submitPost"
-          );
-
-        const textarea =
-          document.getElementById(
-            "postText"
-          );
-
-        const text =
-          textarea?.value.trim() ||
-          "";
-
-        if (!text) {
-          toast(
-            "Please write something first."
-          );
-          textarea?.focus();
-          return;
-        }
-
-
-        try {
-
-          button.disabled = true;
-
-          button.textContent =
-            "Publishing…";
-
-
-          await addDoc(
-            collection(
-              db,
-              "posts"
-            ),
-            {
-              uid:
-                state.user.uid,
-
-              username:
-                state.profile?.username ||
-                state.profile?.displayName ||
-                "User",
-
-              text,
-
-              likedBy: [],
-
-              savedBy: [],
-
-              likesCount: 0,
-
-              commentsCount: 0,
-
-              createdAt:
-                serverTimestamp()
-            }
-          );
-
-
-          closeModal();
-
-          toast(
-            "Post published 🎉"
-          );
-
-
-          if (
-            typeof renderApp ===
-            "function"
-          ) {
-            renderApp();
-          }
-
-        } catch (e) {
-
-          console.error(
-            "CREATE POST ERROR:",
-            e
-          );
-
-          toast(
-            friendly(e)
-          );
-
-          button.disabled =
-            false;
-
-          button.textContent =
-            "Publish Post";
-        }
-      }
-    );
+  document.getElementById("publishPost")?.addEventListener("click", async () => {
+    const text = document.getElementById("postText")?.value.trim();
+    if (!text) { toast("Write something first."); return; }
+    const btn = document.getElementById("publishPost");
+    btn.disabled = true;
+    btn.textContent = "Publishing…";
+    try {
+      const docRef = await addDoc(collection(db, "posts"), {
+        uid: state.user.uid,
+        username: state.profile.displayName || state.profile.username || "User",
+        text,
+        likes: 0,
+        comments: 0,
+        likedBy: [],
+        savedBy: [],
+        createdAt: serverTimestamp()
+      });
+      
+      const newPost = {
+        id: docRef.id,
+        uid: state.user.uid,
+        username: state.profile.displayName || state.profile.username || "User",
+        text,
+        likes: 0,
+        comments: 0,
+        likedBy: [],
+        savedBy: [],
+        createdAt: new Date()
+      };
+      state.posts = [newPost, ...state.posts];
+      
+      closeModal();
+      toast("Posted successfully 🚀");
+    } catch (e) {
+      toast(friendly(e));
+      btn.disabled = false;
+      btn.textContent = "Publish 🚀";
+    }
+  });
 }
 
-
-/* =========================================================
-   EDIT POST
-   ========================================================= */
-
-export function showEditPost(
-  postId,
-  renderApp
-) {
-
-  const post =
-    state.posts.find(
-      p => p.id === postId
-    );
-
-  if (!post) {
-    toast(
-      "Post not found."
-    );
-    return;
-  }
-
-
-  if (
-    post.uid !==
-    state.user.uid
-  ) {
-    toast(
-      "You can only edit your own posts."
-    );
-    return;
-  }
-
+export function showEditPost(postId) {
+  const post = state.posts.find(p => p.id === postId);
+  if (!post || post.uid !== state.user.uid) return;
 
   showModal(
     "Edit post",
     `
       <div class="field">
-
-        <label for="editPostText">
-          Post
-        </label>
-
-        <textarea
-          class="input"
-          id="editPostText"
-          rows="5"
-          maxlength="5000"
-        >${escapeHtml(
-          post.text ||
-          post.content ||
-          ""
-        )}</textarea>
-
+        <label>Edit your post</label>
+        <textarea class="textarea" id="editPostText" maxlength="1000">${escapeHtml(post.text || "")}</textarea>
       </div>
-
-      <button
-        class="btn btn-primary btn-block"
-        id="saveEditedPost"
-        type="button"
-      >
-        Save Changes
-      </button>
+      <button class="btn btn-primary btn-block" id="saveEditPost">Save Changes</button>
     `
   );
 
-
-  document
-    .getElementById(
-      "saveEditedPost"
-    )
-    ?.addEventListener(
-      "click",
-      async () => {
-
-        const button =
-          document.getElementById(
-            "saveEditedPost"
-          );
-
-        const textarea =
-          document.getElementById(
-            "editPostText"
-          );
-
-        const text =
-          textarea?.value.trim() ||
-          "";
-
-        if (!text) {
-          toast(
-            "Post cannot be empty."
-          );
-          return;
-        }
-
-
-        try {
-
-          button.disabled =
-            true;
-
-          button.textContent =
-            "Saving…";
-
-
-          await updateDoc(
-            doc(
-              db,
-              "posts",
-              postId
-            ),
-            {
-              text,
-
-              editedAt:
-                serverTimestamp(),
-
-              updatedAt:
-                serverTimestamp()
-            }
-          );
-
-
-          closeModal();
-
-          toast(
-            "Post updated."
-          );
-
-
-          if (
-            typeof renderApp ===
-            "function"
-          ) {
-            renderApp();
-          }
-
-        } catch (e) {
-
-          console.error(
-            "EDIT POST ERROR:",
-            e
-          );
-
-          toast(
-            friendly(e)
-          );
-
-          button.disabled =
-            false;
-
-          button.textContent =
-            "Save Changes";
-        }
-      }
-    );
-}
-
-
-/* =========================================================
-   DELETE POST CONFIRMATION
-   ========================================================= */
-
-export function showDeletePostConfirmation(
-  postId,
-  renderApp
-) {
-
-  const post =
-    state.posts.find(
-      p => p.id === postId
-    );
-
-  if (!post) {
-    toast(
-      "Post not found."
-    );
-    return;
-  }
-
-
-  if (
-    post.uid !==
-    state.user.uid
-  ) {
-    toast(
-      "You can only delete your own posts."
-    );
-    return;
-  }
-
-
-  showModal(
-    "Delete post?",
-    `
-      <p class="small">
-        Are you sure you want to delete this post?
-        This action cannot be undone.
-      </p>
-
-      <div
-        style="
-          display:flex;
-          gap:10px;
-          margin-top:16px;
-        "
-      >
-
-        <button
-          class="btn btn-ghost"
-          id="cancelDeletePost"
-          type="button"
-          style="flex:1;"
-        >
-          Cancel
-        </button>
-
-        <button
-          class="btn btn-danger"
-          id="confirmDeletePost"
-          type="button"
-          style="flex:1;"
-        >
-          Delete
-        </button>
-
-      </div>
-    `
-  );
-
-
-  document
-    .getElementById(
-      "cancelDeletePost"
-    )
-    ?.addEventListener(
-      "click",
-      closeModal
-    );
-
-
-  document
-    .getElementById(
-      "confirmDeletePost"
-    )
-    ?.addEventListener(
-      "click",
-      async () => {
-
-        const button =
-          document.getElementById(
-            "confirmDeletePost"
-          );
-
-
-        try {
-
-          button.disabled =
-            true;
-
-          button.textContent =
-            "Deleting…";
-
-
-          await deleteDoc(
-            doc(
-              db,
-              "posts",
-              postId
-            )
-          );
-
-
-          closeModal();
-
-          toast(
-            "Post deleted."
-          );
-
-
-          if (
-            typeof renderApp ===
-            "function"
-          ) {
-            renderApp();
-          }
-
-        } catch (e) {
-
-          console.error(
-            "DELETE POST ERROR:",
-            e
-          );
-
-          toast(
-            friendly(e)
-          );
-
-          button.disabled =
-            false;
-
-          button.textContent =
-            "Delete";
-        }
-      }
-    );
-}
-
-
-/* =========================================================
-   LIKE POST
-   ========================================================= */
-
-export async function toggleLike(
-  id
-) {
-
-  const post =
-    state.posts.find(
-      p => p.id === id
-    );
-
-  if (!post) {
-    return;
-  }
-
-
-  const liked =
-    Array.isArray(
-      post.likedBy
-    ) &&
-    post.likedBy.includes(
-      state.user.uid
-    );
-
-
-  try {
-
-    if (liked) {
-
-      await updateDoc(
-        doc(
-          db,
-          "posts",
-          id
-        ),
-        {
-          likedBy:
-            arrayRemove(
-              state.user.uid
-            ),
-
-          likesCount:
-            increment(-1)
-        }
-      );
-
-    } else {
-
-      await updateDoc(
-        doc(
-          db,
-          "posts",
-          id
-        ),
-        {
-          likedBy:
-            arrayUnion(
-              state.user.uid
-            ),
-
-          likesCount:
-            increment(1)
-        }
-      );
-    }
-
-  } catch (e) {
-
-    console.error(
-      "LIKE ERROR:",
-      e
-    );
-
-    toast(
-      friendly(e)
-    );
-  }
-}
-
-
-/* =========================================================
-   SAVE POST
-   ========================================================= */
-
-export async function savePost(
-  id
-) {
-
-  const post =
-    state.posts.find(
-      p => p.id === id
-    );
-
-  if (!post) {
-    return;
-  }
-
-
-  const saved =
-    Array.isArray(
-      post.savedBy
-    ) &&
-    post.savedBy.includes(
-      state.user.uid
-    );
-
-
-  try {
-
-    if (saved) {
-
-      await updateDoc(
-        doc(
-          db,
-          "posts",
-          id
-        ),
-        {
-          savedBy:
-            arrayRemove(
-              state.user.uid
-            )
-        }
-      );
-
-    } else {
-
-      await updateDoc(
-        doc(
-          db,
-          "posts",
-          id
-        ),
-        {
-          savedBy:
-            arrayUnion(
-              state.user.uid
-            )
-        }
-      );
-    }
-
-  } catch (e) {
-
-    console.error(
-      "SAVE POST ERROR:",
-      e
-    );
-
-    toast(
-      friendly(e)
-    );
-  }
-}
-
-
-/* =========================================================
-   SHARE POST
-   ========================================================= */
-
-export async function sharePost(
-  id
-) {
-
-  const post =
-    state.posts.find(
-      p => p.id === id
-    );
-
-  if (!post) {
-    return;
-  }
-
-
-  const text =
-    post.text ||
-    post.content ||
-    "";
-
-
-  try {
-
-    if (
-      navigator.share
-    ) {
-
-      await navigator.share({
-        title:
-          "Marvel Chat",
-        text
+  document.getElementById("saveEditPost")?.addEventListener("click", async () => {
+    const text = document.getElementById("editPostText")?.value.trim();
+    if (!text) { toast("Post cannot be empty."); return; }
+    const btn = document.getElementById("saveEditPost");
+    btn.disabled = true;
+    btn.textContent = "Saving…";
+    try {
+      await updateDoc(doc(db, "posts", postId), {
+        text,
+        editedAt: serverTimestamp()
       });
 
-      return;
+      state.posts = state.posts.map(p => p.id === postId ? { ...p, text, editedAt: new Date() } : p);
+      closeModal();
+      toast("Post updated ✓");
+    } catch (e) {
+      toast(friendly(e));
+      btn.disabled = false;
+      btn.textContent = "Save Changes";
     }
+  });
+}
 
+export function showDeletePostConfirmation(postId) {
+  const post = state.posts.find(p => p.id === postId);
+  if (!post || post.uid !== state.user.uid) return;
 
-    if (
-      navigator.clipboard
-    ) {
+  showModal(
+    "Delete this post?",
+    `
+      <p class="small">This action cannot be undone.</p>
+      <div style="display: flex; gap: 10px; margin-top: 16px;">
+        <button class="btn btn-ghost" id="cancelDeletePost" style="flex: 1;">Cancel</button>
+        <button class="btn btn-danger" id="confirmDeletePost" style="flex: 1;">Delete</button>
+      </div>
+    `
+  );
 
-      await navigator.clipboard.writeText(
-        text
-      );
-
-      toast(
-        "Post copied to clipboard 📋"
-      );
-
-      return;
+  document.getElementById("cancelDeletePost")?.addEventListener("click", closeModal);
+  document.getElementById("confirmDeletePost")?.addEventListener("click", async () => {
+    const btn = document.getElementById("confirmDeletePost");
+    btn.disabled = true;
+    btn.textContent = "Deleting…";
+    try {
+      await deleteDoc(doc(db, "posts", postId));
+      state.posts = state.posts.filter(p => p.id !== postId);
+      closeModal();
+      toast("Post deleted.");
+    } catch (e) {
+      toast(friendly(e));
+      btn.disabled = false;
+      btn.textContent = "Delete";
     }
+  });
+}
 
+export async function toggleLike(id) {
+  const post = state.posts.find(x => x.id === id);
+  if (!post) return;
+  const liked = Array.isArray(post.likedBy) && post.likedBy.includes(state.user.uid);
+  try {
+    await updateDoc(doc(db, "posts", id), {
+      likes: increment(liked ? -1 : 1),
+      likedBy: liked ? arrayRemove(state.user.uid) : arrayUnion(state.user.uid)
+    });
 
-    toast(
-      "Sharing is not available on this device."
-    );
+    state.posts = state.posts.map(p => {
+      if (p.id === id) {
+        const newLikedBy = liked ? p.likedBy.filter(uid => uid !== state.user.uid) : [...(p.likedBy || []), state.user.uid];
+        return { ...p, likes: Number(p.likes || 0) + (liked ? -1 : 1), likedBy: newLikedBy };
+      }
+      return p;
+    });
 
+    if (!liked && post.uid && post.uid !== state.user.uid) {
+      try {
+        await addDoc(collection(db, "users", post.uid, "notifications"), {
+          type: "like",
+          actorUid: state.user.uid,
+          actorName: state.profile.displayName || state.profile.username || "Someone",
+          targetId: id,
+          text: `${state.profile.displayName || state.profile.username || "Someone"} liked your post.`,
+          read: false,
+          createdAt: serverTimestamp()
+        });
+      } catch (notifErr) {
+        console.warn("Could not create like notification:", notifErr);
+      }
+    }
   } catch (e) {
-
-    if (
-      e?.name ===
-      "AbortError"
-    ) {
-      return;
-    }
-
-    console.error(
-      "SHARE ERROR:",
-      e
-    );
-
-    toast(
-      "Could not share this post."
-    );
+    toast(friendly(e));
   }
 }
 
-
-/* =========================================================
-   COMMENTS
-   ========================================================= */
-
-export async function showComments(
-  id,
-  renderApp
-) {
-
-  const post =
-    state.posts.find(
-      p => p.id === id
-    );
-
-  if (!post) {
-    toast(
-      "Post not found."
-    );
-    return;
+export async function savePost(id) {
+  const post = state.posts.find(x => x.id === id);
+  if (!post) return;
+  const saved = Array.isArray(post.savedBy) && post.savedBy.includes(state.user.uid);
+  try {
+    await updateDoc(doc(db, "posts", id), {
+      savedBy: saved ? arrayRemove(state.user.uid) : arrayUnion(state.user.uid)
+    });
+    state.posts = state.posts.map(p => {
+      if (p.id === id) {
+        const newSavedBy = saved ? p.savedBy.filter(uid => uid !== state.user.uid) : [...(p.savedBy || []), state.user.uid];
+        return { ...p, savedBy: newSavedBy };
+      }
+      return p;
+    });
+    toast(saved ? "Removed from saved posts." : "Saved to your vault 🔖");
+  } catch (e) {
+    toast(friendly(e));
   }
+}
 
+export async function sharePost(id) {
+  const post = state.posts.find(x => x.id === id);
+  if (!post) return;
+  const text = `${post.username || "Someone"} on Marvel Chat:\n\n${post.text}`;
+  try {
+    if (navigator.share) {
+      await navigator.share({ title: "Marvel Chat", text });
+    } else {
+      await navigator.clipboard.writeText(text);
+      toast("Post copied to clipboard 📋");
+    }
+  } catch (e) {
+    if (e?.name !== "AbortError") toast("Could not share this post.");
+  }
+}
 
+export async function showComments(id) {
+  const post = state.posts.find(x => x.id === id);
   showModal(
     "Comments",
     `
-      <div
-        id="commentsContent"
-        class="small"
-      >
-        Loading comments…
-      </div>
-
-      <div
-        style="
-          margin-top:16px;
-        "
-      >
-
-        <textarea
-          class="input"
-          id="commentText"
-          rows="3"
-          maxlength="1000"
-          placeholder="Write a comment…"
-        ></textarea>
-
-        <button
-          class="btn btn-primary btn-block"
-          id="submitComment"
-          type="button"
-          style="margin-top:8px;"
-        >
-          Add Comment
-        </button>
-
-      </div>
+      <div id="commentsList" class="list"><div class="empty">Loading comments…</div></div>
+      <div style="height:14px"></div>
+      <textarea class="textarea" id="commentText" placeholder="Write a comment…"></textarea>
+      <button class="btn btn-primary btn-block" id="addComment" style="margin-top:8px">Add comment</button>
     `
   );
 
-
-  const commentsContent =
-    document.getElementById(
-      "commentsContent"
-    );
-
-
   try {
-
-    const snap =
-      await getDocs(
-        query(
-          collection(
-            db,
-            "posts",
-            id,
-            "comments"
-          ),
-          orderBy(
-            "createdAt",
-            "asc"
-          ),
-          limit(100)
-        )
-      );
-
-
-    if (snap.empty) {
-
-      commentsContent.innerHTML =
-        `
-          <div class="empty">
-            No comments yet.
-          </div>
-        `;
-
-    } else {
-
-      commentsContent.innerHTML =
-        snap.docs
-          .map(
-            d => {
-
-              const c =
-                d.data();
-
-              return `
-                <div
-                  style="
-                    padding:10px 0;
-                    border-bottom:
-                      1px solid
-                      var(--border);
-                  "
-                >
-
-                  <strong>
-                    ${escapeHtml(
-                      c.username ||
-                      "User"
-                    )}
-                  </strong>
-
-                  <div
-                    class="small"
-                    style="
-                      margin-top:4px;
-                    "
-                  >
-                    ${escapeHtml(
-                      c.text ||
-                      ""
-                    )}
-                  </div>
-
-                  <div
-                    class="small"
-                    style="
-                      margin-top:4px;
-                    "
-                  >
-                    ${escapeHtml(
-                      formatDate(
-                        c.createdAt
-                      )
-                    )}
-                  </div>
-
-                </div>
-              `;
-            }
-          )
-          .join("");
+    const snap = await getDocs(query(collection(db, "posts", id, "comments"), orderBy("createdAt", "asc"), limit(50)));
+    const comments = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const list = document.getElementById("commentsList");
+    if (list) {
+      list.className = comments.length ? "list" : "empty";
+      list.innerHTML = comments.length
+        ? comments.map(c => `
+            <div class="list-item">
+              <strong>${escapeHtml(c.username || "User")}</strong>
+              <div>${escapeHtml(c.text || "")}</div>
+              <div class="small">${escapeHtml(formatDate(c.createdAt))}</div>
+            </div>
+          `).join("")
+        : "No comments yet. Start the conversation.";
     }
-
   } catch (e) {
-
-    console.error(
-      "COMMENTS LOAD ERROR:",
-      e
-    );
-
-    commentsContent.innerHTML =
-      `
-        <div class="status error">
-          Could not load comments.
-        </div>
-      `;
+    const list = document.getElementById("commentsList");
+    if (list) list.innerHTML = `<div class="status error">${escapeHtml(friendly(e))}</div>`;
   }
 
-
-  document
-    .getElementById(
-      "submitComment"
-    )
-    ?.addEventListener(
-      "click",
-      async () => {
-
-        const button =
-          document.getElementById(
-            "submitComment"
-          );
-
-        const textarea =
-          document.getElementById(
-            "commentText"
-          );
-
-        const text =
-          textarea?.value.trim() ||
-          "";
-
-        if (!text) {
-
-          toast(
-            "Write a comment first."
-          );
-
-          return;
-        }
-
-
+  document.getElementById("addComment")?.addEventListener("click", async () => {
+    const input = document.getElementById("commentText");
+    const text = input.value.trim();
+    if (!text) { toast("Write a comment first."); return; }
+    try {
+      const actorName = state.profile.displayName || state.profile.username || "User";
+      await addDoc(collection(db, "posts", id, "comments"), {
+        uid: state.user.uid,
+        username: actorName,
+        text,
+        createdAt: serverTimestamp()
+      });
+      await updateDoc(doc(db, "posts", id), { comments: increment(1) });
+      
+      if (post && post.uid && post.uid !== state.user.uid) {
         try {
-
-          button.disabled =
-            true;
-
-          button.textContent =
-            "Posting…";
-
-
-          await addDoc(
-            collection(
-              db,
-              "posts",
-              id,
-              "comments"
-            ),
-            {
-              uid:
-                state.user.uid,
-
-              username:
-                state.profile?.username ||
-                state.profile?.displayName ||
-                "User",
-
-              text,
-
-              createdAt:
-                serverTimestamp()
-            }
-          );
-
-
-          await updateDoc(
-            doc(
-              db,
-              "posts",
-              id
-            ),
-            {
-              commentsCount:
-                increment(1)
-            }
-          );
-
-
-          toast(
-            "Comment added 💬"
-          );
-
-
-          closeModal();
-
-
-          if (
-            typeof renderApp ===
-            "function"
-          ) {
-            renderApp();
-          }
-
-        } catch (e) {
-
-          console.error(
-            "COMMENT ERROR:",
-            e
-          );
-
-          toast(
-            friendly(e)
-          );
-
-          button.disabled =
-            false;
-
-          button.textContent =
-            "Add Comment";
+          await addDoc(collection(db, "users", post.uid, "notifications"), {
+            type: "comment",
+            actorUid: state.user.uid,
+            actorName,
+            targetId: id,
+            text: `${actorName} commented on your post.`,
+            read: false,
+            createdAt: serverTimestamp()
+          });
+        } catch (notifErr) {
+          console.warn("Could not create comment notification:", notifErr);
         }
       }
-    );
-}
 
-
-/* =========================================================
-   FIRST-OPEN HOME DISCOVERY
-   ========================================================= */
-
-const HOME_DISCOVERY_KEY =
-  "marvel_home_discovery_seen_v1";
-
-const HOME_DISCOVERY_SECONDS =
-  40;
-
-
-export function showHomeDiscovery(
-  renderApp
-) {
-
-  if (!state.user) {
-    return;
-  }
-
-
-  if (
-    state.page !==
-    "home"
-  ) {
-    return;
-  }
-
-
-  try {
-
-    if (
-      localStorage.getItem(
-        HOME_DISCOVERY_KEY
-      ) === "1"
-    ) {
-      return;
+      input.value = "";
+      toast("Comment added 💬");
+      showComments(id);
+    } catch (e) {
+      toast(friendly(e));
     }
-
-  } catch (e) {
-
-    console.warn(
-      "HOME DISCOVERY STORAGE ERROR:",
-      e
-    );
-  }
-
-
-  if (
-    document.getElementById(
-      "homeDiscoveryOverlay"
-    )
-  ) {
-    return;
-  }
-
-
-  let remaining =
-    HOME_DISCOVERY_SECONDS;
-
-
-  const overlay =
-    document.createElement(
-      "div"
-    );
-
-
-  overlay.id =
-    "homeDiscoveryOverlay";
-
-
-  overlay.style.cssText = `
-    position:fixed;
-    inset:0;
-    z-index:10000;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    padding:20px;
-    background:
-      linear-gradient(
-        135deg,
-        rgba(15,23,42,.96),
-        rgba(76,29,149,.96)
-      );
-    box-sizing:border-box;
-  `;
-
-
-  overlay.innerHTML = `
-    <div
-      style="
-        width:min(560px,100%);
-        max-height:90vh;
-        overflow:auto;
-        text-align:center;
-        border-radius:24px;
-        padding:30px 22px;
-        background:var(--surface);
-        border:1px solid var(--border);
-        box-shadow:0 24px 80px rgba(0,0,0,.35);
-      "
-    >
-
-      <div
-        style="
-          font-size:52px;
-          margin-bottom:10px;
-        "
-      >
-        🌌
-      </div>
-
-      <div
-        style="
-          font-size:12px;
-          font-weight:800;
-          letter-spacing:2px;
-          color:var(--primary);
-          margin-bottom:8px;
-        "
-      >
-        MARVEL CHAT
-      </div>
-
-      <h1
-        style="
-          margin:0 0 12px;
-        "
-      >
-        Discover more 🚀
-      </h1>
-
-      <p
-        class="small"
-        style="
-          line-height:1.7;
-          margin:0 auto 20px;
-          max-width:440px;
-        "
-      >
-        Explore the two places where Marvel Chat
-        becomes more than just conversation:
-        discover products in Market and exchange
-        useful skills through TimeTrust.
-      </p>
-
-
-      <div
-        style="
-          margin:0 auto 20px;
-          width:76px;
-          height:76px;
-          border-radius:50%;
-          display:flex;
-          align-items:center;
-          justify-content:center;
-          background:var(--surface2);
-          border:2px solid var(--primary);
-          font-size:24px;
-          font-weight:800;
-        "
-      >
-        <span id="homeDiscoveryTimer">
-          40
-        </span>
-      </div>
-
-
-      <div
-        style="
-          display:grid;
-          gap:10px;
-        "
-      >
-
-        <button
-          class="btn btn-primary btn-block"
-          id="homeDiscoveryMarket"
-          type="button"
-        >
-          🛍️ Explore Market
-        </button>
-
-        <button
-          class="btn btn-ghost btn-block"
-          id="homeDiscoveryTimeTrust"
-          type="button"
-        >
-          ⏱️ Explore TimeTrust
-        </button>
-
-        <button
-          class="btn btn-ghost btn-block"
-          id="homeDiscoveryClose"
-          type="button"
-        >
-          ✕ Close
-        </button>
-
-      </div>
-
-    </div>
-  `;
-
-
-  document.body.appendChild(
-    overlay
-  );
-
-
-  const finish =
-    () => {
-
-      if (
-        overlay.parentNode
-      ) {
-        overlay.parentNode.removeChild(
-          overlay
-        );
-      }
-
-      try {
-
-        localStorage.setItem(
-          HOME_DISCOVERY_KEY,
-          "1"
-        );
-
-      } catch (e) {
-
-        console.warn(
-          "HOME DISCOVERY SAVE ERROR:",
-          e
-        );
-      }
-    };
-
-
-  const timer =
-    document.getElementById(
-      "homeDiscoveryTimer"
-    );
-
-
-  const interval =
-    setInterval(
-      () => {
-
-        remaining--;
-
-        if (timer) {
-          timer.textContent =
-            String(
-              Math.max(
-                0,
-                remaining
-              )
-            );
-        }
-
-
-        if (
-          remaining <= 0
-        ) {
-
-          clearInterval(
-            interval
-          );
-
-          finish();
-        }
-
-      },
-      1000
-    );
-
-
-  document
-    .getElementById(
-      "homeDiscoveryClose"
-    )
-    ?.addEventListener(
-      "click",
-      () => {
-
-        clearInterval(
-          interval
-        );
-
-        finish();
-      }
-    );
-
-
-  document
-    .getElementById(
-      "homeDiscoveryMarket"
-    )
-    ?.addEventListener(
-      "click",
-      () => {
-
-        clearInterval(
-          interval
-        );
-
-        finish();
-
-
-        state.marketBrowseMode =
-          false;
-
-        state.marketTab =
-          "browse";
-
-        state.page =
-          "market";
-
-
-        if (
-          typeof renderApp ===
-          "function"
-        ) {
-          renderApp();
-        }
-      }
-    );
-
-
-  document
-    .getElementById(
-      "homeDiscoveryTimeTrust"
-    )
-    ?.addEventListener(
-      "click",
-      () => {
-
-        clearInterval(
-          interval
-        );
-
-        finish();
-
-
-        state.page =
-          "timetrust";
-
-
-        if (
-          typeof renderApp ===
-          "function"
-        ) {
-          renderApp();
-        }
-      }
-    );
-}
-
-
-/* =========================================================
-   HOME EVENT ATTACHMENT
-   ========================================================= */
-
-export function attachHomeEvents(
-  renderApp
-) {
-
-  /*
-   * Quick actions are intentionally owned here,
-   * not app.js, so there is only one handler.
-   */
-
-  document
-    .querySelectorAll(
-      "[data-quick]"
-    )
-    .forEach(
-      button => {
-
-        button.addEventListener(
-          "click",
-          async () => {
-
-            const action =
-              button.dataset.quick;
-
-
-            if (
-              action ===
-              "post"
-            ) {
-
-              showCreatePost(
-                renderApp
-              );
-
-              return;
-            }
-
-
-            if (
-              action ===
-              "chat"
-            ) {
-
-              state.page =
-                "chat";
-
-              if (
-                typeof renderApp ===
-                "function"
-              ) {
-                renderApp();
-              }
-
-
-              /*
-               * Wait for the Chat page
-               * to render before opening
-               * the new-chat modal.
-               */
-
-              setTimeout(
-                () => {
-
-                  showNewChat(
-                    renderApp
-                  );
-
-                },
-                50
-              );
-
-              return;
-            }
-
-
-            if (
-              action ===
-              "timetrust"
-            ) {
-
-              state.page =
-                "timetrust";
-
-              if (
-                typeof renderApp ===
-                "function"
-              ) {
-                renderApp();
-              }
-
-              return;
-            }
-
-
-            if (
-              action ===
-              "market"
-            ) {
-
-              state.marketBrowseMode =
-                false;
-
-              state.marketTab =
-                "browse";
-
-              state.page =
-                "market";
-
-              if (
-                typeof renderApp ===
-                "function"
-              ) {
-                renderApp();
-              }
-
-              return;
-            }
-
-          }
-        );
-      }
-    );
-
-
-  /*
-   * First Home visit discovery.
-   */
-
-  showHomeDiscovery(
-    renderApp
-  );
+  });
 }
