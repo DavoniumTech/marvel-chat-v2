@@ -5,6 +5,7 @@ import {
   formatDate,
   friendly
 } from "../state.js";
+
 import {
   db,
   collection,
@@ -22,10 +23,12 @@ import {
   onSnapshot,
   serverTimestamp
 } from "../firebase/firestore.js";
+
 import {
   showModal,
   closeModal
 } from "../components/modal.js";
+
 import {
   toast
 } from "../components/toast.js";
@@ -33,11 +36,13 @@ import {
 /* =========================================================
    INTERNAL APP RENDER BRIDGE
    ========================================================= */
+
 let currentRenderApp = null;
 
 /* =========================================================
    NEW CHAT
    ========================================================= */
+
 export function showNewChat(renderApp) {
   currentRenderApp =
     typeof renderApp === "function"
@@ -49,14 +54,20 @@ export function showNewChat(renderApp) {
     `
       <div class="field">
         <label>Enter the person's username</label>
-        <input class="input" id="chatUsername" placeholder="username">
+        <input
+          class="input"
+          id="chatUsername"
+          placeholder="username"
+        >
       </div>
+
       <button
         class="btn btn-primary btn-block"
         id="findChatUser"
       >
         Find user
       </button>
+
       <div
         id="chatUserResult"
         style="margin-top:14px"
@@ -140,6 +151,7 @@ export function showNewChat(renderApp) {
                             )
                           )}
                         </div>
+
                         <div class="profile-meta">
                           <strong>
                             ${escapeHtml(
@@ -148,6 +160,7 @@ export function showNewChat(renderApp) {
                               "User"
                             )}
                           </strong>
+
                           <span class="small">
                             @${escapeHtml(
                               u.username ||
@@ -155,6 +168,7 @@ export function showNewChat(renderApp) {
                             )}
                           </span>
                         </div>
+
                         <button
                           class="btn btn-primary"
                           data-start-chat="${escapeHtml(
@@ -222,7 +236,10 @@ export function showNewChat(renderApp) {
             });
         } catch (e) {
           if (result) {
-            result.innerHTML = `<div class="status error">${escapeHtml(friendly(e))}</div>`;
+            result.innerHTML =
+              `<div class="status error">${escapeHtml(
+                friendly(e)
+              )}</div>`;
           }
         }
       }
@@ -232,6 +249,7 @@ export function showNewChat(renderApp) {
 /* =========================================================
    CREATE CONVERSATION
    ========================================================= */
+
 export async function createConversation(
   other,
   renderApp
@@ -263,6 +281,12 @@ export async function createConversation(
           existing.id
         ] || {};
 
+      /*
+       * Opening an existing conversation restores
+       * only the user's deleted/hide state.
+       *
+       * Block is intentionally NOT changed here.
+       */
       if (existingPref.deleted) {
         const prefRef =
           doc(
@@ -312,29 +336,36 @@ export async function createConversation(
             state.user.uid,
             other.uid
           ],
+
           participantProfiles: {
             [state.user.uid]: {
               displayName:
                 state.profile.displayName ||
                 state.profile.username ||
                 "User",
+
               username:
                 state.profile.username ||
                 ""
             },
+
             [other.uid]: {
               displayName:
                 other.displayName ||
                 other.username ||
                 "User",
+
               username:
                 other.username ||
                 ""
             }
           },
+
           lastMessage: "",
+
           updatedAt:
             serverTimestamp(),
+
           createdAt:
             serverTimestamp()
         }
@@ -342,30 +373,36 @@ export async function createConversation(
 
     const localConversation = {
       id: ref.id,
+
       participants: [
         state.user.uid,
         other.uid
       ],
+
       participantProfiles: {
         [state.user.uid]: {
           displayName:
             state.profile.displayName ||
             state.profile.username ||
             "User",
+
           username:
             state.profile.username ||
             ""
         },
+
         [other.uid]: {
           displayName:
             other.displayName ||
             other.username ||
             "User",
+
           username:
             other.username ||
             ""
         }
       },
+
       lastMessage: "",
       updatedAt: null,
       createdAt: null
@@ -401,6 +438,7 @@ export async function createConversation(
 /* =========================================================
    OPEN CONVERSATION
    ========================================================= */
+
 export async function openConversation(
   conversation,
   renderApp
@@ -429,9 +467,15 @@ export async function openConversation(
   const pref =
     state.conversationPreferences[
       c.id
-    ];
+    ] || {};
 
-  if (pref?.deleted) {
+  /*
+   * If the user previously deleted/hidden this chat,
+   * opening it restores it.
+   *
+   * A blocked state is NOT automatically removed.
+   */
+  if (pref.deleted) {
     const prefRef =
       doc(
         db,
@@ -487,6 +531,7 @@ export async function openConversation(
         ),
         limit(100)
       ),
+
       snap => {
         state.messages =
           snap.docs.map(
@@ -516,9 +561,11 @@ export async function openConversation(
               ...state.conversations[
                 index
               ],
+
               lastMessage:
                 latest.text ||
                 "",
+
               updatedAt:
                 latest.createdAt ||
                 null
@@ -563,6 +610,7 @@ export async function openConversation(
           );
         }
       },
+
       err => {
         console.error(
           "MESSAGE LISTENER ERROR:",
@@ -608,6 +656,7 @@ export async function openConversation(
 /* =========================================================
    SEND MESSAGE
    ========================================================= */
+
 export async function sendMessage() {
   const input =
     document.getElementById(
@@ -627,6 +676,22 @@ export async function sendMessage() {
   const id =
     state.activeConversation.id;
 
+  const preference =
+    state.conversationPreferences[
+      id
+    ] || {};
+
+  /*
+   * Do not allow sending while this user
+   * has blocked the conversation.
+   */
+  if (preference.blocked) {
+    toast(
+      "User is blocked. Unblock the user to continue chatting."
+    );
+    return;
+  }
+
   try {
     input.disabled = true;
 
@@ -641,7 +706,9 @@ export async function sendMessage() {
         {
           uid:
             state.user.uid,
+
           text,
+
           createdAt:
             serverTimestamp()
         }
@@ -655,6 +722,7 @@ export async function sendMessage() {
       ),
       {
         lastMessage: text,
+
         updatedAt:
           serverTimestamp()
       }
@@ -662,9 +730,12 @@ export async function sendMessage() {
 
     const newMsg = {
       id: docRef.id,
+
       uid:
         state.user.uid,
+
       text,
+
       createdAt:
         new Date()
     };
@@ -683,9 +754,14 @@ export async function sendMessage() {
         );
 
     const recipientPref =
-      state.conversationPreferences[id] || {};
+      state.conversationPreferences[
+        id
+      ] || {};
 
-    if (recipientUid && !recipientPref.muted) {
+    if (
+      recipientUid &&
+      !recipientPref.muted
+    ) {
       try {
         const actorName =
           state.profile.displayName ||
@@ -702,15 +778,21 @@ export async function sendMessage() {
           {
             type:
               "message",
+
             actorUid:
               state.user.uid,
+
             actorName,
+
             targetId:
               id,
+
             text:
               `${actorName} sent you a message.`,
+
             read:
               false,
+
             createdAt:
               serverTimestamp()
           }
@@ -746,6 +828,7 @@ export async function sendMessage() {
 /* =========================================================
    EDIT MESSAGE
    ========================================================= */
+
 export async function editMessage(
   messageId
 ) {
@@ -776,6 +859,7 @@ export async function editMessage(
           msg.text || ""
         )}</textarea>
       </div>
+
       <button
         class="btn btn-primary btn-block"
         id="saveEditMessage"
@@ -818,6 +902,7 @@ export async function editMessage(
             ),
             {
               text,
+
               editedAt:
                 serverTimestamp()
             }
@@ -831,6 +916,7 @@ export async function editMessage(
                   ? {
                       ...m,
                       text,
+
                       editedAt:
                         new Date()
                     }
@@ -859,6 +945,7 @@ export async function editMessage(
 /* =========================================================
    DELETE MESSAGE
    ========================================================= */
+
 export async function deleteMessage(
   messageId
 ) {
@@ -883,6 +970,7 @@ export async function deleteMessage(
       <p class="small">
         This message will be permanently removed.
       </p>
+
       <div
         style="
           display:flex;
@@ -897,6 +985,7 @@ export async function deleteMessage(
         >
           Cancel
         </button>
+
         <button
           class="btn btn-danger"
           id="confirmDelMsg"
@@ -961,6 +1050,7 @@ export async function deleteMessage(
             {
               lastMessage:
                 newLastMsg,
+
               updatedAt:
                 latest
                   ? latest.createdAt
@@ -990,6 +1080,7 @@ export async function deleteMessage(
 /* =========================================================
    COPY SINGLE MESSAGE
    ========================================================= */
+
 export async function copyMessage(
   text
 ) {
@@ -1011,6 +1102,7 @@ export async function copyMessage(
 /* =========================================================
    PIN / UNPIN CONVERSATION
    ========================================================= */
+
 export async function togglePinConversation(
   conversationId
 ) {
@@ -1035,6 +1127,7 @@ export async function togglePinConversation(
         prefRef,
         {
           pinned: false,
+
           updatedAt:
             serverTimestamp()
         },
@@ -1050,6 +1143,7 @@ export async function togglePinConversation(
               conversationId
             ] || {}
         ),
+
         pinned: false
       };
 
@@ -1061,7 +1155,9 @@ export async function togglePinConversation(
         prefRef,
         {
           pinned: true,
+
           deleted: false,
+
           updatedAt:
             serverTimestamp()
         },
@@ -1077,7 +1173,9 @@ export async function togglePinConversation(
               conversationId
             ] || {}
         ),
+
         pinned: true,
+
         deleted: false
       };
 
@@ -1100,6 +1198,7 @@ export async function togglePinConversation(
 /* =========================================================
    ARCHIVE / UNARCHIVE CONVERSATION
    ========================================================= */
+
 export async function toggleArchiveConversation(
   conversationId
 ) {
@@ -1122,7 +1221,9 @@ export async function toggleArchiveConversation(
     await setDoc(
       prefRef,
       {
-        archived: !isArchived,
+        archived:
+          !isArchived,
+
         updatedAt:
           serverTimestamp()
       },
@@ -1138,11 +1239,15 @@ export async function toggleArchiveConversation(
             conversationId
           ] || {}
       ),
-      archived: !isArchived
+
+      archived:
+        !isArchived
     };
 
     toast(
-      !isArchived ? "Conversation archived 📦" : "Conversation unarchived"
+      !isArchived
+        ? "Conversation archived 📦"
+        : "Conversation unarchived"
     );
   } catch (e) {
     console.error(
@@ -1159,6 +1264,7 @@ export async function toggleArchiveConversation(
 /* =========================================================
    MUTE / UNMUTE NOTIFICATIONS
    ========================================================= */
+
 export async function toggleMuteConversation(
   conversationId
 ) {
@@ -1181,7 +1287,9 @@ export async function toggleMuteConversation(
     await setDoc(
       prefRef,
       {
-        muted: !isMuted,
+        muted:
+          !isMuted,
+
         updatedAt:
           serverTimestamp()
       },
@@ -1197,11 +1305,15 @@ export async function toggleMuteConversation(
             conversationId
           ] || {}
       ),
-      muted: !isMuted
+
+      muted:
+        !isMuted
     };
 
     toast(
-      !isMuted ? "Notifications muted 🔕" : "Notifications unmuted 🔔"
+      !isMuted
+        ? "Notifications muted 🔕"
+        : "Notifications unmuted 🔔"
     );
   } catch (e) {
     console.error(
@@ -1218,7 +1330,11 @@ export async function toggleMuteConversation(
 /* =========================================================
    CHAT BACKGROUND SELECTOR
    ========================================================= */
-export function showChatBackgroundModal(conversationId, renderApp) {
+
+export function showChatBackgroundModal(
+  conversationId,
+  renderApp
+) {
   currentRenderApp =
     typeof renderApp === "function"
       ? renderApp
@@ -1230,89 +1346,177 @@ export function showChatBackgroundModal(conversationId, renderApp) {
     ]?.background || "classic";
 
   const backgrounds = [
-    { id: "classic", name: "Classic / Default", color: "var(--surface)" },
-    { id: "midnight", name: "Midnight", color: "#0d1117" },
-    { id: "purple", name: "Marvel Purple", color: "#2d1b4e" },
-    { id: "ocean", name: "Ocean", color: "#0f2c39" },
-    { id: "softlight", name: "Soft Light", color: "#f3f4f6" }
+    {
+      id: "classic",
+      name: "Classic",
+      preview: "var(--surface)"
+    },
+    {
+      id: "midnight",
+      name: "Midnight",
+      preview: "#111827"
+    },
+    {
+      id: "purple",
+      name: "Marvel Purple",
+      preview: "#2d1b4e"
+    },
+    {
+      id: "ocean",
+      name: "Ocean",
+      preview: "#12303a"
+    },
+    {
+      id: "softlight",
+      name: "Soft Light",
+      preview: "#f3f4f6"
+    }
   ];
 
   showModal(
     "Chat background",
     `
-      <p class="small">Choose a lightweight background style for this chat:</p>
-      <div style="display:flex; flex-direction:column; gap:8px; margin:16px 0;">
-        ${backgrounds.map(b => `
-          <button
-            type="button"
-            class="btn ${currentBg === b.id ? "btn-primary" : "btn-ghost"}"
-            data-select-bg="${b.id}"
-            style="justify-content:flex-start; text-align:left;"
-          >
-            ${currentBg === b.id ? "✓ " : "○ "} ${b.name}
-          </button>
-        `).join("")}
+      <p class="small">
+        Choose a simple background for this conversation.
+      </p>
+
+      <div
+        style="
+          display:grid;
+          grid-template-columns:1fr 1fr;
+          gap:10px;
+          margin-top:16px;
+        "
+      >
+        ${backgrounds
+          .map(
+            bg => `
+              <button
+                type="button"
+                data-select-bg="${bg.id}"
+                class="btn ${
+                  currentBg === bg.id
+                    ? "btn-primary"
+                    : "btn-ghost"
+                }"
+                style="
+                  display:flex;
+                  align-items:center;
+                  gap:10px;
+                  justify-content:flex-start;
+                  min-height:48px;
+                "
+              >
+                <span
+                  style="
+                    width:22px;
+                    height:22px;
+                    flex:none;
+                    border-radius:50%;
+                    background:${bg.preview};
+                    border:1px solid var(--border);
+                  "
+                ></span>
+
+                <span>
+                  ${
+                    currentBg === bg.id
+                      ? "✓ "
+                      : ""
+                  }${bg.name}
+                </span>
+              </button>
+            `
+          )
+          .join("")}
       </div>
     `
   );
 
   document
-    .querySelectorAll("[data-select-bg]")
+    .querySelectorAll(
+      "[data-select-bg]"
+    )
     .forEach(btn => {
-      btn.addEventListener("click", async () => {
-        const bgId = btn.dataset.selectBg;
-        try {
-          const prefRef =
-            doc(
-              db,
-              "users",
-              state.user.uid,
-              "conversationPreferences",
-              conversationId
+      btn.addEventListener(
+        "click",
+        async () => {
+          const bgId =
+            btn.dataset.selectBg;
+
+          try {
+            const prefRef =
+              doc(
+                db,
+                "users",
+                state.user.uid,
+                "conversationPreferences",
+                conversationId
+              );
+
+            await setDoc(
+              prefRef,
+              {
+                background:
+                  bgId,
+
+                updatedAt:
+                  serverTimestamp()
+              },
+              { merge: true }
             );
 
-          await setDoc(
-            prefRef,
-            {
-              background: bgId,
-              updatedAt: serverTimestamp()
-            },
-            { merge: true }
-          );
+            state.conversationPreferences[
+              conversationId
+            ] = {
+              ...(
+                state
+                  .conversationPreferences[
+                    conversationId
+                  ] || {}
+              ),
 
-          state.conversationPreferences[
-            conversationId
-          ] = {
-            ...(
-              state.conversationPreferences[
-                conversationId
-              ] || {}
-            ),
-            background: bgId
-          };
+              background:
+                bgId
+            };
 
-          closeModal();
-          toast("Chat background updated 🎨");
+            closeModal();
 
-          const renderer =
-            typeof renderApp === "function"
-              ? renderApp
-              : currentRenderApp;
+            toast(
+              "Chat background updated 🎨"
+            );
 
-          if (typeof renderer === "function") {
-            renderer();
+            const renderer =
+              typeof renderApp ===
+              "function"
+                ? renderApp
+                : currentRenderApp;
+
+            if (
+              typeof renderer ===
+              "function"
+            ) {
+              renderer();
+            }
+          } catch (e) {
+            console.error(
+              "BACKGROUND ERROR:",
+              e
+            );
+
+            toast(
+              friendly(e)
+            );
           }
-        } catch (e) {
-          console.error("BACKGROUND ERROR:", e);
-          toast(friendly(e));
         }
-      });
+      );
     });
 }
 
 /* =========================================================
    BLOCK / UNBLOCK USER
    ========================================================= */
+
 export async function toggleBlockUser(
   conversationId,
   renderApp
@@ -1328,30 +1532,85 @@ export async function toggleBlockUser(
         conversationId
       ]?.blocked;
 
-  if (!isBlocked) {
-    showModal(
-      "Block user?",
-      `
-        <p class="small">
-          Blocking this user will hide the conversation from your active list and prevent new interactions.
-        </p>
-        <div style="display:flex; gap:10px; margin-top:16px;">
-          <button class="btn btn-ghost" id="cancelBlock" style="flex:1;">Cancel</button>
-          <button class="btn btn-danger" id="confirmBlock" style="flex:1;">Block</button>
-        </div>
-      `
+  /*
+   * If already blocked, clicking the menu
+   * immediately reverses the block.
+   */
+  if (isBlocked) {
+    await executeBlock(
+      conversationId,
+      false,
+      renderApp
     );
 
-    document.getElementById("cancelBlock")?.addEventListener("click", closeModal);
-    document.getElementById("confirmBlock")?.addEventListener("click", async () => {
-      await executeBlock(conversationId, true, renderApp);
-    });
-  } else {
-    await executeBlock(conversationId, false, renderApp);
+    return;
   }
+
+  showModal(
+    "Block user?",
+    `
+      <p class="small">
+        You can unblock this user later.
+        The conversation and existing messages
+        will not be deleted.
+      </p>
+
+      <div
+        style="
+          display:flex;
+          gap:10px;
+          margin-top:16px;
+        "
+      >
+        <button
+          class="btn btn-ghost"
+          id="cancelBlock"
+          style="flex:1;"
+        >
+          Cancel
+        </button>
+
+        <button
+          class="btn btn-danger"
+          id="confirmBlock"
+          style="flex:1;"
+        >
+          Block
+        </button>
+      </div>
+    `
+  );
+
+  document
+    .getElementById(
+      "cancelBlock"
+    )
+    ?.addEventListener(
+      "click",
+      closeModal
+    );
+
+  document
+    .getElementById(
+      "confirmBlock"
+    )
+    ?.addEventListener(
+      "click",
+      async () => {
+        await executeBlock(
+          conversationId,
+          true,
+          renderApp
+        );
+      }
+    );
 }
 
-async function executeBlock(conversationId, blockState, renderApp) {
+async function executeBlock(
+  conversationId,
+  blockState,
+  renderApp
+) {
   try {
     const prefRef =
       doc(
@@ -1362,12 +1621,21 @@ async function executeBlock(conversationId, blockState, renderApp) {
         conversationId
       );
 
+    /*
+     * IMPORTANT:
+     *
+     * Block and Delete are separate.
+     *
+     * Blocking NEVER sets deleted:true.
+     */
     await setDoc(
       prefRef,
       {
-        blocked: blockState,
-        deleted: blockState,
-        updatedAt: serverTimestamp()
+        blocked:
+          blockState,
+
+        updatedAt:
+          serverTimestamp()
       },
       { merge: true }
     );
@@ -1380,109 +1648,197 @@ async function executeBlock(conversationId, blockState, renderApp) {
           conversationId
         ] || {}
       ),
-      blocked: blockState,
-      deleted: blockState
+
+      blocked:
+        blockState
     };
 
+    /*
+     * Stop the active message listener when
+     * blocking the currently open conversation.
+     */
     if (
       state.activeConversation?.id ===
       conversationId
     ) {
       state.unsubs.messages?.();
-      state.unsubs.messages = null;
-      state.activeConversation = null;
+
+      state.unsubs.messages =
+        null;
+
+      state.activeConversation =
+        null;
+
       state.messages = [];
     }
 
     closeModal();
-    toast(blockState ? "User blocked 🚫" : "User unblocked");
+
+    toast(
+      blockState
+        ? "User blocked 🚫"
+        : "User unblocked 🔓"
+    );
 
     const renderer =
-      typeof renderApp === "function"
+      typeof renderApp ===
+      "function"
         ? renderApp
         : currentRenderApp;
 
-    if (typeof renderer === "function") {
+    if (
+      typeof renderer ===
+      "function"
+    ) {
       renderer();
     }
   } catch (e) {
-    console.error("BLOCK ERROR:", e);
-    toast(friendly(e));
+    console.error(
+      "BLOCK ERROR:",
+      e
+    );
+
+    toast(
+      friendly(e)
+    );
   }
 }
 
 /* =========================================================
    REPORT USER
    ========================================================= */
+
 export async function reportUserModal(
   conversationId
 ) {
   const c =
     state.conversations.find(
-      x => x.id === conversationId
+      x =>
+        x.id ===
+        conversationId
     );
 
-  if (!c) return;
+  if (!c) {
+    return;
+  }
 
   const otherUid =
     c.participants?.find(
-      x => x !== state.user.uid
+      x =>
+        x !==
+        state.user.uid
     );
 
-  if (!otherUid) return;
+  if (!otherUid) {
+    return;
+  }
 
   showModal(
     "Report conversation / user",
     `
-      <p class="small">Select a reason for reporting:</p>
-      <div class="field" style="margin:12px 0;">
-        <select class="input" id="reportReason">
-          <option value="Spam">Spam</option>
-          <option value="Harassment">Harassment</option>
-          <option value="Inappropriate behavior">Inappropriate behavior</option>
-          <option value="Scam/fraud concern">Scam/fraud concern</option>
-          <option value="Other">Other</option>
+      <p class="small">
+        Select a reason for reporting:
+      </p>
+
+      <div
+        class="field"
+        style="margin:12px 0;"
+      >
+        <select
+          class="input"
+          id="reportReason"
+        >
+          <option value="Spam">
+            Spam
+          </option>
+
+          <option value="Harassment">
+            Harassment
+          </option>
+
+          <option value="Inappropriate behavior">
+            Inappropriate behavior
+          </option>
+
+          <option value="Scam/fraud concern">
+            Scam/fraud concern
+          </option>
+
+          <option value="Other">
+            Other
+          </option>
         </select>
       </div>
-      <button class="btn btn-danger btn-block" id="submitReport">
+
+      <button
+        class="btn btn-danger btn-block"
+        id="submitReport"
+      >
         Submit Report
       </button>
     `
   );
 
   document
-    .getElementById("submitReport")
-    ?.addEventListener("click", async () => {
-      const reason =
-        document.getElementById("reportReason")
-          ?.value || "Other";
+    .getElementById(
+      "submitReport"
+    )
+    ?.addEventListener(
+      "click",
+      async () => {
+        const reason =
+          document
+            .getElementById(
+              "reportReason"
+            )
+            ?.value ||
+          "Other";
 
-      try {
-        await addDoc(
-          collection(db, "reports"),
-          {
-            reporterUid: state.user.uid,
-            reportedUid: otherUid,
-            conversationId,
-            reason,
-            createdAt: serverTimestamp()
-          }
-        );
+        try {
+          await addDoc(
+            collection(
+              db,
+              "reports"
+            ),
+            {
+              reporterUid:
+                state.user.uid,
 
-        closeModal();
-        toast("Report submitted successfully. Thank you.");
-      } catch (e) {
-        console.error("REPORT ERROR:", e);
-        toast(
-          "Could not submit report. Note that security rules may require specific report permissions."
-        );
+              reportedUid:
+                otherUid,
+
+              conversationId,
+
+              reason,
+
+              createdAt:
+                serverTimestamp()
+            }
+          );
+
+          closeModal();
+
+          toast(
+            "Report submitted successfully. Thank you."
+          );
+        } catch (e) {
+          console.error(
+            "REPORT ERROR:",
+            e
+          );
+
+          toast(
+            "Could not submit report. Note that security rules may require specific report permissions."
+          );
+        }
       }
-    });
+    );
 }
 
 /* =========================================================
    COPY ENTIRE CONVERSATION
    ========================================================= */
+
 export async function copyAllChat(
   conversationId
 ) {
@@ -1496,10 +1852,12 @@ export async function copyAllChat(
             conversationId,
             "messages"
           ),
+
           orderBy(
             "createdAt",
             "asc"
           ),
+
           limit(500)
         )
       );
@@ -1560,6 +1918,7 @@ export async function copyAllChat(
 /* =========================================================
    DELETE / HIDE CONVERSATION FOR CURRENT USER
    ========================================================= */
+
 export async function deleteChat(
   conversationId,
   renderApp
@@ -1576,6 +1935,7 @@ export async function deleteChat(
         This removes the conversation from your chat list.
         It does not delete the other person's copy.
       </p>
+
       <div
         style="
           display:flex;
@@ -1590,6 +1950,7 @@ export async function deleteChat(
         >
           Cancel
         </button>
+
         <button
           class="btn btn-danger"
           id="confirmDeleteChat"
@@ -1630,8 +1991,12 @@ export async function deleteChat(
           await setDoc(
             prefRef,
             {
-              deleted: true,
-              pinned: false,
+              deleted:
+                true,
+
+              pinned:
+                false,
+
               updatedAt:
                 serverTimestamp()
             },
@@ -1647,8 +2012,12 @@ export async function deleteChat(
                   conversationId
                 ] || {}
             ),
-            deleted: true,
-            pinned: false
+
+            deleted:
+              true,
+
+            pinned:
+              false
           };
 
           if (
@@ -1703,6 +2072,7 @@ export async function deleteChat(
 /* =========================================================
    CHAT LIST
    ========================================================= */
+
 export function renderChat(
   renderApp
 ) {
@@ -1735,9 +2105,15 @@ export function renderChat(
               c.id
             ] || {};
 
+        /*
+         * Deleted chats are hidden.
+         *
+         * BLOCKED chats are intentionally NOT
+         * hidden. This allows the user to see
+         * them and unblock them later.
+         */
         if (
-          preference.deleted ||
-          preference.blocked
+          preference.deleted
         ) {
           return false;
         }
@@ -1745,11 +2121,17 @@ export function renderChat(
         const isArchived =
           !!preference.archived;
 
-        if (viewingArchived && !isArchived) {
+        if (
+          viewingArchived &&
+          !isArchived
+        ) {
           return false;
         }
 
-        if (!viewingArchived && isArchived) {
+        if (
+          !viewingArchived &&
+          isArchived
+        ) {
           return false;
         }
 
@@ -1835,21 +2217,50 @@ export function renderChat(
   );
 
   const archivedCount =
-    state.conversations.filter(c => {
-      const p = state.conversationPreferences[c.id] || {};
-      return p.archived && !p.deleted && !p.blocked;
-    }).length;
+    state.conversations.filter(
+      c => {
+        const p =
+          state
+            .conversationPreferences[
+              c.id
+            ] || {};
+
+        return (
+          p.archived &&
+          !p.deleted
+        );
+      }
+    ).length;
 
   return `
     <div class="page">
+
       <div class="section-title">
+
         <div>
-          <h2>${viewingArchived ? "Archived Chats" : "Messages"}</h2>
+          <h2>
+            ${
+              viewingArchived
+                ? "Archived Chats"
+                : "Messages"
+            }
+          </h2>
+
           <div class="small">
-            ${viewingArchived ? "Archived conversations" : "Private conversations"}
+            ${
+              viewingArchived
+                ? "Archived conversations"
+                : "Private conversations"
+            }
           </div>
         </div>
-        <div style="display:flex; gap:8px;">
+
+        <div
+          style="
+            display:flex;
+            gap:8px;
+          "
+        >
           ${
             !viewingArchived
               ? `
@@ -1858,15 +2269,23 @@ export function renderChat(
                   id="toggleArchivedViewBtn"
                   style="position:relative;"
                 >
-                  📦 Archived ${archivedCount > 0 ? `(${archivedCount})` : ""}
+                  📦 Archived ${
+                    archivedCount > 0
+                      ? `(${archivedCount})`
+                      : ""
+                  }
                 </button>
               `
               : `
-                <button class="btn btn-ghost" id="toggleArchivedViewBtn">
+                <button
+                  class="btn btn-ghost"
+                  id="toggleArchivedViewBtn"
+                >
                   ← Active Chats
                 </button>
               `
           }
+
           <button
             class="btn btn-primary"
             id="newChatBtn"
@@ -1896,387 +2315,496 @@ export function renderChat(
               id="chatList"
             >
               ${conversations
-                .map(c => {
-                  const other =
-                    c.participants?.find(
-                      x =>
-                        x !==
-                        state.user.uid
-                    );
+                .map(
+                  c => {
+                    const other =
+                      c.participants?.find(
+                        x =>
+                          x !==
+                          state.user.uid
+                      );
 
-                  const profile =
-                    c
-                      .participantProfiles?.[
-                        other
-                      ] || {};
+                    const profile =
+                      c
+                        .participantProfiles?.[
+                          other
+                        ] || {};
 
-                  const name =
-                    profile.displayName ||
-                    profile.username ||
-                    "User";
+                    const name =
+                      profile.displayName ||
+                      profile.username ||
+                      "User";
 
-                  const preference =
-                    state.conversationPreferences[
-                      c.id
-                    ] || {};
+                    const preference =
+                      state
+                        .conversationPreferences[
+                          c.id
+                        ] || {};
 
-                  const pinned =
-                    !!preference.pinned;
+                    const pinned =
+                      !!preference.pinned;
 
-                  const muted =
-                    !!preference.muted;
+                    const muted =
+                      !!preference.muted;
 
-                  const archived =
-                    !!preference.archived;
+                    const archived =
+                      !!preference.archived;
 
-                  return `
-                    <div
-                      class="chat-item ${
-                        pinned
-                          ? "pinned-chat"
-                          : ""
-                      }"
-                      data-conversation="${escapeHtml(
-                        c.id
-                      )}"
-                      style="
-                        position:relative;
-                        cursor:pointer;
-                        min-width:0;
-                      "
-                    >
+                    const blocked =
+                      !!preference.blocked;
+
+                    return `
                       <div
-                        class="avatar"
-                        style="flex:none;"
-                      >
-                        ${escapeHtml(
-                          initials(name)
-                        )}
-                      </div>
-                      <div
-                        class="chat-content"
-                        style="
-                          flex:1;
-                          min-width:0;
-                          overflow:hidden;
-                        "
-                      >
-                        <strong
-                          style="
-                            display:block;
-                            overflow:hidden;
-                            text-overflow:ellipsis;
-                            white-space:nowrap;
-                          "
-                        >
-                          ${escapeHtml(
-                            name
-                          )}
-                          ${
-                            pinned
-                              ? " 📌"
-                              : ""
-                          }
-                          ${
-                            muted
-                              ? " 🔕"
-                              : ""
-                          }
-                          ${
-                            archived
-                              ? " 📦"
-                              : ""
-                          }
-                        </strong>
-                        <p
-                          style="
-                            overflow:hidden;
-                            text-overflow:ellipsis;
-                            white-space:nowrap;
-                            margin:4px 0 0;
-                          "
-                        >
-                          ${escapeHtml(
-                            c.lastMessage ||
-                            "Start chatting"
-                          )}
-                        </p>
-                      </div>
-                      <div
-                        style="
-                          display:flex;
-                          flex-direction:column;
-                          align-items:flex-end;
-                          justify-content:center;
-                          gap:5px;
-                          flex:none;
-                        "
-                      >
-                        <span class="small">
-                          ${escapeHtml(
-                            formatDate(
-                              c.updatedAt
-                            )
-                          )}
-                        </span>
-                        <button
-                          type="button"
-                          class="icon-btn chat-menu-btn"
-                          aria-label="Conversation options"
-                          aria-expanded="false"
-                          data-chat-menu="${escapeHtml(
-                            c.id
-                          )}"
-                          style="
-                            width:34px;
-                            height:34px;
-                            border-radius:11px;
-                            font-size:20px;
-                            line-height:1;
-                            padding:0;
-                            display:grid;
-                            place-items:center;
-                          "
-                        >
-                          ⋮
-                        </button>
-                      </div>
-                      <div
-                        class="chat-options-menu"
-                        data-chat-options="${escapeHtml(
+                        class="chat-item ${
+                          pinned
+                            ? "pinned-chat"
+                            : ""
+                        }"
+                        data-conversation="${escapeHtml(
                           c.id
                         )}"
                         style="
-                          display:none;
-                          position:absolute;
-                          right:10px;
-                          top:52px;
-                          z-index:100;
-                          min-width:210px;
-                          max-width:calc(100% - 20px);
-                          background:var(--surface);
-                          border:1px solid var(--border);
-                          border-radius:15px;
-                          box-shadow:var(--shadow2);
-                          padding:6px;
+                          position:relative;
+                          cursor:pointer;
+                          min-width:0;
                         "
                       >
-                        <div style="padding:6px 12px; font-size:11px; font-weight:bold; color:var(--muted); text-transform:uppercase;">
-                          Conversation
+
+                        <div
+                          class="avatar"
+                          style="flex:none;"
+                        >
+                          ${escapeHtml(
+                            initials(
+                              name
+                            )
+                          )}
                         </div>
-                        <button
-                          type="button"
-                          class="chat-option-btn"
-                          data-chat-action="pin"
-                          data-chat-id="${escapeHtml(
-                            c.id
-                          )}"
+
+                        <div
+                          class="chat-content"
                           style="
-                            width:100%;
-                            border:0;
-                            background:transparent;
-                            color:var(--text);
-                            text-align:left;
-                            padding:9px 12px;
-                            border-radius:8px;
-                            font-weight:600;
-                            cursor:pointer;
+                            flex:1;
+                            min-width:0;
+                            overflow:hidden;
                           "
                         >
-                          ${
-                            pinned
-                              ? "📌 Unpin chat"
-                              : "📌 Pin chat"
-                          }
-                        </button>
-                        <button
-                          type="button"
-                          class="chat-option-btn"
-                          data-chat-action="archive"
-                          data-chat-id="${escapeHtml(
-                            c.id
-                          )}"
-                          style="
-                            width:100%;
-                            border:0;
-                            background:transparent;
-                            color:var(--text);
-                            text-align:left;
-                            padding:9px 12px;
-                            border-radius:8px;
-                            font-weight:600;
-                            cursor:pointer;
-                          "
-                        >
-                          ${
-                            archived
-                              ? "📦 Unarchive chat"
-                              : "📦 Archive chat"
-                          }
-                        </button>
-                        <button
-                          type="button"
-                          class="chat-option-btn"
-                          data-chat-action="mute"
-                          data-chat-id="${escapeHtml(
-                            c.id
-                          )}"
-                          style="
-                            width:100%;
-                            border:0;
-                            background:transparent;
-                            color:var(--text);
-                            text-align:left;
-                            padding:9px 12px;
-                            border-radius:8px;
-                            font-weight:600;
-                            cursor:pointer;
-                          "
-                        >
-                          ${
-                            muted
-                              ? "🔔 Unmute notifications"
-                              : "🔕 Mute notifications"
-                          }
-                        </button>
-                        <button
-                          type="button"
-                          class="chat-option-btn"
-                          data-chat-action="background"
-                          data-chat-id="${escapeHtml(
-                            c.id
-                          )}"
-                          style="
-                            width:100%;
-                            border:0;
-                            background:transparent;
-                            color:var(--text);
-                            text-align:left;
-                            padding:9px 12px;
-                            border-radius:8px;
-                            font-weight:600;
-                            cursor:pointer;
-                          "
-                        >
-                          🎨 Chat background
-                        </button>
-                        <div style="height:1px; background:var(--border); margin:4px 0;"></div>
-                        <div style="padding:6px 12px; font-size:11px; font-weight:bold; color:var(--muted); text-transform:uppercase;">
-                          Tools
+
+                          <strong
+                            style="
+                              display:block;
+                              overflow:hidden;
+                              text-overflow:ellipsis;
+                              white-space:nowrap;
+                            "
+                          >
+                            ${escapeHtml(
+                              name
+                            )}
+
+                            ${
+                              pinned
+                                ? " 📌"
+                                : ""
+                            }
+
+                            ${
+                              muted
+                                ? " 🔕"
+                                : ""
+                            }
+
+                            ${
+                              archived
+                                ? " 📦"
+                                : ""
+                            }
+
+                            ${
+                              blocked
+                                ? " 🚫"
+                                : ""
+                            }
+                          </strong>
+
+                          <p
+                            style="
+                              overflow:hidden;
+                              text-overflow:ellipsis;
+                              white-space:nowrap;
+                              margin:4px 0 0;
+                            "
+                          >
+                            ${
+                              blocked
+                                ? "🚫 User blocked"
+                                : escapeHtml(
+                                    c.lastMessage ||
+                                    "Start chatting"
+                                  )
+                            }
+                          </p>
+
                         </div>
-                        <button
-                          type="button"
-                          class="chat-option-btn"
-                          data-chat-action="copy"
-                          data-chat-id="${escapeHtml(
-                            c.id
-                          )}"
+
+                        <div
                           style="
-                            width:100%;
-                            border:0;
-                            background:transparent;
-                            color:var(--text);
-                            text-align:left;
-                            padding:9px 12px;
-                            border-radius:8px;
-                            font-weight:600;
-                            cursor:pointer;
+                            display:flex;
+                            flex-direction:column;
+                            align-items:flex-end;
+                            justify-content:center;
+                            gap:5px;
+                            flex:none;
                           "
                         >
-                          📋 Copy all chat
-                        </button>
-                        <div style="height:1px; background:var(--border); margin:4px 0;"></div>
-                        <div style="padding:6px 12px; font-size:11px; font-weight:bold; color:var(--muted); text-transform:uppercase;">
-                          Safety & Danger
+
+                          <span class="small">
+                            ${escapeHtml(
+                              formatDate(
+                                c.updatedAt
+                              )
+                            )}
+                          </span>
+
+                          <button
+                            type="button"
+                            class="icon-btn chat-menu-btn"
+                            aria-label="Conversation options"
+                            aria-expanded="false"
+                            data-chat-menu="${escapeHtml(
+                              c.id
+                            )}"
+                            style="
+                              width:34px;
+                              height:34px;
+                              border-radius:11px;
+                              font-size:20px;
+                              line-height:1;
+                              padding:0;
+                              display:grid;
+                              place-items:center;
+                            "
+                          >
+                            ⋮
+                          </button>
+
                         </div>
-                        <button
-                          type="button"
-                          class="chat-option-btn"
-                          data-chat-action="block"
-                          data-chat-id="${escapeHtml(
+
+                        <div
+                          class="chat-options-menu"
+                          data-chat-options="${escapeHtml(
                             c.id
                           )}"
                           style="
-                            width:100%;
-                            border:0;
-                            background:transparent;
-                            color:var(--danger);
-                            text-align:left;
-                            padding:9px 12px;
-                            border-radius:8px;
-                            font-weight:600;
-                            cursor:pointer;
+                            display:none;
+                            position:absolute;
+                            right:10px;
+                            top:52px;
+                            z-index:100;
+                            min-width:210px;
+                            max-width:calc(100% - 20px);
+                            background:var(--surface);
+                            border:1px solid var(--border);
+                            border-radius:15px;
+                            box-shadow:var(--shadow2);
+                            padding:6px;
                           "
                         >
-                          🚫 Block user
-                        </button>
-                        <button
-                          type="button"
-                          class="chat-option-btn"
-                          data-chat-action="report"
-                          data-chat-id="${escapeHtml(
-                            c.id
-                          )}"
-                          style="
-                            width:100%;
-                            border:0;
-                            background:transparent;
-                            color:var(--danger);
-                            text-align:left;
-                            padding:9px 12px;
-                            border-radius:8px;
-                            font-weight:600;
-                            cursor:pointer;
-                          "
-                        >
-                          ⚠️ Report user
-                        </button>
-                        <button
-                          type="button"
-                          class="chat-option-btn"
-                          data-chat-action="delete"
-                          data-chat-id="${escapeHtml(
-                            c.id
-                          )}"
-                          style="
-                            width:100%;
-                            border:0;
-                            background:transparent;
-                            color:var(--danger);
-                            text-align:left;
-                            padding:9px 12px;
-                            border-radius:8px;
-                            font-weight:600;
-                            cursor:pointer;
-                          "
-                        >
-                          🗑️ Delete chat
-                        </button>
+
+                          <div
+                            style="
+                              padding:6px 12px;
+                              font-size:11px;
+                              font-weight:bold;
+                              color:var(--muted);
+                              text-transform:uppercase;
+                            "
+                          >
+                            Conversation
+                          </div>
+
+                          <button
+                            type="button"
+                            class="chat-option-btn"
+                            data-chat-action="pin"
+                            data-chat-id="${escapeHtml(
+                              c.id
+                            )}"
+                            style="
+                              width:100%;
+                              border:0;
+                              background:transparent;
+                              color:var(--text);
+                              text-align:left;
+                              padding:9px 12px;
+                              border-radius:8px;
+                              font-weight:600;
+                              cursor:pointer;
+                            "
+                          >
+                            ${
+                              pinned
+                                ? "📌 Unpin chat"
+                                : "📌 Pin chat"
+                            }
+                          </button>
+
+                          <button
+                            type="button"
+                            class="chat-option-btn"
+                            data-chat-action="archive"
+                            data-chat-id="${escapeHtml(
+                              c.id
+                            )}"
+                            style="
+                              width:100%;
+                              border:0;
+                              background:transparent;
+                              color:var(--text);
+                              text-align:left;
+                              padding:9px 12px;
+                              border-radius:8px;
+                              font-weight:600;
+                              cursor:pointer;
+                            "
+                          >
+                            ${
+                              archived
+                                ? "📦 Unarchive chat"
+                                : "📦 Archive chat"
+                            }
+                          </button>
+
+                          <button
+                            type="button"
+                            class="chat-option-btn"
+                            data-chat-action="mute"
+                            data-chat-id="${escapeHtml(
+                              c.id
+                            )}"
+                            style="
+                              width:100%;
+                              border:0;
+                              background:transparent;
+                              color:var(--text);
+                              text-align:left;
+                              padding:9px 12px;
+                              border-radius:8px;
+                              font-weight:600;
+                              cursor:pointer;
+                            "
+                          >
+                            ${
+                              muted
+                                ? "🔔 Unmute notifications"
+                                : "🔕 Mute notifications"
+                            }
+                          </button>
+
+                          <button
+                            type="button"
+                            class="chat-option-btn"
+                            data-chat-action="background"
+                            data-chat-id="${escapeHtml(
+                              c.id
+                            )}"
+                            style="
+                              width:100%;
+                              border:0;
+                              background:transparent;
+                              color:var(--text);
+                              text-align:left;
+                              padding:9px 12px;
+                              border-radius:8px;
+                              font-weight:600;
+                              cursor:pointer;
+                            "
+                          >
+                            🎨 Chat background
+                          </button>
+
+                          <div
+                            style="
+                              height:1px;
+                              background:var(--border);
+                              margin:4px 0;
+                            "
+                          ></div>
+
+                          <div
+                            style="
+                              padding:6px 12px;
+                              font-size:11px;
+                              font-weight:bold;
+                              color:var(--muted);
+                              text-transform:uppercase;
+                            "
+                          >
+                            Tools
+                          </div>
+
+                          <button
+                            type="button"
+                            class="chat-option-btn"
+                            data-chat-action="copy"
+                            data-chat-id="${escapeHtml(
+                              c.id
+                            )}"
+                            style="
+                              width:100%;
+                              border:0;
+                              background:transparent;
+                              color:var(--text);
+                              text-align:left;
+                              padding:9px 12px;
+                              border-radius:8px;
+                              font-weight:600;
+                              cursor:pointer;
+                            "
+                          >
+                            📋 Copy all chat
+                          </button>
+
+                          <div
+                            style="
+                              height:1px;
+                              background:var(--border);
+                              margin:4px 0;
+                            "
+                          ></div>
+
+                          <div
+                            style="
+                              padding:6px 12px;
+                              font-size:11px;
+                              font-weight:bold;
+                              color:var(--muted);
+                              text-transform:uppercase;
+                            "
+                          >
+                            Safety & Danger
+                          </div>
+
+                          <button
+                            type="button"
+                            class="chat-option-btn"
+                            data-chat-action="block"
+                            data-chat-id="${escapeHtml(
+                              c.id
+                            )}"
+                            style="
+                              width:100%;
+                              border:0;
+                              background:transparent;
+                              color:${
+                                blocked
+                                  ? "var(--text)"
+                                  : "var(--danger)"
+                              };
+                              text-align:left;
+                              padding:9px 12px;
+                              border-radius:8px;
+                              font-weight:600;
+                              cursor:pointer;
+                            "
+                          >
+                            ${
+                              blocked
+                                ? "🔓 Unblock user"
+                                : "🚫 Block user"
+                            }
+                          </button>
+
+                          <button
+                            type="button"
+                            class="chat-option-btn"
+                            data-chat-action="report"
+                            data-chat-id="${escapeHtml(
+                              c.id
+                            )}"
+                            style="
+                              width:100%;
+                              border:0;
+                              background:transparent;
+                              color:var(--danger);
+                              text-align:left;
+                              padding:9px 12px;
+                              border-radius:8px;
+                              font-weight:600;
+                              cursor:pointer;
+                            "
+                          >
+                            ⚠️ Report user
+                          </button>
+
+                          <button
+                            type="button"
+                            class="chat-option-btn"
+                            data-chat-action="delete"
+                            data-chat-id="${escapeHtml(
+                              c.id
+                            )}"
+                            style="
+                              width:100%;
+                              border:0;
+                              background:transparent;
+                              color:var(--danger);
+                              text-align:left;
+                              padding:9px 12px;
+                              border-radius:8px;
+                              font-weight:600;
+                              cursor:pointer;
+                            "
+                          >
+                            🗑️ Delete chat
+                          </button>
+
+                        </div>
                       </div>
-                    </div>
-                  `;
-                })
+                    `;
+                  }
+                )
                 .join("")}
             </div>
           `
           : `
             <div class="card empty">
+
               <div
                 style="font-size:42px"
               >
                 💬
               </div>
+
               <h3>
-                ${viewingArchived ? "No archived conversations" : "No conversations found"}
+                ${
+                  viewingArchived
+                    ? "No archived conversations"
+                    : "No conversations found"
+                }
               </h3>
+
               <p>
-                ${viewingArchived ? "Archived chats will appear here." : "Try searching or start a new conversation."}
+                ${
+                  viewingArchived
+                    ? "Archived chats will appear here."
+                    : "Try searching or start a new conversation."
+                }
               </p>
+
               ${
                 !viewingArchived
-                  ? `<button class="btn btn-primary" id="newChatEmpty">Start a chat</button>`
+                  ? `
+                    <button
+                      class="btn btn-primary"
+                      id="newChatEmpty"
+                    >
+                      Start a chat
+                    </button>
+                  `
                   : ""
               }
+
             </div>
           `
       }
@@ -2287,6 +2815,7 @@ export function renderChat(
 /* =========================================================
    CHAT CONVERSATION VIEW
    ========================================================= */
+
 export function renderConversation() {
   const c =
     state.activeConversation;
@@ -2310,44 +2839,84 @@ export function renderConversation() {
     "User";
 
   const preference =
-    state.conversationPreferences[c.id] || {};
+    state
+      .conversationPreferences[
+        c.id
+      ] || {};
+
+  const isBlocked =
+    !!preference.blocked;
 
   const bgStyles = {
     classic: "",
-    midnight: "background-color: #0d1117 !important;",
-    purple: "background-color: #2d1b4e !important;",
-    ocean: "background-color: #0f2c39 !important;",
-    softlight: "background-color: #f3f4f6 !important; color: #111 !important;"
+
+    midnight:
+      "background-color:#111827 !important;",
+
+    purple:
+      "background-color:#2d1b4e !important;",
+
+    ocean:
+      "background-color:#12303a !important;",
+
+    softlight:
+      "background-color:#f3f4f6 !important; color:#111 !important;"
   };
 
-  const activeBgStyle = bgStyles[preference.background] || "";
+  const activeBgStyle =
+    bgStyles[
+      preference.background
+    ] || "";
 
   return `
-    <div class="page" style="${activeBgStyle}">
+    <div
+      class="page"
+      style="${activeBgStyle}"
+    >
+
       <div class="section-title">
+
         <div class="profile-row">
+
           <button
             class="icon-btn"
             id="backChats"
           >
             ←
           </button>
+
           <div class="avatar">
             ${escapeHtml(
               initials(name)
             )}
           </div>
+
           <div>
             <h2 style="margin:0">
               ${escapeHtml(name)}
             </h2>
+
             <div class="small">
-              Private chat ${preference.muted ? " (Muted 🔕)" : ""}
+              ${
+                isBlocked
+                  ? "Blocked 🚫"
+                  : `Private chat${
+                      preference.muted
+                        ? " (Muted 🔕)"
+                        : ""
+                    }`
+              }
             </div>
           </div>
+
         </div>
       </div>
-      <div class="card" style="${activeBgStyle}">
+
+      <div
+        class="card"
+        style="${activeBgStyle}"
+      >
+
         <div
           class="messages"
           id="messages"
@@ -2355,116 +2924,164 @@ export function renderConversation() {
           ${
             state.messages.length
               ? state.messages
-                  .map(m => {
-                    const isMine =
-                      m.uid ===
-                      state.user.uid;
+                  .map(
+                    m => {
+                      const isMine =
+                        m.uid ===
+                        state.user.uid;
 
-                    return `
-                      <div
-                        class="bubble ${
-                          isMine
-                            ? "mine"
-                            : ""
-                        }"
-                        data-message-id="${escapeHtml(
-                          m.id
-                        )}"
-                        style="
-                          position:relative;
-                        "
-                      >
-                        <div>
-                          ${escapeHtml(
-                            m.text ||
-                            ""
-                          )}
-                        </div>
+                      return `
                         <div
-                          class="bubble-time"
-                        >
-                          ${escapeHtml(
-                            formatDate(
-                              m.createdAt
-                            )
-                          )}
-                          ${
-                            m.editedAt
-                              ? `<span class="edited-indicator">(Edited)</span>`
+                          class="bubble ${
+                            isMine
+                              ? "mine"
                               : ""
-                          }
-                        </div>
-                        <div
-                          class="message-actions-dropdown"
+                          }"
+                          data-message-id="${escapeHtml(
+                            m.id
+                          )}"
                           style="
-                            margin-top:4px;
-                            display:flex;
-                            gap:8px;
-                            font-size:11px;
+                            position:relative;
                           "
                         >
-                          <button
-                            class="btn-text"
-                            data-copy-msg="${escapeHtml(
+
+                          <div>
+                            ${escapeHtml(
                               m.text ||
                               ""
-                            )}"
+                            )}
+                          </div>
+
+                          <div
+                            class="bubble-time"
                           >
-                            Copy
-                          </button>
-                          ${
-                            isMine
-                              ? `
-                                <button
-                                  class="btn-text"
-                                  data-edit-msg="${escapeHtml(
-                                    m.id
-                                  )}"
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  class="btn-text"
-                                  data-delete-msg="${escapeHtml(
-                                    m.id
-                                  )}"
-                                  style="
-                                    color:#ff5c5c;
-                                  "
-                                >
-                                  Delete
-                                </button>
-                              `
-                              : ""
-                          }
+                            ${escapeHtml(
+                              formatDate(
+                                m.createdAt
+                              )
+                            )}
+
+                            ${
+                              m.editedAt
+                                ? `
+                                  <span class="edited-indicator">
+                                    (Edited)
+                                  </span>
+                                `
+                                : ""
+                            }
+                          </div>
+
+                          <div
+                            class="message-actions-dropdown"
+                            style="
+                              margin-top:4px;
+                              display:flex;
+                              gap:8px;
+                              font-size:11px;
+                            "
+                          >
+
+                            <button
+                              class="btn-text"
+                              data-copy-msg="${escapeHtml(
+                                m.text ||
+                                ""
+                              )}"
+                            >
+                              Copy
+                            </button>
+
+                            ${
+                              isMine
+                                ? `
+                                  <button
+                                    class="btn-text"
+                                    data-edit-msg="${escapeHtml(
+                                      m.id
+                                    )}"
+                                  >
+                                    Edit
+                                  </button>
+
+                                  <button
+                                    class="btn-text"
+                                    data-delete-msg="${escapeHtml(
+                                      m.id
+                                    )}"
+                                    style="
+                                      color:var(--danger);
+                                    "
+                                  >
+                                    Delete
+                                  </button>
+                                `
+                                : ""
+                            }
+
+                          </div>
                         </div>
-                      </div>
-                    `;
-                  })
+                      `;
+                    }
+                  )
                   .join("")
               : `
                 <div class="empty">
-                  👋 Say hello and start
-                  the conversation.
+                  ${
+                    isBlocked
+                      ? "🚫 User blocked."
+                      : "👋 Say hello and start the conversation."
+                  }
                 </div>
               `
           }
         </div>
-        <div class="message-box">
-          <input
-            class="input"
-            id="messageInput"
-            maxlength="5000"
-            autocomplete="off"
-            placeholder="Write a message…"
-          >
-          <button
-            class="btn btn-primary"
-            id="sendMessage"
-          >
-            Send
-          </button>
-        </div>
+
+        ${
+          isBlocked
+            ? `
+              <div
+                style="
+                  padding:12px;
+                  text-align:center;
+                  border-top:1px solid var(--border);
+                "
+              >
+                <div class="small">
+                  🚫 This user is blocked.
+                </div>
+
+                <button
+                  class="btn btn-ghost"
+                  id="unblockFromConversation"
+                  style="margin-top:8px;"
+                >
+                  🔓 Unblock user
+                </button>
+              </div>
+            `
+            : `
+              <div class="message-box">
+
+                <input
+                  class="input"
+                  id="messageInput"
+                  maxlength="5000"
+                  autocomplete="off"
+                  placeholder="Write a message…"
+                >
+
+                <button
+                  class="btn btn-primary"
+                  id="sendMessage"
+                >
+                  Send
+                </button>
+
+              </div>
+            `
+        }
+
       </div>
     </div>
   `;
@@ -2473,6 +3090,7 @@ export function renderConversation() {
 /* =========================================================
    CHAT LIST MENU EVENT DELEGATION
    ========================================================= */
+
 if (
   !window.__marvelChatListMenuInstalledV3
 ) {
@@ -2482,6 +3100,37 @@ if (
   document.addEventListener(
     "click",
     async event => {
+
+      /* ===============================================
+         UNBLOCK FROM OPEN CONVERSATION
+         =============================================== */
+
+      const unblockButton =
+        event.target.closest(
+          "#unblockFromConversation"
+        );
+
+      if (unblockButton) {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const conversationId =
+          state.activeConversation?.id;
+
+        if (conversationId) {
+          await toggleBlockUser(
+            conversationId,
+            currentRenderApp
+          );
+        }
+
+        return;
+      }
+
+      /* ===============================================
+         ARCHIVED VIEW
+         =============================================== */
+
       const toggleArchivedBtn =
         event.target.closest(
           "#toggleArchivedViewBtn"
@@ -2489,14 +3138,23 @@ if (
 
       if (toggleArchivedBtn) {
         event.preventDefault();
+
         state.viewingArchivedChats =
           !state.viewingArchivedChats;
 
-        if (typeof currentRenderApp === "function") {
+        if (
+          typeof currentRenderApp ===
+          "function"
+        ) {
           currentRenderApp();
         }
+
         return;
       }
+
+      /* ===============================================
+         CHAT MENU BUTTON
+         =============================================== */
 
       const menuButton =
         event.target.closest(
@@ -2512,7 +3170,9 @@ if (
 
         const menu =
           document.querySelector(
-            `[data-chat-options="${CSS.escape(conversationId)}"]`
+            `[data-chat-options="${CSS.escape(
+              conversationId
+            )}"]`
           );
 
         if (!menu) {
@@ -2571,6 +3231,10 @@ if (
         return;
       }
 
+      /* ===============================================
+         CHAT OPTION
+         =============================================== */
+
       const option =
         event.target.closest(
           "[data-chat-action]"
@@ -2619,6 +3283,10 @@ if (
             }
           );
 
+        /* =============================================
+           PIN
+           ============================================= */
+
         if (
           action === "pin"
         ) {
@@ -2631,7 +3299,7 @@ if (
               state.page === "chat" &&
               !state.activeConversation &&
               typeof currentRenderApp ===
-              "function"
+                "function"
             ) {
               currentRenderApp();
             }
@@ -2649,6 +3317,10 @@ if (
           return;
         }
 
+        /* =============================================
+           ARCHIVE
+           ============================================= */
+
         if (
           action === "archive"
         ) {
@@ -2661,7 +3333,7 @@ if (
               state.page === "chat" &&
               !state.activeConversation &&
               typeof currentRenderApp ===
-              "function"
+                "function"
             ) {
               currentRenderApp();
             }
@@ -2679,6 +3351,10 @@ if (
           return;
         }
 
+        /* =============================================
+           MUTE
+           ============================================= */
+
         if (
           action === "mute"
         ) {
@@ -2691,7 +3367,7 @@ if (
               state.page === "chat" &&
               !state.activeConversation &&
               typeof currentRenderApp ===
-              "function"
+                "function"
             ) {
               currentRenderApp();
             }
@@ -2709,6 +3385,10 @@ if (
           return;
         }
 
+        /* =============================================
+           BACKGROUND
+           ============================================= */
+
         if (
           action === "background"
         ) {
@@ -2719,6 +3399,10 @@ if (
 
           return;
         }
+
+        /* =============================================
+           COPY
+           ============================================= */
 
         if (
           action === "copy"
@@ -2741,6 +3425,10 @@ if (
           return;
         }
 
+        /* =============================================
+           BLOCK / UNBLOCK
+           ============================================= */
+
         if (
           action === "block"
         ) {
@@ -2752,6 +3440,10 @@ if (
           return;
         }
 
+        /* =============================================
+           REPORT
+           ============================================= */
+
         if (
           action === "report"
         ) {
@@ -2761,6 +3453,10 @@ if (
 
           return;
         }
+
+        /* =============================================
+           DELETE CHAT
+           ============================================= */
 
         if (
           action === "delete"
@@ -2786,6 +3482,10 @@ if (
 
         return;
       }
+
+      /* ===============================================
+         CLOSE OPEN MENUS WHEN CLICKING OUTSIDE
+         =============================================== */
 
       if (
         !event.target.closest(
