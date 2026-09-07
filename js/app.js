@@ -59,7 +59,8 @@ import {
 import {
   renderProfile,
   showEditProfile,
-  showSaved
+  showSaved,
+  attachProfileEvents
 } from "./features /profile.js";
 
 import {
@@ -92,6 +93,7 @@ const root =
 
 
 export function renderApp() {
+
   applyTheme();
 
   if (!state.user) {
@@ -103,7 +105,6 @@ export function renderApp() {
     renderOnboarding();
     return;
   }
-
 
   /*
    * PAGE-SCOPED FIRESTORE LISTENERS
@@ -121,6 +122,7 @@ export function renderApp() {
 
 
   const pages = {
+
     home: () =>
       renderHome(
         renderApp
@@ -142,23 +144,31 @@ export function renderApp() {
       ),
 
     profile: () =>
-      renderProfile()
+      renderProfile(
+        renderApp
+      )
+
   };
+
 
   const fn =
     pages[state.page] ||
     pages.home;
 
+
   root.innerHTML = `
     <div class="app">
+
       <header class="topbar">
 
         <div class="brand">
+
           <div class="brand-logo">
             M
           </div>
 
           <div>
+
             <div class="brand-name">
               Marvel Chat
             </div>
@@ -166,8 +176,11 @@ export function renderApp() {
             <div class="brand-sub">
               FUTURE COMMUNITY
             </div>
+
           </div>
+
         </div>
+
 
         <div class="top-actions">
 
@@ -179,12 +192,14 @@ export function renderApp() {
             ⌕
           </button>
 
+
           <button
             class="icon-btn"
             id="notificationBtn"
             title="Notifications"
             style="position:relative;"
           >
+
             🔔
 
             <span
@@ -212,7 +227,9 @@ export function renderApp() {
                   : ""
               }
             </span>
+
           </button>
+
 
           <button
             class="icon-btn"
@@ -227,13 +244,17 @@ export function renderApp() {
           </button>
 
         </div>
+
       </header>
+
 
       <main class="main">
         ${fn()}
       </main>
 
+
       <nav class="bottom-nav">
+
         <div class="bottom-inner">
 
           ${navButton(
@@ -267,7 +288,9 @@ export function renderApp() {
           )}
 
         </div>
+
       </nav>
+
     </div>
   `;
 
@@ -311,6 +334,7 @@ export function renderApp() {
         );
 
         renderApp();
+
       }
     );
 
@@ -329,6 +353,7 @@ export function renderApp() {
             state.page =
               btn.dataset.nav;
 
+
             if (
               state.page !== "chat" &&
               state.activeConversation
@@ -344,16 +369,21 @@ export function renderApp() {
 
               state.messages =
                 [];
+
             }
 
+
             renderApp();
+
           }
         );
+
       }
     );
 
 
   attachEvents();
+
 }
 
 
@@ -362,6 +392,7 @@ function navButton(
   icon,
   label
 ) {
+
   return `
     <button
       class="nav-btn ${
@@ -371,6 +402,7 @@ function navButton(
       }"
       data-nav="${page}"
     >
+
       <span class="nav-icon">
         ${icon}
       </span>
@@ -378,8 +410,10 @@ function navButton(
       <span>
         ${label}
       </span>
+
     </button>
   `;
+
 }
 
 
@@ -388,9 +422,11 @@ function navButton(
    ========================================================= */
 
 function renderAuth() {
+
   applyTheme();
 
   root.innerHTML = `
+
     <div class="auth-shell">
 
       <div class="auth-card">
@@ -399,16 +435,20 @@ function renderAuth() {
           M
         </div>
 
+
         <h1>
           Marvel Chat
         </h1>
+
 
         <p>
           A futuristic community for people to connect, chat,
           exchange skills and discover opportunities.
         </p>
 
+
         <div id="authMessage"></div>
+
 
         <div class="segmented">
 
@@ -420,6 +460,7 @@ function renderAuth() {
             Sign in
           </button>
 
+
           <button
             class="btn btn-ghost"
             id="signupTab"
@@ -429,6 +470,7 @@ function renderAuth() {
           </button>
 
         </div>
+
 
         <form id="authForm">
 
@@ -449,11 +491,13 @@ function renderAuth() {
 
           </div>
 
+
           <div class="field">
 
             <label for="authPassword">
               Password
             </label>
+
 
             <div style="position:relative;">
 
@@ -467,6 +511,7 @@ function renderAuth() {
                 required
                 style="padding-right:52px;"
               >
+
 
               <button
                 type="button"
@@ -495,10 +540,15 @@ function renderAuth() {
 
             </div>
 
+
             <div
               id="forgotPasswordContainer"
-              style="margin-top:6px; text-align:right;"
+              style="
+                margin-top:6px;
+                text-align:right;
+              "
             >
+
               <button
                 type="button"
                 id="forgotPasswordLink"
@@ -515,9 +565,11 @@ function renderAuth() {
               >
                 Forgot password?
               </button>
+
             </div>
 
           </div>
+
 
           <div
             id="signupFields"
@@ -539,6 +591,7 @@ function renderAuth() {
 
             </div>
 
+
             <div class="field">
 
               <label for="authDisplayName">
@@ -556,6 +609,7 @@ function renderAuth() {
 
           </div>
 
+
           <button
             class="btn btn-primary btn-block"
             id="authSubmit"
@@ -566,7 +620,9 @@ function renderAuth() {
 
         </form>
 
+
         <!-- LEGAL / INFORMATION LINKS -->
+
         <div
           style="
             margin-top:18px;
@@ -576,6 +632,7 @@ function renderAuth() {
             color:var(--muted);
           "
         >
+
           <button
             type="button"
             id="privacyLink"
@@ -593,6 +650,7 @@ function renderAuth() {
           </button>
 
           <span>•</span>
+
 
           <button
             type="button"
@@ -612,6 +670,7 @@ function renderAuth() {
 
           <span>•</span>
 
+
           <button
             type="button"
             id="contactLink"
@@ -627,7 +686,9 @@ function renderAuth() {
           >
             Contact
           </button>
+
         </div>
+
 
         <div
           style="
@@ -637,12 +698,15 @@ function renderAuth() {
             color:var(--muted);
           "
         >
-          © ${new Date().getFullYear()} Davonium Technologies.
+          © ${new Date().getFullYear()}
+          Davonium Technologies.
           All rights reserved.
         </div>
 
       </div>
+
     </div>
+
   `;
 
 
@@ -655,35 +719,42 @@ function renderAuth() {
       "loginTab"
     );
 
+
   const signupTab =
     document.getElementById(
       "signupTab"
     );
+
 
   const signupFields =
     document.getElementById(
       "signupFields"
     );
 
+
   const submit =
     document.getElementById(
       "authSubmit"
     );
+
 
   const passwordInput =
     document.getElementById(
       "authPassword"
     );
 
+
   const togglePassword =
     document.getElementById(
       "togglePassword"
     );
 
+
   const forgotPasswordContainer =
     document.getElementById(
       "forgotPasswordContainer"
     );
+
 
   const forgotPasswordLink =
     document.getElementById(
@@ -699,15 +770,18 @@ function renderAuth() {
         passwordInput.type ===
         "password";
 
+
       passwordInput.type =
         isHidden
           ? "text"
           : "password";
 
+
       togglePassword.textContent =
         isHidden
           ? "🙈"
           : "👁️";
+
 
       togglePassword.setAttribute(
         "aria-label",
@@ -716,49 +790,65 @@ function renderAuth() {
           : "Show password"
       );
 
+
       togglePassword.setAttribute(
         "title",
         isHidden
           ? "Hide password"
           : "Show password"
       );
+
     }
   );
 
 
   function setMode(v) {
 
-    signup = v;
+    signup =
+      v;
+
 
     loginTab.className =
       v
         ? "btn btn-ghost"
         : "btn btn-primary";
 
+
     signupTab.className =
       v
         ? "btn btn-primary"
         : "btn btn-ghost";
+
 
     signupFields.classList.toggle(
       "hidden",
       !v
     );
 
-    if (forgotPasswordContainer) {
+
+    if (
+      forgotPasswordContainer
+    ) {
+
       forgotPasswordContainer.style.display =
-        v ? "none" : "block";
+        v
+          ? "none"
+          : "block";
+
     }
+
 
     submit.textContent =
       v
         ? "Create account"
         : "Sign in";
 
+
     passwordInput.autocomplete =
       v
         ? "new-password"
         : "current-password";
+
   }
 
 
@@ -768,11 +858,13 @@ function renderAuth() {
       setMode(false)
   );
 
+
   signupTab.addEventListener(
     "click",
     () =>
       setMode(true)
   );
+
 
   forgotPasswordLink?.addEventListener(
     "click",
@@ -830,6 +922,7 @@ function renderAuth() {
 
     e.preventDefault();
 
+
     const email =
       document
         .getElementById(
@@ -838,19 +931,24 @@ function renderAuth() {
         .value
         .trim();
 
+
     const password =
       passwordInput.value;
+
 
     const message =
       document.getElementById(
         "authMessage"
       );
 
+
     message.innerHTML =
       "";
 
+
     submit.disabled =
       true;
+
 
     submit.textContent =
       "Connecting…";
@@ -868,6 +966,7 @@ function renderAuth() {
             .value
             .trim();
 
+
         const displayName =
           document
             .getElementById(
@@ -876,10 +975,13 @@ function renderAuth() {
             .value
             .trim();
 
+
         if (!username) {
+
           throw new Error(
             "Username is required."
           );
+
         }
 
 
@@ -937,7 +1039,8 @@ function renderAuth() {
               serverTimestamp()
           },
           {
-            merge: true
+            merge:
+              true
           }
         );
 
@@ -966,6 +1069,7 @@ function renderAuth() {
         toast(
           "Welcome back 👋"
         );
+
       }
 
     } catch (err) {
@@ -980,12 +1084,16 @@ function renderAuth() {
       submit.disabled =
         false;
 
+
       submit.textContent =
         signup
           ? "Create account"
           : "Sign in";
+
     }
+
   };
+
 }
 
 
@@ -994,9 +1102,12 @@ function renderAuth() {
    ========================================================= */
 
 function renderForgotPassword() {
+
   applyTheme();
 
+
   root.innerHTML = `
+
     <div class="auth-shell">
 
       <div class="auth-card">
@@ -1005,15 +1116,21 @@ function renderForgotPassword() {
           M
         </div>
 
+
         <h1>
           Reset your password
         </h1>
 
+
         <p>
-          Enter the email address connected to your Marvel Chat account and we'll send you a secure password reset link.
+          Enter the email address connected to your
+          Marvel Chat account and we'll send you a
+          secure password reset link.
         </p>
 
+
         <div id="forgotMessage"></div>
+
 
         <form id="forgotForm">
 
@@ -1034,6 +1151,7 @@ function renderForgotPassword() {
 
           </div>
 
+
           <button
             class="btn btn-primary btn-block"
             id="forgotSubmit"
@@ -1044,7 +1162,14 @@ function renderForgotPassword() {
 
         </form>
 
-        <div style="margin-top: 14px; text-align: center;">
+
+        <div
+          style="
+            margin-top:14px;
+            text-align:center;
+          "
+        >
+
           <button
             type="button"
             class="btn btn-ghost btn-block"
@@ -1052,7 +1177,9 @@ function renderForgotPassword() {
           >
             ← Back to Sign in
           </button>
+
         </div>
+
 
         <div
           style="
@@ -1062,57 +1189,146 @@ function renderForgotPassword() {
             color:var(--muted);
           "
         >
-          © ${new Date().getFullYear()} Davonium Technologies.
+          © ${new Date().getFullYear()}
+          Davonium Technologies.
           All rights reserved.
         </div>
 
       </div>
+
     </div>
+
   `;
 
-  document
-    .getElementById("backToSignInBtn")
-    ?.addEventListener("click", () => {
-      renderAuth();
-    });
 
-  document.getElementById("forgotForm").onsubmit = async e => {
+  document
+    .getElementById(
+      "backToSignInBtn"
+    )
+    ?.addEventListener(
+      "click",
+      () => {
+        renderAuth();
+      }
+    );
+
+
+  document.getElementById(
+    "forgotForm"
+  ).onsubmit = async e => {
+
     e.preventDefault();
 
-    const emailInput = document.getElementById("forgotEmail");
-    const email = emailInput.value.trim();
-    const message = document.getElementById("forgotMessage");
-    const submitBtn = document.getElementById("forgotSubmit");
 
-    message.innerHTML = "";
+    const emailInput =
+      document.getElementById(
+        "forgotEmail"
+      );
+
+
+    const email =
+      emailInput.value.trim();
+
+
+    const message =
+      document.getElementById(
+        "forgotMessage"
+      );
+
+
+    const submitBtn =
+      document.getElementById(
+        "forgotSubmit"
+      );
+
+
+    message.innerHTML =
+      "";
+
 
     if (!email) {
-      message.innerHTML = `<div class="status error">Please enter your email address.</div>`;
+
+      message.innerHTML =
+        `<div class="status error">
+          Please enter your email address.
+        </div>`;
+
       return;
+
     }
 
-    submitBtn.disabled = true;
-    submitBtn.textContent = "Sending reset link…";
+
+    submitBtn.disabled =
+      true;
+
+
+    submitBtn.textContent =
+      "Sending reset link…";
+
 
     try {
-      const { sendPasswordResetEmail } = await import("./firebase/auth.js");
-      await sendPasswordResetEmail(auth, email);
 
-      message.innerHTML = `
-        <div class="status success" style="margin-bottom: 14px;">
-          <strong>Reset link sent 📧</strong><br><br>
-          We've sent a password reset link to your email address. Check your inbox and follow the instructions to choose a new password.
-        </div>
-      `;
+      const {
+        sendPasswordResetEmail
+      } =
+        await import(
+          "./firebase/auth.js"
+        );
 
-      emailInput.disabled = true;
-      submitBtn.style.display = "none";
+
+      await sendPasswordResetEmail(
+        auth,
+        email
+      );
+
+
+      message.innerHTML =
+        `<div
+          class="status success"
+          style="margin-bottom:14px;"
+        >
+          <strong>
+            Reset link sent 📧
+          </strong>
+
+          <br><br>
+
+          We've sent a password reset link
+          to your email address.
+
+          Check your inbox and follow the
+          instructions to choose a new password.
+        </div>`;
+
+
+      emailInput.disabled =
+        true;
+
+
+      submitBtn.style.display =
+        "none";
+
     } catch (err) {
-      message.innerHTML = `<div class="status error">${escapeHtml(friendly(err))}</div>`;
-      submitBtn.disabled = false;
-      submitBtn.textContent = "Send reset link";
+
+      message.innerHTML =
+        `<div class="status error">
+          ${escapeHtml(
+            friendly(err)
+          )}
+        </div>`;
+
+
+      submitBtn.disabled =
+        false;
+
+
+      submitBtn.textContent =
+        "Send reset link";
+
     }
+
   };
+
 }
 
 
@@ -1126,9 +1342,11 @@ function renderLegalPage(
 
   applyTheme();
 
+
   const content = {
 
     privacy: {
+
       title:
         "Privacy Policy",
 
@@ -1136,58 +1354,107 @@ function renderLegalPage(
         "🔐",
 
       body: `
-        <h2>Your Privacy Matters</h2>
+
+        <h2>
+          Your Privacy Matters
+        </h2>
 
         <p>
-          Marvel Chat is designed to provide a community
-          experience while respecting the privacy of its users.
+          Marvel Chat is designed to help people
+          connect, communicate, exchange skills and
+          discover opportunities while respecting
+          user privacy.
         </p>
 
-        <h3>Information We Collect</h3>
+
+        <h3>
+          Information We Collect
+        </h3>
 
         <p>
-          When you create an account, Marvel Chat may store
-          information that you provide, such as your email
-          address, username, display name, country and profile
-          information.
+          Depending on the features you use,
+          Marvel Chat may store information you
+          provide, including your email address,
+          username, display name, country, profile
+          information, posts, messages, marketplace
+          listings and related activity.
         </p>
 
-        <h3>How Information Is Used</h3>
+
+        <h3>
+          How Information Is Used
+        </h3>
 
         <p>
-          Information associated with your account is used to
-          operate the Marvel Chat service, provide community
-          features, maintain your profile and improve the
-          experience.
+          We use account and application information
+          to provide authentication, profiles,
+          community features, Chat, TimeTrust,
+          Market and other features of Marvel Chat,
+          and to maintain and improve the service.
         </p>
 
-        <h3>Firebase Services</h3>
+
+        <h3>
+          Firebase
+        </h3>
 
         <p>
-          Marvel Chat uses Firebase services for authentication
-          and application data. Information necessary for these
-          services may be processed through the relevant Firebase
+          Marvel Chat uses Firebase services for
+          authentication and application data.
+          Information required to operate these
+          services may be processed through Firebase
           infrastructure.
         </p>
 
-        <h3>Your Responsibility</h3>
+
+        <h3>
+          Marketplace Information
+        </h3>
 
         <p>
-          Do not share passwords, private credentials or other
-          sensitive information publicly through the community.
+          If you create a Market listing,
+          information included in that listing may
+          be visible to signed-in Marvel Chat users
+          so they can discover the listing and
+          contact the seller.
+
+          Do not publish private information that
+          you do not want other users to see.
         </p>
 
-        <h3>Policy Updates</h3>
+
+        <h3>
+          Your Responsibility
+        </h3>
 
         <p>
-          This privacy information may be updated as Marvel Chat
-          develops. Important changes should be reflected on this
-          page.
+          Keep your password and private credentials
+          confidential.
+
+          Avoid posting sensitive personal
+          information publicly in the community.
         </p>
+
+
+        <h3>
+          Data and Policy Updates
+        </h3>
+
+        <p>
+          Marvel Chat may update its privacy
+          practices as the platform develops.
+
+          Changes to this policy should be reflected
+          on this page.
+        </p>
+
       `
+
     },
 
+
     terms: {
+
       title:
         "Terms of Use",
 
@@ -1195,54 +1462,106 @@ function renderLegalPage(
         "📜",
 
       body: `
-        <h2>Using Marvel Chat</h2>
+
+        <h2>
+          Using Marvel Chat
+        </h2>
 
         <p>
-          By using Marvel Chat, you agree to use the service
-          responsibly and respectfully.
+          By creating an account or using
+          Marvel Chat, you agree to use the service
+          responsibly, lawfully and respectfully.
         </p>
 
-        <h3>Community Conduct</h3>
+
+        <h3>
+          Community Conduct
+        </h3>
 
         <p>
-          Users should not use Marvel Chat to harass, threaten,
-          deceive, impersonate or intentionally harm other users.
+          Do not use Marvel Chat to harass,
+          threaten, deceive, impersonate, abuse,
+          spam or intentionally harm other users.
         </p>
 
-        <h3>Your Account</h3>
+
+        <h3>
+          Your Account
+        </h3>
 
         <p>
-          You are responsible for maintaining the security of
-          your account and for activity performed through your
-          account.
+          You are responsible for protecting your
+          account credentials and for activity
+          performed through your account.
+
+          Provide accurate information where
+          required for the service to operate.
         </p>
 
-        <h3>Content</h3>
+
+        <h3>
+          User Content
+        </h3>
 
         <p>
-          Users are responsible for content they create,
-          publish, send or otherwise share through Marvel Chat.
+          You are responsible for content you
+          create, publish, send or share through
+          Marvel Chat.
+
+          Do not upload or share content that
+          violates applicable law or the rights
+          of others.
         </p>
 
-        <h3>Service Changes</h3>
+
+        <h3>
+          Market
+        </h3>
 
         <p>
-          Marvel Chat may be improved, changed, expanded or
-          temporarily unavailable as development and maintenance
-          take place.
+          Market listings must be truthful and
+          lawful.
+
+          Sellers are responsible for their
+          listings and transactions.
+
+          Marvel Chat provides the marketplace
+          feature but does not guarantee the
+          quality, legality or completion of
+          transactions between users.
         </p>
 
-        <h3>Responsible Use</h3>
+
+        <h3>
+          Service Changes
+        </h3>
 
         <p>
-          Use Marvel Chat in accordance with applicable laws and
-          respect the rights and privacy of other members of the
-          community.
+          Marvel Chat may be improved, changed,
+          expanded or temporarily unavailable as
+          development, maintenance and security
+          work take place.
         </p>
+
+
+        <h3>
+          Responsible Use
+        </h3>
+
+        <p>
+          Use Marvel Chat in accordance with
+          applicable laws and respect the privacy,
+          safety and rights of other members of
+          the community.
+        </p>
+
       `
+
     },
 
+
     contact: {
+
       title:
         "Contact & About",
 
@@ -1250,40 +1569,61 @@ function renderLegalPage(
         "📬",
 
       body: `
-        <h2>About Marvel Chat</h2>
+
+        <h2>
+          About Marvel Chat
+        </h2>
 
         <p>
-          Marvel Chat is a community platform created to help
-          people connect, communicate, exchange skills and
-          discover opportunities.
+          Marvel Chat is a community platform
+          created to help people connect,
+          communicate, exchange skills, trade time
+          through TimeTrust, and discover
+          opportunities.
         </p>
 
-        <h3>Built By</h3>
+
+        <h3>
+          Built By
+        </h3>
 
         <p>
-          <strong>Davonium Technologies</strong>
+          <strong>
+            Davonium Technologies
+          </strong>
         </p>
+
 
         <p>
-          Marvel Chat is an independent product and platform
-          developed under Davonium Technologies.
+          Marvel Chat is an independent product
+          and platform developed under
+          Davonium Technologies.
         </p>
 
-        <h3>Contact</h3>
+
+        <h3>
+          Contact & Support
+        </h3>
 
         <p>
-          For questions, feedback, partnership discussions,
-          support requests or other enquiries, contact the
-          Marvel Chat team through the official contact channel
-          provided by Davonium Technologies.
+          For questions, feedback, bug reports,
+          partnership discussions, support requests
+          or other enquiries, use the official
+          contact channel published by Davonium
+          Technologies.
         </p>
+
 
         <p>
-          Our official contact email or support address can be
-          added to this section when it is are ready.
+          When an official support email or support
+          address is published, it can be added to
+          this section.
         </p>
 
-        <h3>Copyright</h3>
+
+        <h3>
+          Copyright
+        </h3>
 
         <p>
           © ${new Date().getFullYear()}
@@ -1291,13 +1631,17 @@ function renderLegalPage(
           All rights reserved.
         </p>
 
+
         <p>
-          Marvel Chat, its branding, interface, original
-          application code and original product materials are
-          associated with Davonium Technologies, subject to
+          Marvel Chat, its branding, interface,
+          original application code and original
+          product materials are associated with
+          Davonium Technologies, subject to
           applicable rights and ownership.
         </p>
+
       `
+
     }
 
   };
@@ -1309,6 +1653,7 @@ function renderLegalPage(
 
 
   root.innerHTML = `
+
     <div class="auth-shell">
 
       <div
@@ -1330,14 +1675,17 @@ function renderLegalPage(
             ${active.icon}
           </div>
 
+
           <h1>
             ${escapeHtml(
               active.title
             )}
           </h1>
 
+
           <p>
-            Marvel Chat • Davonium Technologies
+            Marvel Chat •
+            Davonium Technologies
           </p>
 
         </div>
@@ -1350,9 +1698,7 @@ function renderLegalPage(
             margin-bottom:18px;
           "
         >
-
           ${active.body}
-
         </div>
 
 
@@ -1377,6 +1723,7 @@ function renderLegalPage(
             🔐 Privacy
           </button>
 
+
           <button
             class="btn ${
               section === "terms"
@@ -1388,6 +1735,7 @@ function renderLegalPage(
           >
             📜 Terms
           </button>
+
 
           <button
             class="btn ${
@@ -1429,6 +1777,7 @@ function renderLegalPage(
       </div>
 
     </div>
+
   `;
 
 
@@ -1480,12 +1829,18 @@ function renderLegalPage(
       () =>
         renderAuth()
     );
+
 }
 
+
+/* =========================================================
+   ONBOARDING
+   ========================================================= */
 
 function renderOnboarding() {
 
   root.innerHTML = `
+
     <div class="auth-shell">
 
       <div class="auth-card">
@@ -1494,33 +1849,34 @@ function renderOnboarding() {
           🌍
         </div>
 
+
         <h1>
           Welcome to Marvel Chat
         </h1>
 
+
         <p>
-          One last thing before entering the community:
-          choose your country.
+          One last thing before entering the
+          community: choose your country.
         </p>
+
 
         <div class="country-grid">
 
           ${countries
             .map(
-              c => `
-                <button
+              c =>
+                `<button
                   class="country-option"
                   data-country="${c[0]}"
                 >
-                  ${escapeHtml(
-                    c[1]
-                  )}
-                </button>
-              `
+                  ${escapeHtml(c[1])}
+                </button>`
             )
             .join("")}
 
         </div>
+
 
         <div
           id="selectedCountry"
@@ -1530,6 +1886,7 @@ function renderOnboarding() {
           Choose one country.
         </div>
 
+
         <button
           class="btn btn-primary btn-block"
           id="continueCountry"
@@ -1537,6 +1894,7 @@ function renderOnboarding() {
         >
           Enter Marvel Chat 🚀
         </button>
+
 
         <button
           class="btn btn-ghost btn-block"
@@ -1547,7 +1905,9 @@ function renderOnboarding() {
         </button>
 
       </div>
+
     </div>
+
   `;
 
 
@@ -1569,6 +1929,7 @@ function renderOnboarding() {
             selected =
               btn.dataset.country;
 
+
             document
               .querySelectorAll(
                 "[data-country]"
@@ -1580,9 +1941,11 @@ function renderOnboarding() {
                   )
               );
 
+
             btn.classList.add(
               "selected"
             );
+
 
             const label =
               countries.find(
@@ -1592,17 +1955,21 @@ function renderOnboarding() {
               )?.[1] ||
               selected;
 
+
             document.getElementById(
               "selectedCountry"
             ).textContent =
               `Selected: ${label}`;
 
+
             document.getElementById(
               "continueCountry"
             ).disabled =
               false;
+
           }
         );
+
       }
     );
 
@@ -1618,6 +1985,7 @@ function renderOnboarding() {
         if (!selected)
           return;
 
+
         try {
 
           await updateDoc(
@@ -1632,12 +2000,15 @@ function renderOnboarding() {
             }
           );
 
+
           state.profile.country =
             selected;
+
 
           toast(
             "Welcome to the community 🌍"
           );
+
 
           renderApp();
 
@@ -1646,7 +2017,9 @@ function renderOnboarding() {
           toast(
             friendly(e)
           );
+
         }
+
       }
     );
 
@@ -1660,8 +2033,13 @@ function renderOnboarding() {
       () =>
         signOut()
     );
+
 }
 
+
+/* =========================================================
+   EVENT ATTACHMENT
+   ========================================================= */
 
 function attachEvents() {
 
@@ -1767,13 +2145,16 @@ function attachEvents() {
 
               e.stopPropagation();
 
+
               const postId =
                 btn.dataset.menuPost;
+
 
               const menu =
                 document.getElementById(
                   `postMenu-${postId}`
                 );
+
 
               if (menu) {
 
@@ -1788,19 +2169,26 @@ function attachEvents() {
                         m !==
                         menu
                       ) {
+
                         m.classList.add(
                           "hidden"
                         );
+
                       }
+
                     }
                   );
+
 
                 menu.classList.toggle(
                   "hidden"
                 );
+
               }
+
             }
           );
+
         }
       );
 
@@ -1819,6 +2207,7 @@ function attachEvents() {
                 btn.dataset.editPost
               )
           );
+
         }
       );
 
@@ -1837,6 +2226,7 @@ function attachEvents() {
                 btn.dataset.deletePost
               )
           );
+
         }
       );
 
@@ -1860,7 +2250,9 @@ function attachEvents() {
                 a ===
                 "post"
               ) {
+
                 showCreatePost();
+
               }
 
 
@@ -1878,6 +2270,7 @@ function attachEvents() {
                   showNewChat,
                   50
                 );
+
               }
 
 
@@ -1885,9 +2278,11 @@ function attachEvents() {
                 a ===
                 "skill"
               ) {
+
                 showSkillModal(
                   "offer"
                 );
+
               }
 
 
@@ -1895,12 +2290,17 @@ function attachEvents() {
                 a ===
                 "sell"
               ) {
+
                 showSellModal();
+
               }
+
             }
           );
+
         }
       );
+
   }
 
 
@@ -1933,6 +2333,7 @@ function attachEvents() {
               [];
 
             renderApp();
+
           }
         );
 
@@ -1963,7 +2364,9 @@ function attachEvents() {
               e.preventDefault();
 
               sendMessage();
+
             }
+
           }
         );
 
@@ -2062,6 +2465,18 @@ function attachEvents() {
                   return;
                 }
 
+
+                /*
+                 * IMPORTANT:
+                 *
+                 * Chat menu buttons/options
+                 * are handled by the delegated
+                 * menu listener inside chat.js.
+                 *
+                 * Do not manually handle those
+                 * clicks here.
+                 */
+
                 if (
                   e.target.closest(
                     "[data-chat-menu]"
@@ -2076,12 +2491,15 @@ function attachEvents() {
                   return;
                 }
 
+
                 openConversation(
                   x.dataset.conversation,
                   renderApp
                 );
+
               }
             );
+
           }
         );
 
@@ -2099,11 +2517,14 @@ function attachEvents() {
 
                 e.stopPropagation();
 
+
                 togglePinConversation(
                   btn.dataset.pinToggle
                 );
+
               }
             );
+
           }
         );
 
@@ -2120,9 +2541,12 @@ function attachEvents() {
               e.target.value;
 
             renderApp();
+
           }
         );
+
     }
+
   }
 
 
@@ -2130,9 +2554,11 @@ function attachEvents() {
     state.page ===
     "timetrust"
   ) {
+
     attachTimeTrustEvents(
       renderApp
     );
+
   }
 
 
@@ -2140,65 +2566,37 @@ function attachEvents() {
     state.page ===
     "market"
   ) {
+
     attachMarketEvents(
       renderApp
     );
+
   }
 
 
+  /*
+   * PROFILE CONNECTION
+   *
+   * Profile.js owns its own buttons and
+   * Market Account / My Listings actions.
+   */
   if (
     state.page ===
     "profile"
   ) {
 
-    document
-      .getElementById(
-        "editProfileBtn"
-      )
-      ?.addEventListener(
-        "click",
-        () =>
-          showEditProfile(
-            renderApp
-          )
-      );
+    attachProfileEvents(
+      renderApp
+    );
 
-
-    document
-      .getElementById(
-        "savedBtn"
-      )
-      ?.addEventListener(
-        "click",
-        showSaved
-      );
-
-
-    document
-      .getElementById(
-        "settingsBtn"
-      )
-      ?.addEventListener(
-        "click",
-        () =>
-          showSettings(
-            renderApp
-          )
-      );
-
-
-    document
-      .getElementById(
-        "logoutBtn"
-      )
-      ?.addEventListener(
-        "click",
-        () =>
-          signOut()
-      );
   }
+
 }
 
+
+/* =========================================================
+   APPLICATION START
+   ========================================================= */
 
 async function startApplication(
   user
@@ -2207,22 +2605,27 @@ async function startApplication(
   state.user =
     user;
 
+
   try {
 
     await loadProfile(
       user
     );
 
+
     subscribeForPage(
       state.page,
       renderApp
     );
 
+
     renderApp();
+
 
   } catch (e) {
 
     root.innerHTML = `
+
       <div class="auth-shell">
 
         <div class="auth-card">
@@ -2231,19 +2634,23 @@ async function startApplication(
             !
           </div>
 
+
           <h1>
             Connection problem
           </h1>
 
+
           <p>
             Marvel Chat could not load your profile.
           </p>
+
 
           <div class="status error">
             ${escapeHtml(
               friendly(e)
             )}
           </div>
+
 
           <button
             class="btn btn-primary btn-block"
@@ -2252,7 +2659,9 @@ async function startApplication(
             Retry
           </button>
 
+
           <div style="height:8px"></div>
+
 
           <button
             class="btn btn-danger btn-block"
@@ -2262,7 +2671,9 @@ async function startApplication(
           </button>
 
         </div>
+
       </div>
+
     `;
 
 
@@ -2288,9 +2699,15 @@ async function startApplication(
         () =>
           signOut()
       );
+
   }
+
 }
 
+
+/* =========================================================
+   AUTH STATE
+   ========================================================= */
 
 onAuthStateChanged(
   auth,
@@ -2299,54 +2716,74 @@ onAuthStateChanged(
     state.user =
       user;
 
+
     if (!user) {
 
       stopAllListeners();
 
+
       state.profile =
         null;
+
 
       state.posts =
         [];
 
+
       state.conversations =
         [];
+
 
       state.skills =
         [];
 
+
       state.requests =
         [];
+
 
       state.listings =
         [];
 
+
       state.notifications =
         [];
+
 
       state.unreadNotificationsCount =
         0;
 
+
       state.activeConversation =
         null;
+
 
       state.messages =
         [];
 
+
       state.conversationPreferences =
         {};
+
 
       renderAuth();
 
       return;
+
     }
+
 
     await startApplication(
       user
     );
+
   }
 );
 
+
+/* =========================================================
+   NETWORK EVENTS
+   ========================================================= */
 
 window.addEventListener(
   "online",
@@ -2358,8 +2795,11 @@ window.addEventListener(
         "Back online ⚡"
       );
 
+
       renderApp();
+
     }
+
   }
 );
 
@@ -2374,11 +2814,18 @@ window.addEventListener(
         "Offline mode. Some features may be unavailable."
       );
 
+
       renderApp();
+
     }
+
   }
 );
 
+
+/* =========================================================
+   PWA INSTALL
+   ========================================================= */
 
 window.addEventListener(
   "beforeinstallprompt",
@@ -2386,8 +2833,10 @@ window.addEventListener(
 
     e.preventDefault();
 
+
     state.installPrompt =
       e;
+
   }
 );
 
@@ -2399,12 +2848,18 @@ window.addEventListener(
     state.installPrompt =
       null;
 
+
     toast(
       "MarvelChat installed 📲"
     );
+
   }
 );
 
+
+/* =========================================================
+   SERVICE WORKER
+   ========================================================= */
 
 if (
   "serviceWorker" in
@@ -2419,7 +2874,9 @@ if (
         .register(
           "./serviceworker.js",
           {
-            scope: "./",
+            scope:
+              "./",
+
             updateViaCache:
               "none"
           }
@@ -2438,10 +2895,16 @@ if (
               e
             )
         );
+
     }
   );
+
 }
 
+
+/* =========================================================
+   STARTUP STATUS
+   ========================================================= */
 
 const startupStatus =
   document.getElementById(
@@ -2455,4 +2918,5 @@ if (
 
   startupStatus.textContent =
     "Initializing the MarvelChat universe…";
+
 }
