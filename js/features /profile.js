@@ -41,6 +41,20 @@ import {
 } from "./home.js";
 
 
+/*
+ * =========================================================
+ * MARKET CONNECTION
+ * =========================================================
+ *
+ * Profile depends on Market for:
+ *
+ * 1. Detecting whether the user has a Market Account.
+ * 2. Creating a Market Account.
+ * 3. Opening listing details.
+ *
+ * Market owns the actual seller/listing management logic.
+ */
+
 import {
   hasMarketAccount,
   showMarketAccountModal,
@@ -99,6 +113,7 @@ export function renderProfile(
 
     <div class="page">
 
+
       <!-- =================================================
            PROFILE HERO
            ================================================= -->
@@ -126,6 +141,7 @@ export function renderProfile(
               ${escapeHtml(name)}
             </h1>
 
+
             <p>
               @${escapeHtml(
                 p.username ||
@@ -152,6 +168,7 @@ export function renderProfile(
             Posts
           </span>
 
+
           <strong>
             ${
               state.posts.filter(
@@ -171,6 +188,7 @@ export function renderProfile(
             Saved
           </span>
 
+
           <strong>
             ${savedCount}
           </strong>
@@ -184,7 +202,9 @@ export function renderProfile(
             Country
           </span>
 
+
           <strong>
+
             ${
               countries.find(
                 country =>
@@ -193,6 +213,7 @@ export function renderProfile(
               )?.[1] ||
               "—"
             }
+
           </strong>
 
         </div>
@@ -232,12 +253,14 @@ export function renderProfile(
               ${escapeHtml(name)}
             </strong>
 
+
             <span class="small">
               @${escapeHtml(
                 p.username ||
                 "user"
               )}
             </span>
+
 
             <span class="small">
               ${escapeHtml(
@@ -255,18 +278,22 @@ export function renderProfile(
           p.bio
 
             ? `
+
               <p class="small">
                 ${escapeHtml(
                   p.bio
                 )}
               </p>
+
             `
 
             : `
+
               <p class="small">
                 You haven't added
                 a bio yet.
               </p>
+
             `
         }
 
@@ -313,7 +340,6 @@ export function renderProfile(
                     )
 
                   : "No Market Account"
-
               }
 
             </strong>
@@ -360,27 +386,33 @@ export function renderProfile(
 
 
         <div
-          class="grid grid2"
+          class="grid ${
+            marketActive
+              ? "grid2"
+              : ""
+          }"
           style="margin-top:12px;"
         >
 
           <!-- ============================================
-               MARKET ACCOUNT BUTTON
+               CREATE MARKET ACCOUNT
                ============================================ -->
 
-          <button
-            class="btn btn-primary"
-            id="marketAccountBtn"
-            type="button"
-          >
+          ${
+            !marketActive
+              ? `
 
-            ${
-              marketActive
-                ? "🏪 Market Account"
-                : "🏪 Create Market Account"
-            }
+                <button
+                  class="btn btn-primary"
+                  id="marketAccountBtn"
+                  type="button"
+                >
+                  🏪 Create Market Account
+                </button>
 
-          </button>
+              `
+              : ""
+          }
 
 
           <!-- ============================================
@@ -389,7 +421,6 @@ export function renderProfile(
 
           ${
             marketActive
-
               ? `
 
                 <button
@@ -409,9 +440,7 @@ export function renderProfile(
                 </button>
 
               `
-
               : ""
-
           }
 
         </div>
@@ -490,14 +519,17 @@ export function showEditProfile(
 
 
   showModal(
+
     "Edit profile",
 
     `
+
       <div class="field">
 
         <label>
           Display name
         </label>
+
 
         <input
           class="input"
@@ -517,6 +549,7 @@ export function showEditProfile(
           Username
         </label>
 
+
         <input
           class="input"
           id="editUsername"
@@ -534,6 +567,7 @@ export function showEditProfile(
         <label>
           Bio
         </label>
+
 
         <textarea
           class="textarea"
@@ -555,6 +589,7 @@ export function showEditProfile(
       >
         Save changes
       </button>
+
     `
   );
 
@@ -572,8 +607,8 @@ export function showEditProfile(
             .getElementById(
               "editDisplayName"
             )
-            .value
-            .trim();
+            ?.value
+            .trim() || "";
 
 
         const username =
@@ -581,8 +616,8 @@ export function showEditProfile(
             .getElementById(
               "editUsername"
             )
-            .value
-            .trim();
+            ?.value
+            .trim() || "";
 
 
         const bio =
@@ -590,8 +625,8 @@ export function showEditProfile(
             .getElementById(
               "editBio"
             )
-            .value
-            .trim();
+            ?.value
+            .trim() || "";
 
 
         if (!username) {
@@ -629,10 +664,15 @@ export function showEditProfile(
 
 
           state.profile = {
+
             ...state.profile,
+
             displayName,
+
             username,
+
             bio
+
           };
 
 
@@ -658,6 +698,7 @@ export function showEditProfile(
             friendly(error)
           );
         }
+
       }
     );
 }
@@ -666,6 +707,16 @@ export function showEditProfile(
 /* =========================================================
    MY LISTINGS
    ========================================================= */
+
+/*
+ * IMPORTANT:
+ *
+ * This function is VIEW-ONLY from Profile.
+ *
+ * It does NOT create, edit, delete, or mark listings.
+ *
+ * Those actions remain inside Market.
+ */
 
 async function showMyListings(
   renderApp
@@ -680,14 +731,6 @@ async function showMyListings(
     return;
   }
 
-
-  /*
-   * My Listings is intentionally NOT
-   * a permanent Firestore listener.
-   *
-   * We only read the user's listings
-   * when the button is pressed.
-   */
 
   const button =
     document.getElementById(
@@ -706,6 +749,11 @@ async function showMyListings(
 
 
   try {
+
+    /*
+     * One explicit read when the user opens
+     * My Listings.
+     */
 
     const snapshot =
       await getDocs(
@@ -729,18 +777,19 @@ async function showMyListings(
     const listings =
       snapshot.docs.map(
         listingDoc => ({
+
           id:
             listingDoc.id,
 
           ...listingDoc.data()
+
         })
       );
 
 
     /*
-     * Merge only this user's
-     * freshly loaded listings
-     * into local state.
+     * Replace only this user's listing portion
+     * of local state.
      */
 
     const otherListings =
@@ -753,15 +802,17 @@ async function showMyListings(
 
 
     state.listings = [
+
       ...listings,
+
       ...otherListings
+
     ];
 
 
     showProfileListingsModal(
       renderApp
     );
-
 
   } catch (error) {
 
@@ -774,7 +825,6 @@ async function showMyListings(
     toast(
       friendly(error)
     );
-
 
   } finally {
 
@@ -967,13 +1017,10 @@ function showProfileListingsModal(
 
 
   /*
-   * Profile is VIEW-ONLY.
+   * Profile listing view is deliberately
+   * connected to Market's details function.
    *
-   * Clicking a listing opens its
-   * normal details page.
-   *
-   * Edit / Sold / Delete remain
-   * controlled by Market.
+   * Market controls all seller actions.
    */
 
   document
@@ -1027,6 +1074,7 @@ export function showSaved() {
 
 
   showModal(
+
     "Saved posts",
 
     saved.length
@@ -1046,6 +1094,7 @@ export function showSaved() {
           >
             🔖
           </div>
+
 
           <p>
             You have no saved posts yet.
@@ -1098,7 +1147,7 @@ export function attachProfileEvents(
 
 
   /* =======================================================
-     MARKET ACCOUNT
+     CREATE MARKET ACCOUNT
      ======================================================= */
 
   document
@@ -1110,17 +1159,8 @@ export function attachProfileEvents(
       () => {
 
         /*
-         * This button has two states:
-         *
-         * No account:
-         *     Open Create Market Account.
-         *
-         * Existing account:
-         *     Open the existing Market Account
-         *     information/modal.
-         *
-         * The actual Market Account creation/update
-         * remains inside market.js.
+         * This button exists only when the user
+         * does not already have a Market Account.
          */
 
         showMarketAccountModal(
@@ -1151,9 +1191,10 @@ export function attachProfileEvents(
   /* =======================================================
      SETTINGS
      =======================================================
-
-     app.js already handles Settings & About.
-     We intentionally do not duplicate that handler here.
+     
+     app.js owns Settings & About.
+     We intentionally do not duplicate
+     the Settings event here.
      ======================================================= */
 
 
@@ -1185,6 +1226,7 @@ export function attachProfileEvents(
             friendly(error)
           );
         }
+
       }
     );
 }
