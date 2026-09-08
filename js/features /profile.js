@@ -6,7 +6,6 @@ import {
   friendly
 } from "../state.js";
 
-
 import {
   db,
   collection,
@@ -18,28 +17,23 @@ import {
   limit
 } from "../firebase/firestore.js";
 
-
 import {
   updateProfile,
   signOut
 } from "../firebase/auth.js";
-
 
 import {
   showModal,
   closeModal
 } from "../components/modal.js";
 
-
 import {
   toast
 } from "../components/toast.js";
 
-
 import {
   renderPost
 } from "./home.js";
-
 
 /*
  * =========================================================
@@ -1191,7 +1185,7 @@ export function attachProfileEvents(
   /* =======================================================
      SETTINGS
      =======================================================
-     
+
      app.js owns Settings & About.
      We intentionally do not duplicate
      the Settings event here.
