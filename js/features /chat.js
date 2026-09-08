@@ -21,7 +21,8 @@ import {
   limit,
   getDocs,
   onSnapshot,
-  serverTimestamp
+  serverTimestamp,
+  increment
 } from "../firebase/firestore.js";
 
 import {
@@ -38,6 +39,98 @@ import {
    ========================================================= */
 
 let currentRenderApp = null;
+
+function conversationUnreadCount(conversation) {
+  const counts = conversation?.unreadCounts;
+  const uid = state.user?.uid;
+
+  if (!uid || !counts || typeof counts !== "object") {
+    return 0;
+  }
+
+  return Number(counts[uid] || 0) || 0;
+}
+
+async function clearMyUnreadCount(conversation) {
+  if (!conversation?.id || !state.user?.uid) {
+    return;
+  }
+
+  if (conversationUnreadCount(conversation) <= 0) {
+    return;
+  }
+
+  try {
+    await updateDoc(
+      doc(
+        db,
+        "conversations",
+        conversation.id
+      ),
+      {
+        [`unreadCounts.${state.user.uid}`]: 0
+      }
+    );
+
+    const nextCounts = {
+      ...(conversation.unreadCounts || {}),
+      [state.user.uid]: 0
+    };
+
+    const index =
+      state.conversations.findIndex(
+        x => x.id === conversation.id
+      );
+
+    if (index >= 0) {
+      state.conversations[index] = {
+        ...state.conversations[index],
+        unreadCounts: nextCounts
+      };
+    }
+
+    if (state.activeConversation?.id === conversation.id) {
+      state.activeConversation = {
+        ...state.activeConversation,
+        unreadCounts: nextCounts
+      };
+    }
+  } catch (e) {
+    console.warn(
+      "Could not clear unread count:",
+      e
+    );
+  }
+}
+
+export function totalUnreadCount() {
+  const uid = state.user?.uid;
+
+  if (!uid) {
+    return 0;
+  }
+
+  return (state.conversations || []).reduce(
+    (sum, conversation) => {
+      const preference =
+        state.conversationPreferences[
+          conversation.id
+        ] || {};
+
+      if (preference.deleted) {
+        return sum;
+      }
+
+      return (
+        sum +
+        conversationUnreadCount(
+          conversation
+        )
+      );
+    },
+    0
+  );
+}
 
 /* =========================================================
    NEW CHAT
@@ -259,6 +352,17 @@ export async function createConversation(
       ? renderApp
       : currentRenderApp;
 
+  const otherUid =
+    other.uid ||
+    other.id;
+
+  if (!otherUid) {
+    toast(
+      "Could not start chat."
+    );
+    return;
+  }
+
   try {
     const existing =
       state.conversations.find(
@@ -271,7 +375,7 @@ export async function createConversation(
             state.user.uid
           ) &&
           c.participants.includes(
-            other.uid
+            otherUid
           )
       );
 
@@ -334,7 +438,7 @@ export async function createConversation(
         {
           participants: [
             state.user.uid,
-            other.uid
+            otherUid
           ],
 
           participantProfiles: {
@@ -349,7 +453,7 @@ export async function createConversation(
                 ""
             },
 
-            [other.uid]: {
+            [otherUid]: {
               displayName:
                 other.displayName ||
                 other.username ||
@@ -362,6 +466,11 @@ export async function createConversation(
           },
 
           lastMessage: "",
+
+          unreadCounts: {
+            [state.user.uid]: 0,
+            [otherUid]: 0
+          },
 
           updatedAt:
             serverTimestamp(),
@@ -376,7 +485,7 @@ export async function createConversation(
 
       participants: [
         state.user.uid,
-        other.uid
+        otherUid
       ],
 
       participantProfiles: {
@@ -391,7 +500,7 @@ export async function createConversation(
             ""
         },
 
-        [other.uid]: {
+        [otherUid]: {
           displayName:
             other.displayName ||
             other.username ||
@@ -404,6 +513,10 @@ export async function createConversation(
       },
 
       lastMessage: "",
+      unreadCounts: {
+        [state.user.uid]: 0,
+        [otherUid]: 0
+      },
       updatedAt: null,
       createdAt: null
     };
@@ -513,6 +626,15 @@ export async function openConversation(
   state.activeConversation = c;
   state.messages = [];
 
+  await clearMyUnreadCount(c);
+
+  c =
+    state.conversations.find(
+      x => x.id === c.id
+    ) || c;
+
+  state.activeConversation = c;
+
   state.unsubs.messages?.();
   state.unsubs.messages = null;
 
@@ -575,6 +697,17 @@ export async function openConversation(
               state.conversations[
                 index
               ];
+          }
+
+          if (
+            latest.uid &&
+            latest.uid !==
+              state.user.uid
+          ) {
+            clearMyUnreadCount(
+              state.activeConversation ||
+                c
+            );
           }
         }
 
@@ -752,6 +885,60 @@ export async function sendMessage() {
             x !==
             state.user.uid
         );
+
+    if (recipientUid) {
+      try {
+        await updateDoc(
+          doc(
+            db,
+            "conversations",
+            id
+          ),
+          {
+            [`unreadCounts.${recipientUid}`]:
+              increment(1)
+          }
+        );
+
+        const index =
+          state.conversations.findIndex(
+            x => x.id === id
+          );
+
+        if (index >= 0) {
+          const currentCounts =
+            state.conversations[index]
+              .unreadCounts || {};
+
+          state.conversations[index] = {
+            ...state.conversations[index],
+            lastMessage: text,
+            unreadCounts: {
+              ...currentCounts,
+              [recipientUid]:
+                Number(
+                  currentCounts[
+                    recipientUid
+                  ] || 0
+                ) + 1
+            }
+          };
+
+          if (
+            state.activeConversation
+              ?.id === id
+          ) {
+            state.activeConversation =
+              state.conversations[index];
+          }
+        }
+      } catch (unreadErr) {
+        console.warn(
+          "Could not increment unread count:",
+          unreadErr
+        );
+      }
+    }
 
     const recipientPref =
       state.conversationPreferences[
@@ -2353,6 +2540,11 @@ export function renderChat(
                     const blocked =
                       !!preference.blocked;
 
+                    const unread =
+                      conversationUnreadCount(
+                        c
+                      );
+
                     return `
                       <div
                         class="chat-item ${
@@ -2433,6 +2625,11 @@ export function renderChat(
                               text-overflow:ellipsis;
                               white-space:nowrap;
                               margin:4px 0 0;
+                              font-weight:${
+                                unread > 0
+                                  ? "700"
+                                  : "400"
+                              };
                             "
                           >
                             ${
@@ -2465,6 +2662,28 @@ export function renderChat(
                               )
                             )}
                           </span>
+
+                          ${
+                            unread > 0
+                              ? `
+                                <span
+                                  class="badge"
+                                  style="
+                                    background:var(--danger);
+                                    color:#fff;
+                                    min-width:20px;
+                                    text-align:center;
+                                  "
+                                >
+                                  ${
+                                    unread > 99
+                                      ? "99+"
+                                      : unread
+                                  }
+                                </span>
+                              `
+                              : ""
+                          }
 
                           <button
                             type="button"
@@ -2513,14 +2732,44 @@ export function renderChat(
 
                           <div
                             style="
-                              padding:6px 12px;
-                              font-size:11px;
-                              font-weight:bold;
-                              color:var(--muted);
-                              text-transform:uppercase;
+                              display:flex;
+                              align-items:center;
+                              justify-content:space-between;
+                              gap:8px;
+                              padding:4px 6px 2px 12px;
                             "
                           >
-                            Conversation
+                            <div
+                              style="
+                                font-size:11px;
+                                font-weight:bold;
+                                color:var(--muted);
+                                text-transform:uppercase;
+                              "
+                            >
+                              Conversation
+                            </div>
+
+                            <button
+                              type="button"
+                              class="icon-btn"
+                              data-chat-action="close"
+                              data-chat-id="${escapeHtml(
+                                c.id
+                              )}"
+                              aria-label="Close menu"
+                              title="Close"
+                              style="
+                                width:28px;
+                                height:28px;
+                                border-radius:8px;
+                                font-size:16px;
+                                line-height:1;
+                                padding:0;
+                              "
+                            >
+                              ✕
+                            </button>
                           </div>
 
                           <button
@@ -2870,11 +3119,21 @@ export function renderConversation() {
 
   return `
     <div
-      class="page"
-      style="${activeBgStyle}"
+      class="page chat-conversation-page"
+      style="
+        display:flex;
+        flex-direction:column;
+        height:100vh;
+        min-height:0;
+        overflow:hidden;
+        ${activeBgStyle}
+      "
     >
 
-      <div class="section-title">
+      <div
+        class="section-title"
+        style="flex:none;"
+      >
 
         <div class="profile-row">
 
@@ -2914,12 +3173,24 @@ export function renderConversation() {
 
       <div
         class="card"
-        style="${activeBgStyle}"
+        style="
+          flex:1;
+          min-height:0;
+          display:flex;
+          flex-direction:column;
+          overflow:hidden;
+          ${activeBgStyle}
+        "
       >
 
         <div
           class="messages"
           id="messages"
+          style="
+            flex:1;
+            min-height:0;
+            overflow-y:auto;
+          "
         >
           ${
             state.messages.length
@@ -3061,7 +3332,7 @@ export function renderConversation() {
               </div>
             `
             : `
-              <div class="message-box">
+              <div class="message-box" style="flex:none;">
 
                 <input
                   class="input"
@@ -3282,6 +3553,16 @@ if (
               );
             }
           );
+
+        /* =============================================
+           CLOSE MENU
+           ============================================= */
+
+        if (
+          action === "close"
+        ) {
+          return;
+        }
 
         /* =============================================
            PIN
