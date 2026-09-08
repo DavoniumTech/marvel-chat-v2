@@ -1,7 +1,7 @@
 {
-  "name": "MarvelChat V2",
-  "short_name": "MarvelChat",
-  "description": "Modular PWA Community and Real-Time Chat Application",
+  "name": "Marvel Chat by Davonium Technologies",
+  "short_name": "Marvel Chat",
+  "description": "Marvel Chat is a connected digital universe for communication, community, discovery, profiles, real-time conversations, social content, marketplace experiences, TimeTrust skills and services, live experiences, and the people who bring them together.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
@@ -20,5 +20,10 @@
       "type": "image/png",
       "purpose": "any maskable"
     }
-  ]
+  ],
+  "x-branding": {
+    "company": "Davonium Technologies",
+    "company_logo": "./assets/davonium-technologies-logo.png",
+    "credit": "by Davonium Technologies"
+  }
 }
