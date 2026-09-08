@@ -30,13 +30,6 @@ import {
 
 import {
   renderHome,
-  showCreatePost,
-  showEditPost,
-  showDeletePostConfirmation,
-  toggleLike,
-  savePost,
-  sharePost,
-  showComments,
   attachHomeEvents
 } from "./features /home.js";
 
@@ -2219,245 +2212,18 @@ function attachEvents() {
   ) {
 
     /*
-     * Home now owns its own quick actions,
-     * discovery overlay and Home-specific events.
+     * Home owns all of its own listeners:
+     * quick actions (create post), like, comment,
+     * share, save, post menus, edit/delete post,
+     * dropdown cleanup, discovery overlay, and
+     * expired-post cleanup.
      *
-     * This prevents app.js from duplicating
-     * Home listeners.
+     * app.js must not duplicate any of these —
+     * it only hands control to attachHomeEvents().
      */
 
     attachHomeEvents(
       renderApp
-    );
-
-
-    /*
-     * Create post controls remain connected here
-     * because these are application-level Home actions.
-     */
-
-    document
-      .getElementById(
-        "createPostBtn"
-      )
-      ?.addEventListener(
-        "click",
-        showCreatePost
-      );
-
-
-    document
-      .getElementById(
-        "emptyCreatePost"
-      )
-      ?.addEventListener(
-        "click",
-        showCreatePost
-      );
-
-
-    /*
-     * LIKE
-     */
-
-    document
-      .querySelectorAll(
-        "[data-like]"
-      )
-      .forEach(
-        button =>
-          button.addEventListener(
-            "click",
-            () =>
-              toggleLike(
-                button.dataset.like
-              )
-          )
-      );
-
-
-    /*
-     * COMMENTS
-     */
-
-    document
-      .querySelectorAll(
-        "[data-comment]"
-      )
-      .forEach(
-        button =>
-          button.addEventListener(
-            "click",
-            () =>
-              showComments(
-                button.dataset.comment
-              )
-          )
-      );
-
-
-    /*
-     * SHARE
-     */
-
-    document
-      .querySelectorAll(
-        "[data-share]"
-      )
-      .forEach(
-        button =>
-          button.addEventListener(
-            "click",
-            () =>
-              sharePost(
-                button.dataset.share
-              )
-          )
-      );
-
-
-    /*
-     * SAVE
-     */
-
-    document
-      .querySelectorAll(
-        "[data-save]"
-      )
-      .forEach(
-        button =>
-          button.addEventListener(
-            "click",
-            () =>
-              savePost(
-                button.dataset.save
-              )
-          )
-      );
-
-
-    /*
-     * POST MENU
-     */
-
-    document
-      .querySelectorAll(
-        ".post-menu-btn"
-      )
-      .forEach(
-        button => {
-
-          button.addEventListener(
-            "click",
-            event => {
-
-              event.stopPropagation();
-
-
-              const postId =
-                button.dataset.menuPost;
-
-
-              const menu =
-                document.getElementById(
-                  `postMenu-${postId}`
-                );
-
-
-              if (!menu) {
-                return;
-              }
-
-
-              document
-                .querySelectorAll(
-                  ".dropdown-menu"
-                )
-                .forEach(
-                  otherMenu => {
-
-                    if (
-                      otherMenu !==
-                      menu
-                    ) {
-
-                      otherMenu.classList.add(
-                        "hidden"
-                      );
-
-                    }
-
-                  }
-                );
-
-
-              menu.classList.toggle(
-                "hidden"
-              );
-
-            }
-          );
-
-        }
-      );
-
-
-    /*
-     * EDIT POST
-     */
-
-    document
-      .querySelectorAll(
-        "[data-edit-post]"
-      )
-      .forEach(
-        button => {
-
-          button.addEventListener(
-            "click",
-            () =>
-              showEditPost(
-                button.dataset.editPost
-              )
-          );
-
-        }
-      );
-
-
-    /*
-     * DELETE POST
-     */
-
-    document
-      .querySelectorAll(
-        "[data-delete-post]"
-      )
-      .forEach(
-        button => {
-
-          button.addEventListener(
-            "click",
-            () =>
-              showDeletePostConfirmation(
-                button.dataset.deletePost
-              )
-          );
-
-        }
-      );
-
-
-    /*
-     * Close post dropdowns when clicking elsewhere.
-     */
-
-    document.addEventListener(
-      "click",
-      closeHomeDropdowns,
-      {
-        once: true
-      }
     );
 
   }
@@ -2840,43 +2606,6 @@ function attachEvents() {
       );
 
   }
-
-}
-
-
-/* =========================================================
-   HOME DROPDOWN CLEANUP
-   ========================================================= */
-
-function closeHomeDropdowns(
-  event
-) {
-
-  const clickedInsideMenu =
-    event.target.closest(
-      ".dropdown-container"
-    );
-
-
-  if (
-    clickedInsideMenu
-  ) {
-
-    return;
-
-  }
-
-
-  document
-    .querySelectorAll(
-      ".dropdown-menu"
-    )
-    .forEach(
-      menu =>
-        menu.classList.add(
-          "hidden"
-        )
-    );
 
 }
 
