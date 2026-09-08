@@ -28,6 +28,254 @@ const skillCategories = [
   "Other"
 ];
 
+function getTimeTrustAccount() {
+  return state.profile?.timeTrustAccount || {};
+}
+
+export function hasTimeTrustAccount() {
+  return (
+    !!state.user &&
+    getTimeTrustAccount().active === true
+  );
+}
+
+export function showTimeTrustAccountRequired(
+  renderApp
+) {
+  if (!state.user) {
+    toast(
+      "Please sign in first."
+    );
+    return;
+  }
+
+  showModal(
+    "TimeTrust account required",
+    `
+      <div
+        class="notice"
+        style="margin-bottom:14px;"
+      >
+        <strong>
+          Activate TimeTrust to publish or manage skills.
+        </strong>
+
+        <p
+          class="small"
+          style="margin:6px 0 0;"
+        >
+          You can continue browsing TimeTrust without creating another account.
+          Your Firebase login remains your only account.
+        </p>
+      </div>
+
+      <button
+        class="btn btn-primary btn-block"
+        id="timeTrustGoProfile"
+        type="button"
+      >
+        ⏱️ Activate from Profile
+      </button>
+    `
+  );
+
+  document
+    .getElementById("timeTrustGoProfile")
+    ?.addEventListener(
+      "click",
+      () => {
+        closeModal();
+        state.page = "profile";
+
+        if (
+          typeof renderApp === "function"
+        ) {
+          renderApp();
+        }
+      }
+    );
+}
+
+
+export function showTimeTrustAccountModal(
+  renderApp
+) {
+  if (!state.user) {
+    toast(
+      "Please sign in first."
+    );
+    return;
+  }
+
+  const account =
+    getTimeTrustAccount();
+
+  const active =
+    account.active === true;
+
+  showModal(
+    active
+      ? "Manage TimeTrust Account"
+      : "Activate TimeTrust Account",
+    `
+      <div
+        class="card"
+        style="
+          background:var(--surface2);
+          padding:14px;
+          margin:0 0 14px;
+          box-shadow:none;
+        "
+      >
+        <strong>
+          One Firebase identity
+        </strong>
+
+        <p
+          class="small"
+          style="margin:6px 0 0;"
+        >
+          TimeTrust uses your existing authenticated Firebase user.
+          No second Firebase Authentication account is created.
+        </p>
+      </div>
+
+      <div
+        class="notice"
+        style="margin-bottom:14px;"
+      >
+        <strong>
+          ${
+            active
+              ? "Your TimeTrust account is active."
+              : "Your TimeTrust account is inactive."
+          }
+        </strong>
+
+        <p
+          class="small"
+          style="margin:6px 0 0;"
+        >
+          ${
+            active
+              ? "You can publish and manage your skill offers."
+              : "Activation enables publishing and management while leaving discovery available to everyone."
+          }
+        </p>
+      </div>
+
+      <button
+        class="btn btn-primary btn-block"
+        id="activateTimeTrustBtn"
+        type="button"
+      >
+        ${
+          active
+            ? "Close"
+            : "Activate TimeTrust Account ⏱️"
+        }
+      </button>
+    `
+  );
+
+  document
+    .getElementById("activateTimeTrustBtn")
+    ?.addEventListener(
+      "click",
+      async () => {
+        const button =
+          document.getElementById(
+            "activateTimeTrustBtn"
+          );
+
+        if (!button) {
+          return;
+        }
+
+        if (hasTimeTrustAccount()) {
+          closeModal();
+          return;
+        }
+
+        button.disabled = true;
+        button.textContent =
+          "Activating…";
+
+        try {
+          const currentAccount =
+            state.profile?.timeTrustAccount || {};
+
+          const now =
+            new Date();
+
+          const nextAccount = {
+            ...currentAccount,
+            active: true,
+            createdAt:
+              currentAccount.createdAt ||
+              serverTimestamp(),
+            updatedAt:
+              serverTimestamp()
+          };
+
+          await updateDoc(
+            doc(
+              db,
+              "users",
+              state.user.uid
+            ),
+            {
+              timeTrustAccount:
+                nextAccount
+            }
+          );
+
+          state.profile = {
+            ...state.profile,
+            timeTrustAccount: {
+              ...nextAccount,
+              createdAt:
+                currentAccount.createdAt ||
+                now,
+              updatedAt:
+                now
+            }
+          };
+
+          closeModal();
+
+          toast(
+            "TimeTrust account activated ⏱️"
+          );
+
+          if (
+            typeof renderApp === "function"
+          ) {
+            renderApp();
+          }
+
+        } catch (error) {
+
+          console.error(
+            "[TimeTrust] Account activation failed:",
+            error
+          );
+
+          toast(
+            friendly(error)
+          );
+
+          button.disabled =
+            false;
+
+          button.textContent =
+            "Activate TimeTrust Account ⏱️";
+        }
+      }
+    );
+}
+
+
 export function renderTimeTrust(renderApp) {
   const searchQuery = (state.search || "").toLowerCase();
   const selectedCategory = state.timeCategory || "All";
@@ -98,6 +346,36 @@ export function renderTimeTrust(renderApp) {
         <h1>TimeTrust ⏱️</h1>
         <p>Discover skilled community members, offer your own expertise, and discover useful knowledge.</p>
       </section>
+
+      ${
+        hasTimeTrustAccount()
+          ? `
+            <div
+              class="notice"
+              style="margin-bottom:16px;"
+            >
+              <strong>
+                TimeTrust account active.
+              </strong>
+              <span class="small">
+                You can publish and manage your skill offers.
+              </span>
+            </div>
+          `
+          : `
+            <div
+              class="notice"
+              style="margin-bottom:16px;"
+            >
+              <strong>
+                Browse TimeTrust freely.
+              </strong>
+              <span class="small">
+                Activate your TimeTrust account from Profile before publishing or managing an offer.
+              </span>
+            </div>
+          `
+      }
 
       <div class="grid grid2" style="margin-bottom: 16px;">
         <div class="card stat" style="padding: 14px; margin:0;">
@@ -388,6 +666,20 @@ export function showSkillModal(
   existingItem = null
 ) {
   const isEdit = !!existingItem;
+
+  if (!state.user) {
+    toast(
+      "Please sign in first."
+    );
+    return;
+  }
+
+  if (!hasTimeTrustAccount()) {
+    showTimeTrustAccountRequired(
+      renderApp
+    );
+    return;
+  }
 
   showModal(
     isEdit ? "Edit skill offer" : "Offer your skill",
@@ -703,7 +995,8 @@ export function showSkillDetails(
         <div style="margin-top: 8px;">
           ${
             isOwner
-              ? `
+              ? hasTimeTrustAccount()
+                ? `
             <div
               style="
                 display: flex;
@@ -727,6 +1020,31 @@ export function showSkillDetails(
               </button>
             </div>
           `
+                : `
+            <div
+              class="notice"
+              style="margin-bottom:10px;"
+            >
+              <strong>
+                Activate TimeTrust to manage this offer.
+              </strong>
+              <p
+                class="small"
+                style="margin:6px 0 0;"
+              >
+                Your existing skill remains readable, but publishing, editing,
+                and deleting require an active TimeTrust account.
+              </p>
+            </div>
+
+            <button
+              class="btn btn-primary btn-block"
+              id="activateSkillAccountBtn"
+              type="button"
+            >
+              ⏱️ Activate from Profile
+            </button>
+          `
               : `
             <button
               class="btn btn-primary btn-block"
@@ -744,6 +1062,31 @@ export function showSkillDetails(
       </div>
     `
   );
+
+  if (
+    isOwner &&
+    !hasTimeTrustAccount()
+  ) {
+    document
+      .getElementById(
+        "activateSkillAccountBtn"
+      )
+      ?.addEventListener(
+        "click",
+        () => {
+          closeModal();
+          state.page = "profile";
+
+          if (
+            typeof renderApp === "function"
+          ) {
+            renderApp();
+          }
+        }
+      );
+
+    return;
+  }
 
   if (isOwner) {
     document
@@ -938,6 +1281,29 @@ function showDeleteSkillConfirmation(
   item,
   renderApp
 ) {
+  if (!state.user) {
+    toast(
+      "Please sign in first."
+    );
+    return;
+  }
+
+  if (!hasTimeTrustAccount()) {
+    showTimeTrustAccountRequired(
+      renderApp
+    );
+    return;
+  }
+
+  if (
+    item.uid !== state.user.uid
+  ) {
+    toast(
+      "You can only manage your own skill offers."
+    );
+    return;
+  }
+
   showModal(
     "Delete this skill offer?",
     `
