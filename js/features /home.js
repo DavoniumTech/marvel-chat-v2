@@ -3,95 +3,92 @@ import { db, collection, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, inc
 import { showModal, closeModal } from "../components/modal.js";
 import { toast } from "../components/toast.js";
 
-let discoveryTimer = null;
-let discoverySeconds = 40;
+const DISCOVERY_STORAGE_KEY = "marvel_discovery_seen_v1";
+
+export function isDiscoveryDismissed() {
+  try {
+    return localStorage.getItem(DISCOVERY_STORAGE_KEY) === "1";
+  } catch {
+    return true;
+  }
+}
+
+export function dismissDiscovery() {
+  try {
+    localStorage.setItem(DISCOVERY_STORAGE_KEY, "1");
+  } catch {
+    /* ignore quota / private mode */
+  }
+
+  if (window.__marvelDiscoveryTimer) {
+    clearTimeout(window.__marvelDiscoveryTimer);
+    window.__marvelDiscoveryTimer = null;
+  }
+
+  document
+    .getElementById("discoveryBanner")
+    ?.remove();
+}
 
 export function renderHome(renderApp) {
   const me = state.profile?.displayName || state.profile?.username || "there";
   const posts = state.posts;
-
-  const discoverySeen = localStorage.getItem("marvel_chat_discovery_seen");
-  const showDiscovery = !discoverySeen;
-
-  if (showDiscovery && !discoveryTimer) {
-    discoverySeconds = 40;
-    discoveryTimer = setInterval(() => {
-      discoverySeconds -= 1;
-      const el = document.getElementById("discoveryCountdown");
-      if (el) {
-        el.textContent = `${discoverySeconds}s`;
-      }
-      if (discoverySeconds <= 0) {
-        closeDiscoveryOverlay();
-      }
-    }, 1000);
-  }
+  const showDiscovery = !isDiscoveryDismissed();
 
   return `
     <div class="page">
+      <section class="hero">
+        <h1>Hey ${escapeHtml(me)} 👋</h1>
+        <p>Welcome to your futuristic community. Connect, chat, trade skills and discover what people around you are building.</p>
+      </section>
       ${
         showDiscovery
           ? `
             <div
-              id="discoveryOverlay"
               class="card"
+              id="discoveryBanner"
               style="
                 position:relative;
-                background:var(--surface2, #211c38);
-                border:1px solid var(--border);
-                border-radius:16px;
-                padding:20px;
-                margin-bottom:20px;
-                box-shadow:var(--shadow);
+                margin-bottom:14px;
+                padding:16px 18px 18px;
               "
             >
               <button
                 type="button"
-                id="closeDiscoveryBtn"
+                class="icon-btn"
+                id="discoveryClose"
+                aria-label="Close discovery"
+                title="Close"
                 style="
                   position:absolute;
-                  top:14px;
-                  right:14px;
-                  border:0;
-                  background:transparent;
-                  color:var(--muted);
-                  font-size:18px;
-                  font-weight:bold;
-                  cursor:pointer;
+                  top:8px;
+                  right:8px;
+                  width:34px;
+                  height:34px;
                 "
               >
                 ✕
               </button>
-
-              <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
-                <span style="font-size:24px;">🚀</span>
-                <h3 style="margin:0; font-size:18px;">Welcome to Marvel Chat!</h3>
-                <span
-                  id="discoveryCountdown"
-                  style="
-                    margin-left:auto;
-                    margin-right:24px;
-                    font-size:12px;
-                    font-weight:bold;
-                    background:var(--surface);
-                    padding:2px 8px;
-                    border-radius:12px;
-                    color:var(--primary);
-                  "
-                >
-                  40s
-                </span>
-              </div>
-
-              <p class="small" style="margin-bottom:16px; line-height:1.5;">
-                Explore everything Marvel Chat has to offer: seamlessly <strong>Chat</strong> with friends, trade skills & time via <strong>TimeTrust</strong>, and buy or sell in the <strong>Market</strong>.
+              <h3 style="margin:0 0 6px; padding-right:36px;">
+                First look around
+              </h3>
+              <p class="small" style="margin:0 0 12px; max-width:42ch;">
+                Marvel Chat has a marketplace and a time-for-skill exchange.
+                WANT TO BUY SOMETHING AND DISCOVER EXPERT PEERS ? EXPLORE THE MARVEL MARKET TO BUY SOMETHING FROM THE COMMUNITY AROUND MARVEL-CHAT AND EXPLORE TIMETRUST TO EXPLORE SKILLS FROM EXPERT 
               </p>
-
-              <div style="display:flex; gap:10px; flex-wrap:wrap;">
-                <button class="btn btn-primary" id="discoveryMarketBtn">
+              <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <button
+                  class="btn btn-primary"
+                  type="button"
+                  data-discovery-nav="market"
+                >
                   Explore Market
                 </button>
-                <button class="btn btn-ghost" id="discoveryTimeTrustBtn">
+                <button
+                  class="btn btn-ghost"
+                  type="button"
+                  data-discovery-nav="timetrust"
+                >
                   Explore TimeTrust
                 </button>
               </div>
@@ -99,12 +96,6 @@ export function renderHome(renderApp) {
           `
           : ""
       }
-
-      <section class="hero">
-        <h1>Hey ${escapeHtml(me)} 👋</h1>
-        <p>Welcome to your futuristic community. Connect, chat, trade skills and discover what people around you are building.</p>
-      </section>
-
       <div class="quick-grid">
         <button class="quick" data-quick="post">
           <div class="quick-icon">✍️</div>
@@ -124,15 +115,13 @@ export function renderHome(renderApp) {
         <button class="quick" data-quick="market">
           <div class="quick-icon">🛍️</div>
           <strong>Explore Market</strong>
-          <span>Open the market</span>
+          <span>Browse the market</span>
         </button>
       </div>
-
       <div class="section-title">
         <h2>Community feed</h2>
         <button class="btn btn-primary" id="createPostBtn">+ Post</button>
       </div>
-
       ${
         posts.length
           ? posts.map(renderPost).join("")
@@ -147,29 +136,6 @@ export function renderHome(renderApp) {
       }
     </div>
   `;
-}
-
-export function closeDiscoveryOverlay() {
-  if (discoveryTimer) {
-    clearInterval(discoveryTimer);
-    discoveryTimer = null;
-  }
-  localStorage.setItem("marvel_chat_discovery_seen", "true");
-  const el = document.getElementById("discoveryOverlay");
-  if (el) {
-    el.remove();
-  }
-}
-
-if (!window.__marvelHomeDiscoveryInstalled) {
-  window.__marvelHomeDiscoveryInstalled = true;
-
-  document.addEventListener("click", event => {
-    if (event.target.closest("#closeDiscoveryBtn")) {
-      event.preventDefault();
-      closeDiscoveryOverlay();
-    }
-  });
 }
 
 export function renderPost(p) {
