@@ -12,6 +12,7 @@ import {
   doc,
   updateDoc,
   getDocs,
+  getDoc,
   query,
   where,
   limit
@@ -32,7 +33,11 @@ import {
 } from "../components/toast.js";
 
 import {
-  renderPost
+  showEditPost,
+  showDeletePostConfirmation,
+  savePost,
+  sharePost,
+  showComments
 } from "./home.js";
 
 /*
@@ -55,6 +60,11 @@ import {
   showListingDetails
 } from "./market.js";
 
+import {
+  hasTimeTrustAccount,
+  showTimeTrustAccountModal
+} from "./timetrust.js";
+
 
 /* =========================================================
    PROFILE
@@ -74,19 +84,7 @@ export function renderProfile(
     "User";
 
 
-  const savedCount =
-    state.posts.filter(
-      post =>
-        Array.isArray(
-          post.savedBy
-        ) &&
-        post.savedBy.includes(
-          state.user?.uid
-        )
-    ).length;
-
-
-  const marketAccount =
+   const marketAccount =
     p.marketAccount || {};
 
 
@@ -184,7 +182,7 @@ export function renderProfile(
 
 
           <strong>
-            ${savedCount}
+            —
           </strong>
 
         </div>
@@ -290,6 +288,138 @@ export function renderProfile(
 
             `
         }
+
+      </div>
+
+
+      <!-- =================================================
+           TIMETRUST ACCOUNT
+           ================================================= -->
+
+      <div class="section-title">
+
+        <h2>
+          TimeTrust ⏱️
+        </h2>
+
+      </div>
+
+
+      <div class="card">
+
+        <div
+          style="
+            display:flex;
+            justify-content:space-between;
+            align-items:flex-start;
+            gap:12px;
+            flex-wrap:wrap;
+          "
+        >
+
+          <div>
+
+            <strong>
+              ${
+                hasTimeTrustAccount()
+                  ? "TimeTrust Account Active"
+                  : "TimeTrust Account Not Active"
+              }
+            </strong>
+
+
+            <p
+              class="small"
+              style="margin:5px 0 0;"
+            >
+              ${
+                hasTimeTrustAccount()
+                  ? "You can publish and manage your TimeTrust skill offers."
+                  : "Browse TimeTrust freely. Activate your account to publish or manage skill offers."
+              }
+            </p>
+
+          </div>
+
+
+          <span
+            class="badge"
+            style="
+              ${
+                hasTimeTrustAccount()
+                  ? "background:var(--primary);color:#fff;"
+                  : "background:var(--surface2);"
+              }
+            "
+          >
+            ${
+              hasTimeTrustAccount()
+                ? "Active"
+                : "Inactive"
+            }
+          </span>
+
+        </div>
+
+
+        <div style="margin-top:12px;">
+
+          ${
+            hasTimeTrustAccount()
+              ? `
+                <button
+                  class="btn btn-ghost btn-block"
+                  id="timeTrustAccountBtn"
+                  type="button"
+                >
+                  ⚙️ Manage TimeTrust Account
+                </button>
+              `
+              : `
+                <button
+                  class="btn btn-primary btn-block"
+                  id="timeTrustAccountBtn"
+                  type="button"
+                >
+                  ⏱️ Activate TimeTrust Account
+                </button>
+              `
+          }
+
+        </div>
+
+      </div>
+
+
+      <!-- =================================================
+           MY POSTS
+           ================================================= -->
+
+      <div class="section-title">
+
+        <h2>
+          My Posts
+        </h2>
+
+      </div>
+
+
+      <div class="card">
+
+        <p
+          class="small"
+          style="margin-top:0;"
+        >
+          View, edit, or delete posts belonging to your authenticated account.
+        </p>
+
+        <button
+          class="btn btn-ghost btn-block"
+          id="myPostsBtn"
+          type="button"
+        >
+          📝 Open My Posts
+        </button>
 
       </div>
 
@@ -1050,54 +1180,646 @@ function showProfileListingsModal(
 
 
 /* =========================================================
-   SAVED POSTS
+   PROFILE POST COLLECTION HELPERS
    ========================================================= */
 
-export function showSaved() {
+function mergePostsIntoState(posts) {
 
-  const saved =
-    state.posts.filter(
-      post =>
-        Array.isArray(
-          post.savedBy
-        ) &&
-        post.savedBy.includes(
-          state.user?.uid
-        )
+  const incoming = Array.isArray(posts)
+    ? posts
+    : [];
+
+  const existing = Array.isArray(state.posts)
+    ? state.posts
+    : [];
+
+  const byId = new Map();
+
+  existing.forEach(post => {
+    if (post?.id) {
+      byId.set(post.id, post);
+    }
+  });
+
+  incoming.forEach(post => {
+    if (post?.id) {
+      byId.set(post.id, post);
+    }
+  });
+
+  state.posts = Array.from(byId.values());
+
+  return incoming;
+}
+
+
+function sortPostsByCreatedAt(posts) {
+
+  return [...posts].sort((a, b) => {
+
+    const getTime = value => {
+
+      if (value?.toMillis) {
+        return value.toMillis();
+      }
+
+      if (value?.toDate) {
+        return value.toDate().getTime();
+      }
+
+      if (!value) {
+        return 0;
+      }
+
+      const time =
+        new Date(value).getTime();
+
+      return Number.isFinite(time)
+        ? time
+        : 0;
+    };
+
+    return (
+      getTime(b?.createdAt) -
+      getTime(a?.createdAt)
     );
 
+  });
+}
 
-  showModal(
 
-    "Saved posts",
+function renderProfilePost(
+  post,
+  mode = "my"
+) {
 
-    saved.length
+  const isOwner =
+    post?.uid === state.user?.uid;
 
-      ? saved
-          .map(renderPost)
-          .join("")
+  const savedMode =
+    mode === "saved";
 
-      : `
+  return `
+    <article
+      class="card post-card"
+      data-profile-post="${escapeHtml(
+        post?.id || ""
+      )}"
+      style="margin-bottom:14px;"
+    >
+      <div
+        style="
+          display:flex;
+          justify-content:space-between;
+          gap:12px;
+          align-items:flex-start;
+        "
+      >
+        <div style="min-width:0;">
 
-        <div class="empty">
+          <strong>
+            ${escapeHtml(
+              post?.username ||
+              post?.displayName ||
+              "User"
+            )}
+          </strong>
 
-          <div
-            style="
-              font-size:40px;
-            "
-          >
-            🔖
+          <div class="small">
+            ${escapeHtml(
+              formatDate(
+                post?.createdAt
+              )
+            )}
           </div>
-
-
-          <p>
-            You have no saved posts yet.
-          </p>
 
         </div>
 
+        ${
+          isOwner
+            ? `
+              <span class="badge">
+                Your post
+              </span>
+            `
+            : ""
+        }
+
+      </div>
+
+      <div
+        class="post-content"
+        style="
+          margin-top:14px;
+          line-height:1.65;
+          white-space:pre-wrap;
+          word-break:break-word;
+        "
+      >
+        ${escapeHtml(
+          post?.text || ""
+        )}
+      </div>
+
+      <div
+        style="
+          display:flex;
+          gap:8px;
+          flex-wrap:wrap;
+          margin-top:14px;
+        "
+      >
+        ${
+          isOwner
+            ? `
+              <button
+                class="btn btn-ghost"
+                type="button"
+                data-edit-post="${escapeHtml(
+                  post.id
+                )}"
+              >
+                ✏️ Edit
+              </button>
+
+              <button
+                class="btn btn-danger"
+                type="button"
+                data-delete-post="${escapeHtml(
+                  post.id
+                )}"
+              >
+                🗑️ Delete
+              </button>
+            `
+            : ""
+        }
+
+        ${
+          savedMode
+            ? `
+              <button
+                class="btn btn-ghost"
+                type="button"
+                data-save="${escapeHtml(
+                  post.id
+                )}"
+              >
+                🔖 Saved
+              </button>
+            `
+            : ""
+        }
+
+        <button
+          class="btn btn-ghost"
+          type="button"
+          data-share="${escapeHtml(
+            post.id
+          )}"
+        >
+          📤 Share
+        </button>
+
+        <button
+          class="btn btn-ghost"
+          type="button"
+          data-comment="${escapeHtml(
+            post.id
+          )}"
+        >
+          💬 ${Number(
+            post?.comments || 0
+          )}
+        </button>
+      </div>
+    </article>
+  `;
+}
+
+
+function attachProfilePostEvents(
+  renderApp
+) {
+
+  document
+    .querySelectorAll("[data-edit-post]")
+    .forEach(button => {
+
+      button.addEventListener(
+        "click",
+        event => {
+
+          event.stopPropagation();
+
+          const postId =
+            button.dataset.editPost;
+
+          showEditPost(postId);
+
+        }
+      );
+
+    });
+
+
+  document
+    .querySelectorAll("[data-delete-post]")
+    .forEach(button => {
+
+      button.addEventListener(
+        "click",
+        event => {
+
+          event.stopPropagation();
+
+          const postId =
+            button.dataset.deletePost;
+
+          showDeletePostConfirmation(
+            postId
+          );
+
+        }
+      );
+
+    });
+
+
+  document
+    .querySelectorAll("[data-save]")
+    .forEach(button => {
+
+      button.addEventListener(
+        "click",
+        () => {
+
+          savePost(
+            button.dataset.save
+          );
+
+        }
+      );
+
+    });
+
+
+  document
+    .querySelectorAll("[data-share]")
+    .forEach(button => {
+
+      button.addEventListener(
+        "click",
+        () => {
+
+          sharePost(
+            button.dataset.share
+          );
+
+        }
+      );
+
+    });
+
+
+  document
+    .querySelectorAll("[data-comment]")
+    .forEach(button => {
+
+      button.addEventListener(
+        "click",
+        () => {
+
+          showComments(
+            button.dataset.comment
+          );
+
+        }
+      );
+
+    });
+
+}
+
+
+function showProfilePostsModal(
+  title,
+  posts,
+  renderApp,
+  emptyMessage
+) {
+
+  const sorted =
+    sortPostsByCreatedAt(posts);
+
+  showModal(
+    title,
+    sorted.length
+      ? `
+        <div
+          style="
+            display:flex;
+            flex-direction:column;
+            gap:10px;
+          "
+        >
+          ${sorted
+            .map(post =>
+              renderProfilePost(
+                post,
+                title === "Saved posts"
+                  ? "saved"
+                  : "my"
+              )
+            )
+            .join("")}
+        </div>
+      `
+      : `
+        <div
+          class="empty"
+          style="
+            text-align:center;
+            padding:20px 8px;
+          "
+        >
+          <div
+            style="
+              font-size:40px;
+              margin-bottom:8px;
+            "
+          >
+            📝
+          </div>
+
+          <p>
+            ${escapeHtml(
+              emptyMessage
+            )}
+          </p>
+        </div>
       `
   );
+
+  attachProfilePostEvents(
+    renderApp
+  );
+}
+
+
+export async function showMyPosts(
+  renderApp
+) {
+
+  if (!state.user) {
+
+    toast(
+      "Please sign in first."
+    );
+
+    return;
+
+  }
+
+
+  const button =
+    document.getElementById(
+      "myPostsBtn"
+    );
+
+
+  if (button) {
+
+    button.disabled = true;
+
+    button.textContent =
+      "Loading your posts…";
+
+  }
+
+
+  try {
+
+    const snapshot =
+      await getDocs(
+        query(
+          collection(
+            db,
+            "posts"
+          ),
+          where(
+            "uid",
+            "==",
+            state.user.uid
+          ),
+          limit(50)
+        )
+      );
+
+
+    const posts =
+      snapshot.docs.map(
+        postDoc => ({
+          id:
+            postDoc.id,
+          ...postDoc.data()
+        })
+      );
+
+
+    mergePostsIntoState(
+      posts
+    );
+
+
+    showProfilePostsModal(
+      "My Posts",
+      posts,
+      renderApp,
+      "You have not published any posts yet."
+    );
+
+  } catch (error) {
+
+    console.error(
+      "[Profile] My Posts load error:",
+      error
+    );
+
+    toast(
+      friendly(error)
+    );
+
+  } finally {
+
+    if (button) {
+
+      button.disabled = false;
+
+      button.innerHTML =
+        "📝 Open My Posts";
+
+    }
+
+  }
+
+}
+
+
+export async function showSaved(
+  renderApp
+) {
+
+  if (!state.user) {
+
+    toast(
+      "Please sign in first."
+    );
+
+    return;
+
+  }
+
+
+  const button =
+    document.getElementById(
+      "savedBtn"
+    );
+
+
+  if (button) {
+
+    button.disabled = true;
+
+    button.textContent =
+      "Loading saved posts…";
+
+  }
+
+
+  try {
+
+    const savedSnapshot =
+      await getDocs(
+        collection(
+          db,
+          "users",
+          state.user.uid,
+          "savedPosts"
+        )
+      );
+
+
+    const savedIds =
+      savedSnapshot.docs
+        .map(
+          savedDoc =>
+            savedDoc.id
+        )
+        .filter(Boolean);
+
+
+    const resolvedPosts =
+      await Promise.all(
+        savedIds.map(
+          async postId => {
+
+            try {
+
+              const postSnapshot =
+                await getDoc(
+                  doc(
+                    db,
+                    "posts",
+                    postId
+                  )
+                );
+
+
+              if (
+                !postSnapshot.exists()
+              ) {
+                return null;
+              }
+
+
+              return {
+                id:
+                  postSnapshot.id,
+                ...postSnapshot.data(),
+                savedBy: [
+                  ...(Array.isArray(
+                    postSnapshot.data()?.savedBy
+                  )
+                    ? postSnapshot.data().savedBy
+                    : []),
+                  state.user.uid
+                ]
+              };
+
+            } catch (error) {
+
+              console.warn(
+                "[Profile] Could not resolve saved post:",
+                {
+                  postId,
+                  code:
+                    error?.code,
+                  error
+                }
+              );
+
+              return null;
+
+            }
+
+          }
+        )
+      );
+
+
+    const posts =
+      resolvedPosts.filter(
+        Boolean
+      );
+
+
+    mergePostsIntoState(
+      posts
+    );
+
+
+    showProfilePostsModal(
+      "Saved posts",
+      posts,
+      renderApp,
+      "You have no saved posts yet."
+    );
+
+  } catch (error) {
+
+    console.error(
+      "[Profile] Saved posts load error:",
+      error
+    );
+
+    toast(
+      friendly(error)
+    );
+
+  } finally {
+
+    if (button) {
+
+      button.disabled = false;
+
+      button.innerHTML =
+        "🔖 Saved posts";
+
+    }
+
+  }
+
 }
 
 
@@ -1136,7 +1858,39 @@ export function attachProfileEvents(
     )
     ?.addEventListener(
       "click",
-      showSaved
+      () =>
+        showSaved(
+          renderApp
+        )
+    );
+
+
+  document
+    .getElementById(
+      "myPostsBtn"
+    )
+    ?.addEventListener(
+      "click",
+      () =>
+        showMyPosts(
+          renderApp
+        )
+    );
+
+
+  document
+    .getElementById(
+      "timeTrustAccountBtn"
+    )
+    ?.addEventListener(
+      "click",
+      () => {
+
+        showTimeTrustAccountModal(
+          renderApp
+        );
+
+      }
     );
 
 
