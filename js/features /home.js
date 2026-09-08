@@ -29,8 +29,10 @@ let discoveryTimer = null;
 let discoveryStartedAt = 0;
 let savedPostIds = new Set();
 let savedPostsLoadedForUid = null;
+
 const pendingLikeIds = new Set();
 const pendingSaveIds = new Set();
+
 let homeDocumentClickHandler = null;
 
 const POST_EXPIRY_OPTIONS = [
@@ -56,12 +58,15 @@ const POST_EXPIRY_OPTIONS = [
   }
 ];
 
-
 function cssEscape(value) {
   if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
     return CSS.escape(String(value));
   }
-  return String(value).replace(/[^a-zA-Z0-9_-]/g, "\\$&");
+
+  return String(value).replace(
+    /[^a-zA-Z0-9_-]/g,
+    "\\$&"
+  );
 }
 
 function getCurrentUserName() {
@@ -73,17 +78,23 @@ function getCurrentUserName() {
 }
 
 function getPostExpiryDate(value) {
-  const option = POST_EXPIRY_OPTIONS.find(item => item.value === value);
+  const option = POST_EXPIRY_OPTIONS.find(
+    item => item.value === value
+  );
 
   if (!option) {
     return null;
   }
 
-  return new Date(Date.now() + option.milliseconds);
+  return new Date(
+    Date.now() + option.milliseconds
+  );
 }
 
 function timestampToDate(value) {
-  if (!value) return null;
+  if (!value) {
+    return null;
+  }
 
   if (value instanceof Date) {
     return value;
@@ -99,11 +110,16 @@ function timestampToDate(value) {
 
   if (typeof value === "string") {
     const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
+
+    return Number.isNaN(parsed.getTime())
+      ? null
+      : parsed;
   }
 
   if (typeof value?.seconds === "number") {
-    return new Date(value.seconds * 1000);
+    return new Date(
+      value.seconds * 1000
+    );
   }
 
   return null;
@@ -114,7 +130,9 @@ function isPostExpired(post) {
     return false;
   }
 
-  const expiry = timestampToDate(post.expiresAt);
+  const expiry = timestampToDate(
+    post.expiresAt
+  );
 
   if (!expiry) {
     return false;
@@ -128,21 +146,32 @@ function formatExpiryLabel(post) {
     return "";
   }
 
-  const expiry = timestampToDate(post.expiresAt);
+  const expiry = timestampToDate(
+    post.expiresAt
+  );
 
   if (!expiry) {
     return "";
   }
 
-  const remaining = expiry.getTime() - Date.now();
+  const remaining =
+    expiry.getTime() - Date.now();
 
   if (remaining <= 0) {
     return "Expired";
   }
 
-  const minutes = Math.floor(remaining / 60000);
-  const hours = Math.floor(minutes / 60);
-  const days = Math.floor(hours / 24);
+  const minutes = Math.floor(
+    remaining / 60000
+  );
+
+  const hours = Math.floor(
+    minutes / 60
+  );
+
+  const days = Math.floor(
+    hours / 24
+  );
 
   if (days > 0) {
     return `${days}d remaining`;
@@ -172,25 +201,36 @@ function markHomeActivity() {
 
 function shouldShowDiscovery() {
   try {
-    const lastActiveRaw = localStorage.getItem(
-      DISCOVERY_LAST_ACTIVE_KEY
-    );
+    const lastActiveRaw =
+      localStorage.getItem(
+        DISCOVERY_LAST_ACTIVE_KEY
+      );
 
     if (!lastActiveRaw) {
       return true;
     }
 
-    const lastActive = Number(lastActiveRaw);
+    const lastActive =
+      Number(lastActiveRaw);
 
     if (!Number.isFinite(lastActive)) {
       return true;
     }
 
-    const inactiveMilliseconds = Date.now() - lastActive;
-    const inactiveThreshold =
-      DISCOVERY_INACTIVE_DAYS * 24 * 60 * 60 * 1000;
+    const inactiveMilliseconds =
+      Date.now() - lastActive;
 
-    return inactiveMilliseconds >= inactiveThreshold;
+    const inactiveThreshold =
+      DISCOVERY_INACTIVE_DAYS *
+      24 *
+      60 *
+      60 *
+      1000;
+
+    return (
+      inactiveMilliseconds >=
+      inactiveThreshold
+    );
   } catch {
     return true;
   }
@@ -206,6 +246,7 @@ export function dismissDiscovery() {
       DISCOVERY_LAST_ACTIVE_KEY,
       String(Date.now())
     );
+
     localStorage.setItem(
       DISCOVERY_STORAGE_KEY,
       "1"
@@ -217,11 +258,16 @@ export function dismissDiscovery() {
   stopDiscoveryCountdown();
 
   document
-    .getElementById("discoveryBanner")
+    .getElementById(
+      "discoveryBanner"
+    )
     ?.remove();
 }
 
-function openDiscoveryDestination(destination, renderApp) {
+function openDiscoveryDestination(
+  destination,
+  renderApp
+) {
   dismissDiscovery();
 
   if (destination === "market") {
@@ -239,17 +285,35 @@ function openDiscoveryDestination(destination, renderApp) {
 
 function stopDiscoveryCountdown() {
   if (discoveryTimer) {
-    clearInterval(discoveryTimer);
+    clearInterval(
+      discoveryTimer
+    );
+
     discoveryTimer = null;
   }
 }
 
 function startDiscoveryCountdown() {
-  const banner = document.getElementById("discoveryBanner");
-  const ring = document.getElementById("discoveryRing");
-  const counter = document.getElementById("discoveryCountdown");
+  const banner =
+    document.getElementById(
+      "discoveryBanner"
+    );
 
-  if (!banner || !ring || !counter) {
+  const ring =
+    document.getElementById(
+      "discoveryRing"
+    );
+
+  const counter =
+    document.getElementById(
+      "discoveryCountdown"
+    );
+
+  if (
+    !banner ||
+    !ring ||
+    !counter
+  ) {
     stopDiscoveryCountdown();
     return;
   }
@@ -258,33 +322,75 @@ function startDiscoveryCountdown() {
     return;
   }
 
-  discoveryStartedAt = Date.now();
-  const duration = DISCOVERY_DURATION_SECONDS * 1000;
+  discoveryStartedAt =
+    Date.now();
+
+  const duration =
+    DISCOVERY_DURATION_SECONDS *
+    1000;
 
   const update = () => {
-    if (!document.getElementById("discoveryBanner")) {
+    if (
+      !document.getElementById(
+        "discoveryBanner"
+      )
+    ) {
       stopDiscoveryCountdown();
       return;
     }
 
-    const elapsed = Date.now() - discoveryStartedAt;
-    const remainingMilliseconds = Math.max(0, duration - elapsed);
-    const remainingSeconds = Math.ceil(remainingMilliseconds / 1000);
-    const progress = remainingMilliseconds / duration;
-    const percentage = Math.max(0, Math.min(100, progress * 100));
+    const elapsed =
+      Date.now() -
+      discoveryStartedAt;
+
+    const remainingMilliseconds =
+      Math.max(
+        0,
+        duration - elapsed
+      );
+
+    const remainingSeconds =
+      Math.ceil(
+        remainingMilliseconds /
+        1000
+      );
+
+    const progress =
+      remainingMilliseconds /
+      duration;
+
+    const percentage =
+      Math.max(
+        0,
+        Math.min(
+          100,
+          progress * 100
+        )
+      );
 
     ring.style.background =
       `conic-gradient(currentColor ${percentage}%, rgba(255,255,255,.10) ${percentage}% 100%)`;
-    counter.textContent = String(remainingSeconds);
 
-    if (remainingMilliseconds <= 0) {
+    counter.textContent =
+      String(
+        remainingSeconds
+      );
+
+    if (
+      remainingMilliseconds <= 0
+    ) {
       stopDiscoveryCountdown();
       dismissDiscovery();
     }
   };
 
   update();
-  discoveryTimer = setInterval(update, 250);
+
+  discoveryTimer =
+    setInterval(
+      update,
+      250
+    );
 }
 
 function renderDiscoveryBanner() {
@@ -348,7 +454,12 @@ function renderDiscoveryBanner() {
           flex-wrap:wrap;
         "
       >
-        <div style="flex:1; min-width:220px;">
+        <div
+          style="
+            flex:1;
+            min-width:220px;
+          "
+        >
           <div
             class="small"
             style="
@@ -456,7 +567,9 @@ function renderDiscoveryBanner() {
 
               <span
                 class="small"
-                style="margin-top:5px;"
+                style="
+                  margin-top:5px;
+                "
               >
                 seconds
               </span>
@@ -468,161 +581,468 @@ function renderDiscoveryBanner() {
   `;
 }
 
-function renderPost(p) {
-  const user = state.user;
-  const liked =
-    !!user &&
-    Array.isArray(p.likedBy) &&
-    p.likedBy.includes(user.uid);
+async function loadSavedPostIds() {
+  const uid =
+    state.user?.uid;
 
-  const saved =
-    !!user &&
+  if (!uid) {
+    savedPostIds = new Set();
+    savedPostsLoadedForUid =
+      null;
+    return;
+  }
+
+  if (
+    savedPostsLoadedForUid ===
+    uid
+  ) {
+    return;
+  }
+
+  try {
+    const snapshot =
+      await getDocs(
+        collection(
+          db,
+          "users",
+          uid,
+          "savedPosts"
+        )
+      );
+
+    savedPostIds =
+      new Set(
+        snapshot.docs.map(
+          item => item.id
+        )
+      );
+
+    savedPostsLoadedForUid =
+      uid;
+
+    state.posts =
+      state.posts.map(
+        post => ({
+          ...post,
+          savedBy:
+            savedPostIds.has(
+              post.id
+            )
+              ? Array.from(
+                  new Set([
+                    ...(Array.isArray(
+                      post.savedBy
+                    )
+                      ? post.savedBy
+                      : []),
+                    uid
+                  ])
+                )
+              : (
+                  Array.isArray(
+                    post.savedBy
+                  )
+                    ? post.savedBy.filter(
+                        id =>
+                          id !== uid
+                      )
+                    : []
+                )
+        })
+      );
+
+    refreshSavedButtons();
+  } catch (error) {
+    console.warn(
+      "Could not load saved posts:",
+      error
+    );
+  }
+}
+
+function refreshSavedButtons() {
+  document
+    .querySelectorAll(
+      "[data-save]"
+    )
+    .forEach(
+      button => {
+        const id =
+          button.dataset.save;
+
+        const saved =
+          savedPostIds.has(id);
+
+        button.innerHTML =
+          saved
+            ? "🔖 Saved"
+            : "🔖 Save";
+
+        button.classList.toggle(
+          "btn-primary",
+          saved
+        );
+
+        button.classList.toggle(
+          "btn-ghost",
+          !saved
+        );
+      }
+    );
+}
+
+function getLikeCount(post) {
+  if (
+    typeof post?.likes ===
+    "number"
+  ) {
+    return post.likes;
+  }
+
+  if (
+    Array.isArray(
+      post?.likedBy
+    )
+  ) {
+    return post.likedBy.length;
+  }
+
+  return 0;
+}
+
+function isLiked(post) {
+  if (!state.user) {
+    return false;
+  }
+
+  return Array.isArray(
+    post?.likedBy
+  )
+    ? post.likedBy.includes(
+        state.user.uid
+      )
+    : false;
+}
+
+function isSaved(post) {
+  if (!state.user) {
+    return false;
+  }
+
+  return savedPostIds.has(
+    post.id
+  ) ||
     (
-      savedPostIds.has(p.id) ||
-      (
-        Array.isArray(p.savedBy) &&
-        p.savedBy.includes(user.uid)
+      Array.isArray(
+        post?.savedBy
+      ) &&
+      post.savedBy.includes(
+        state.user.uid
       )
     );
+}
 
-  const isOwner =
-    !!user &&
-    p.uid === user.uid;
+function renderPostActions(post) {
+  const likeCount =
+    getLikeCount(post);
 
-  const expiryLabel = formatExpiryLabel(p);
+  const commentCount =
+    Number(
+      post?.comments || 0
+    );
+
+  const liked =
+    isLiked(post);
+
+  const saved =
+    isSaved(post);
+
+  return `
+    <div
+      style="
+        display:grid;
+        grid-template-columns:repeat(4,minmax(0,1fr));
+        gap:8px;
+        margin-top:16px;
+        padding-top:14px;
+        border-top:1px solid var(--border);
+      "
+    >
+      <button
+        type="button"
+        class="btn ${liked ? "btn-primary" : "btn-ghost"}"
+        data-like="${cssEscape(post.id)}"
+        style="
+          min-width:0;
+          padding:10px 8px;
+          white-space:nowrap;
+        "
+      >
+        ❤️ ${likeCount}
+      </button>
+
+      <button
+        type="button"
+        class="btn btn-ghost"
+        data-comment="${cssEscape(post.id)}"
+        style="
+          min-width:0;
+          padding:10px 8px;
+          white-space:nowrap;
+        "
+      >
+        💬 ${commentCount}
+      </button>
+
+      <button
+        type="button"
+        class="btn btn-ghost"
+        data-share="${cssEscape(post.id)}"
+        style="
+          min-width:0;
+          padding:10px 8px;
+          white-space:nowrap;
+        "
+      >
+        ↗ Share
+      </button>
+
+      <button
+        type="button"
+        class="btn ${saved ? "btn-primary" : "btn-ghost"}"
+        data-save="${cssEscape(post.id)}"
+        style="
+          min-width:0;
+          padding:10px 8px;
+          white-space:nowrap;
+        "
+      >
+        🔖 ${saved ? "Saved" : "Save"}
+      </button>
+    </div>
+  `;
+}
+
+function renderPost(post) {
+  if (!post || !post.id) {
+    return "";
+  }
+
+  const author =
+    post.username ||
+    post.displayName ||
+    post.authorName ||
+    "User";
+
+  const avatar =
+    post.photoURL ||
+    post.avatarUrl ||
+    "";
+
+  const text =
+    post.text ||
+    post.content ||
+    "";
+
+  const own =
+    state.user?.uid ===
+    post.uid;
+
+  const expiryLabel =
+    formatExpiryLabel(post);
+
+  const menuId =
+    `postMenu-${post.id}`;
 
   return `
     <article
       class="card post-card"
-      data-post-card="${escapeHtml(p.id)}"
-      style="margin-bottom:14px;"
+      data-post-card="${cssEscape(post.id)}"
+      style="
+        margin-bottom:18px;
+        padding:24px;
+      "
     >
       <div
         style="
           display:flex;
-          justify-content:space-between;
-          gap:12px;
           align-items:flex-start;
+          justify-content:space-between;
+          gap:14px;
         "
       >
         <div
           style="
             display:flex;
-            gap:10px;
-            min-width:0;
             align-items:center;
+            gap:14px;
+            min-width:0;
           "
         >
-          <div class="avatar">
-            ${escapeHtml(
-              initials(
-                p.username ||
-                p.displayName ||
-                "User"
-              )
-            )}
-          </div>
+          ${
+            avatar
+              ? `
+                <img
+                  src="${escapeHtml(avatar)}"
+                  alt=""
+                  style="
+                    width:54px;
+                    height:54px;
+                    border-radius:50%;
+                    object-fit:cover;
+                    flex:0 0 54px;
+                  "
+                >
+              `
+              : `
+                <div
+                  style="
+                    width:54px;
+                    height:54px;
+                    border-radius:50%;
+                    display:grid;
+                    place-items:center;
+                    background:var(--primary-soft);
+                    color:var(--primary);
+                    font-weight:800;
+                    font-size:18px;
+                    flex:0 0 54px;
+                  "
+                >
+                  ${escapeHtml(
+                    initials(author)
+                  )}
+                </div>
+              `
+          }
 
-          <div style="min-width:0;">
-            <strong>
-              ${escapeHtml(
-                p.username ||
-                p.displayName ||
-                "User"
-              )}
+          <div
+            style="
+              min-width:0;
+            "
+          >
+            <strong
+              style="
+                display:block;
+                font-size:17px;
+                line-height:1.25;
+                overflow-wrap:anywhere;
+              "
+            >
+              ${escapeHtml(author)}
             </strong>
 
-            <div class="small">
+            <div
+              class="small"
+              style="
+                margin-top:4px;
+              "
+            >
               ${escapeHtml(
-                formatDate(p.createdAt)
+                formatDate(
+                  post.createdAt
+                )
               )}
-              ${
-                expiryLabel
-                  ? ` · ${escapeHtml(expiryLabel)}`
-                  : ""
-              }
             </div>
+
+            ${
+              expiryLabel
+                ? `
+                  <div
+                    class="small"
+                    style="
+                      margin-top:4px;
+                      color:var(--muted);
+                    "
+                  >
+                    ⏳ ${escapeHtml(
+                      expiryLabel
+                    )}
+                  </div>
+                `
+                : ""
+            }
           </div>
         </div>
 
-        <div
-          class="dropdown-container"
-          style="position:relative;"
-        >
-          <button
-            class="icon-btn"
-            type="button"
-            data-menu-post="${escapeHtml(p.id)}"
-            aria-label="Post menu"
-            title="Post menu"
-          >
-            ⋮
-          </button>
+        ${
+          own
+            ? `
+              <div
+                class="dropdown-container"
+                style="
+                  position:relative;
+                  flex:0 0 auto;
+                "
+              >
+                <button
+                  type="button"
+                  class="icon-btn"
+                  data-menu-post="${cssEscape(post.id)}"
+                  aria-label="Post options"
+                  title="Post options"
+                >
+                  ⋮
+                </button>
 
-          <div
-            id="postMenu-${escapeHtml(p.id)}"
-            class="dropdown-menu hidden"
-            style="
-              position:absolute;
-              right:0;
-              top:42px;
-              z-index:20;
-              min-width:150px;
-            "
-          >
-            ${
-              isOwner
-                ? `
+                <div
+                  class="dropdown-menu hidden"
+                  id="${menuId}"
+                  style="
+                    position:absolute;
+                    right:0;
+                    top:48px;
+                    z-index:20;
+                    min-width:150px;
+                  "
+                >
                   <button
                     type="button"
-                    class="dropdown-item"
-                    data-edit-post="${escapeHtml(p.id)}"
+                    class="btn btn-ghost btn-block"
+                    data-edit-post="${cssEscape(post.id)}"
                   >
                     ✏️ Edit
                   </button>
 
                   <button
                     type="button"
-                    class="dropdown-item"
-                    data-delete-post="${escapeHtml(p.id)}"
+                    class="btn btn-ghost btn-block"
+                    data-delete-post="${cssEscape(post.id)}"
                   >
                     🗑️ Delete
                   </button>
-                `
-                : ""
-            }
-
-            <button
-              type="button"
-              class="dropdown-item"
-              data-share="${escapeHtml(p.id)}"
-            >
-              📤 Share
-            </button>
-          </div>
-        </div>
+                </div>
+              </div>
+            `
+            : ""
+        }
       </div>
 
       <div
-        class="post-content"
         style="
-          margin-top:14px;
-          line-height:1.65;
-          white-space:pre-wrap;
-          word-break:break-word;
+          margin-top:24px;
+          padding:0 8px;
+          font-size:18px;
+          line-height:1.7;
+          overflow-wrap:anywhere;
         "
       >
-        ${escapeHtml(p.text || "")}
+        ${escapeHtml(text)}
       </div>
 
       ${
-        p.imageUrl
+        post.imageUrl
           ? `
-            <div style="margin-top:14px;">
+            <div
+              style="
+                margin-top:18px;
+              "
+            >
               <img
-                src="${escapeHtml(p.imageUrl)}"
+                src="${escapeHtml(
+                  post.imageUrl
+                )}"
                 alt="Post image"
-                loading="lazy"
                 style="
                   width:100%;
                   max-height:520px;
@@ -636,157 +1056,284 @@ function renderPost(p) {
           : ""
       }
 
-      <div
-        style="
-          display:flex;
-          align-items:center;
-          gap:8px;
-          flex-wrap:wrap;
-          margin-top:16px;
-        "
-      >
-        <button
-          class="btn btn-ghost ${liked ? "active" : ""}"
-          type="button"
-          data-like="${escapeHtml(p.id)}"
-        >
-          ${liked ? "❤️" : "♡"}
-          ${Number(p.likes || 0)}
-        </button>
-
-        <button
-          class="btn btn-ghost ${saved ? "active" : ""}"
-          type="button"
-          data-save="${escapeHtml(p.id)}"
-        >
-          ${saved ? "🔖 Saved" : "🔖 Save"}
-        </button>
-
-        <button
-          class="btn btn-ghost"
-          type="button"
-          data-comment="${escapeHtml(p.id)}"
-        >
-          💬 ${Number(p.comments || 0)}
-        </button>
-
-        <button
-          class="btn btn-ghost"
-          type="button"
-          data-share="${escapeHtml(p.id)}"
-        >
-          📤 Share
-        </button>
-      </div>
+      ${renderPostActions(post)}
     </article>
   `;
 }
 
-function filterRenderedPosts(value) {
-  const term = String(value || "")
-    .trim()
-    .toLowerCase();
-
-  document
-    .querySelectorAll("[data-post-card]")
-    .forEach(card => {
-      const text =
-        card.textContent.toLowerCase();
-
-      card.style.display =
-        !term || text.includes(term)
-          ? ""
-          : "none";
-    });
-}
-
-async function cleanupExpiredPosts() {
-  const user = state.user;
-
-  if (!user || !Array.isArray(state.posts)) {
-    return;
-  }
-
-  const expiredOwnedPosts =
-    state.posts.filter(
-      post =>
-        post.uid === user.uid &&
-        isPostExpired(post)
-    );
-
-  if (!expiredOwnedPosts.length) {
-    return;
-  }
-
-  for (const post of expiredOwnedPosts) {
-    try {
-      await deleteDoc(
-        doc(db, "posts", post.id)
-      );
-    } catch (error) {
-      console.warn(
-        "Could not clean up expired post:",
-        {
-          postId: post.id,
-          code: error?.code,
-          error
-        }
-      );
-    }
-  }
-}
-
-export function renderHome(renderApp) {
-  const user = state.user;
-
-  if (!user) {
-    return `
-      <section
-        class="card"
+function renderHomeHeader() {
+  return `
+    <section
+      style="
+        margin-bottom:22px;
+      "
+    >
+      <div
         style="
-          margin-top:20px;
-          text-align:center;
-          padding:36px 22px;
+          display:flex;
+          align-items:flex-start;
+          justify-content:space-between;
+          gap:16px;
+          flex-wrap:wrap;
         "
       >
-        <h2 style="margin-top:0;">
-          Welcome to MARVEL CHAT
-        </h2>
+        <div>
+          <div
+            class="small"
+            style="
+              font-weight:700;
+              letter-spacing:.04em;
+              text-transform:uppercase;
+            "
+          >
+            COMMUNITY FEED
+          </div>
 
-        <p class="small">
-          Sign in to join the community.
-        </p>
-      </section>
-    `;
-  }
+          <h1
+            style="
+              margin:8px 0 0;
+              font-size:clamp(30px,7vw,42px);
+              line-height:1.1;
+            "
+          >
+            What's happening?
+          </h1>
+        </div>
+
+        <button
+          class="btn btn-primary"
+          id="createPostBtn"
+          type="button"
+        >
+          ＋ Create Post
+        </button>
+      </div>
+
+      <div
+        style="
+          display:flex;
+          gap:10px;
+          margin-top:22px;
+          flex-wrap:wrap;
+        "
+      >
+        <input
+          id="communityFeedSearch"
+          class="input"
+          type="search"
+          placeholder="Search the community feed..."
+          autocomplete="off"
+          style="
+            flex:1 1 280px;
+          "
+        />
+
+        <button
+          class="btn btn-ghost"
+          id="youtubeLiveSearchBtn"
+          type="button"
+        >
+          ▶️ YouTube Live
+        </button>
+      </div>
+    </section>
+  `;
+}
+
+function renderQuickActions() {
+  return `
+    <section
+      style="
+        display:grid;
+        grid-template-columns:repeat(4,minmax(0,1fr));
+        gap:14px;
+        margin-bottom:26px;
+      "
+    >
+      <button
+        class="card"
+        type="button"
+        data-quick="post"
+        style="
+          text-align:left;
+          cursor:pointer;
+          padding:20px;
+          border:1px solid var(--border);
+        "
+      >
+        <div
+          style="
+            font-size:28px;
+            margin-bottom:12px;
+          "
+        >
+          📝
+        </div>
+
+        <strong
+          style="
+            display:block;
+            font-size:18px;
+          "
+        >
+          Create post
+        </strong>
+
+        <span
+          class="small"
+          style="
+            display:block;
+            margin-top:6px;
+          "
+        >
+          Share something
+        </span>
+      </button>
+
+      <button
+        class="card"
+        type="button"
+        data-quick="chat"
+        style="
+          text-align:left;
+          cursor:pointer;
+          padding:20px;
+          border:1px solid var(--border);
+        "
+      >
+        <div
+          style="
+            font-size:28px;
+            margin-bottom:12px;
+          "
+        >
+          💬
+        </div>
+
+        <strong
+          style="
+            display:block;
+            font-size:18px;
+          "
+        >
+          Explore Chat
+        </strong>
+
+        <span
+          class="small"
+          style="
+            display:block;
+            margin-top:6px;
+          "
+        >
+          Meet and talk with people
+        </span>
+      </button>
+
+      <button
+        class="card"
+        type="button"
+        data-quick="timetrust"
+        style="
+          text-align:left;
+          cursor:pointer;
+          padding:20px;
+          border:1px solid var(--border);
+        "
+      >
+        <div
+          style="
+            font-size:28px;
+            margin-bottom:12px;
+          "
+        >
+          ⏱️
+        </div>
+
+        <strong
+          style="
+            display:block;
+            font-size:18px;
+          "
+        >
+          Explore TimeTrust
+        </strong>
+
+        <span
+          class="small"
+          style="
+            display:block;
+            margin-top:6px;
+          "
+        >
+          Discover skills and services
+        </span>
+      </button>
+
+      <button
+        class="card"
+        type="button"
+        data-quick="market"
+        style="
+          text-align:left;
+          cursor:pointer;
+          padding:20px;
+          border:1px solid var(--border);
+        "
+      >
+        <div
+          style="
+            font-size:28px;
+            margin-bottom:12px;
+          "
+        >
+          🛍️
+        </div>
+
+        <strong
+          style="
+            display:block;
+            font-size:18px;
+          "
+        >
+          Explore Market
+        </strong>
+
+        <span
+          class="small"
+          style="
+            display:block;
+            margin-top:6px;
+          "
+        >
+          Discover products and listings
+        </span>
+      </button>
+    </section>
+  `;
+}
+
+export function renderHome() {
+  markHomeActivity();
+
+  const posts =
+    Array.isArray(state.posts)
+      ? state.posts
+          .filter(
+            post =>
+              post &&
+              !isPostExpired(post)
+          )
+      : [];
 
   const showDiscovery =
     shouldShowDiscovery();
 
-  const posts =
-    Array.isArray(state.posts)
-      ? state.posts.filter(
-          post => !isPostExpired(post)
-        )
-      : [];
-
-  const sortedPosts =
-    [...posts].sort((a, b) => {
-      const aDate =
-        timestampToDate(a.createdAt)?.getTime() ||
-        0;
-
-      const bDate =
-        timestampToDate(b.createdAt)?.getTime() ||
-        0;
-
-      return bDate - aDate;
-    });
-
   return `
-    <main
-      class="page"
-      style="padding-bottom:90px;"
+    <div
+      style="
+        padding-bottom:24px;
+      "
     >
       ${
         showDiscovery
@@ -794,624 +1341,156 @@ export function renderHome(renderApp) {
           : ""
       }
 
-      <section
-        class="card"
-        style="
-          margin-bottom:18px;
-          padding:24px;
-        "
-      >
+      ${renderQuickActions()}
+
+      ${renderHomeHeader()}
+
+      <section>
         <div
           style="
             display:flex;
             align-items:center;
             justify-content:space-between;
-            gap:14px;
-            flex-wrap:wrap;
+            gap:12px;
+            margin-bottom:16px;
           "
         >
-          <div>
-            <div class="small">
-              COMMUNITY FEED
-            </div>
-
-            <h1
-              style="
-                margin:4px 0 0;
-                font-size:clamp(25px,5vw,36px);
-              "
-            >
-              What's happening?
-            </h1>
-          </div>
-
-          <button
-            class="btn btn-primary"
-            type="button"
-            id="createPostBtn"
-          >
-            ＋ Create Post
-          </button>
-        </div>
-
-        <div
-          style="
-            display:flex;
-            gap:10px;
-            margin-top:18px;
-            flex-wrap:wrap;
-          "
-        >
-          <input
-            id="communityFeedSearch"
-            class="input"
-            type="search"
-            placeholder="Search the community feed…"
-            autocomplete="off"
+          <h2
             style="
-              flex:1;
-              min-width:220px;
+              margin:0;
+              font-size:28px;
             "
           >
+            Community feed
+          </h2>
 
-          <button
-            class="btn btn-ghost"
-            type="button"
-            id="youtubeLiveSearchBtn"
+          <span
+            class="small"
+            id="homePostCount"
           >
-            ▶️ YouTube Live
-          </button>
+            ${posts.length}
+          </span>
+        </div>
+
+        <div id="homePosts">
+          ${
+            posts.length
+              ? posts
+                  .map(
+                    post =>
+                      renderPost(
+                        post
+                      )
+                  )
+                  .join("")
+              : `
+                <div
+                  class="card"
+                  style="
+                    padding:30px 24px;
+                    text-align:center;
+                  "
+                >
+                  <div
+                    style="
+                      font-size:38px;
+                      margin-bottom:10px;
+                    "
+                  >
+                    📝
+                  </div>
+
+                  <h3
+                    style="
+                      margin:0 0 8px;
+                    "
+                  >
+                    No posts yet
+                  </h3>
+
+                  <p
+                    class="small"
+                    style="
+                      margin:0 0 18px;
+                    "
+                  >
+                    Be the first person to share something with the community.
+                  </p>
+
+                  <button
+                    class="btn btn-primary"
+                    id="emptyCreatePost"
+                    type="button"
+                  >
+                    ＋ Create Post
+                  </button>
+                </div>
+              `
+          }
         </div>
       </section>
-
-      ${
-        sortedPosts.length
-          ? `
-            <section id="communityFeed">
-              ${sortedPosts.map(renderPost).join("")}
-            </section>
-          `
-          : `
-            <section
-              class="card empty"
-              style="
-                padding:38px 22px;
-                text-align:center;
-              "
-            >
-              <div style="font-size:42px;">
-                ✨
-              </div>
-
-              <h3>
-                Your community feed is quiet.
-              </h3>
-
-              <p class="small">
-                Be the first to start a conversation.
-              </p>
-
-              <button
-                class="btn btn-primary"
-                type="button"
-                id="emptyCreatePost"
-              >
-                Create the first post
-              </button>
-            </section>
-          `
-      }
-
-      <section
-        class="card"
-        style="
-          margin-top:20px;
-          padding:22px;
-        "
-      >
-        <div class="small">
-          QUICK ACCESS
-        </div>
-
-        <div
-          style="
-            display:grid;
-            grid-template-columns:
-              repeat(auto-fit,minmax(150px,1fr));
-            gap:10px;
-            margin-top:12px;
-          "
-        >
-          <button
-            class="btn btn-ghost"
-            type="button"
-            data-quick="post"
-          >
-            ✍️ Post
-          </button>
-
-          <button
-            class="btn btn-ghost"
-            type="button"
-            data-quick="chat"
-          >
-            💬 Chat
-          </button>
-
-          <button
-            class="btn btn-ghost"
-            type="button"
-            data-quick="timetrust"
-          >
-            ⏱️ TimeTrust
-          </button>
-
-          <button
-            class="btn btn-ghost"
-            type="button"
-            data-quick="market"
-          >
-            🛍️ Market
-          </button>
-        </div>
-      </section>
-    </main>
+    </div>
   `;
 }
 
-export function showCreatePost() {
-  const expiryOptions =
-    POST_EXPIRY_OPTIONS.map(
-      option => `
-        <option value="${option.value}">
-          ${escapeHtml(option.label)}
-        </option>
-      `
-    ).join("");
-
-  showModal(
-    "Create Post",
-    `
-      <textarea
-        id="postText"
-        class="textarea"
-        placeholder="Share something with the community…"
-        maxlength="5000"
-        rows="7"
-      ></textarea>
-
-      <div style="height:12px"></div>
-
-      <label class="small" for="postExpiry">
-        Post visibility duration
-      </label>
-
-      <select
-        id="postExpiry"
-        class="input"
-        style="margin-top:6px;"
-      >
-        ${expiryOptions}
-      </select>
-
-      <div style="height:16px"></div>
-
-      <button
-        id="submitPost"
-        class="btn btn-primary btn-block"
-        type="button"
-      >
-        Publish Post
-      </button>
-    `
-  );
+function filterRenderedPosts(value) {
+  const term =
+    String(value || "")
+      .trim()
+      .toLowerCase();
 
   document
-    .getElementById("submitPost")
-    ?.addEventListener(
-      "click",
-      async () => {
-        const input =
-          document.getElementById("postText");
-
-        const expiry =
-          document.getElementById("postExpiry");
-
-        const button =
-          document.getElementById("submitPost");
-
-        if (!input || !button) {
-          return;
-        }
-
+    .querySelectorAll(
+      "[data-post-card]"
+    )
+    .forEach(
+      card => {
         const text =
-          input.value.trim();
+          card.textContent
+            .toLowerCase();
 
-        if (!text) {
-          toast(
-            "Write something before publishing."
-          );
-          return;
-        }
-
-        if (!state.user) {
-          toast(
-            "Please sign in first."
-          );
-          return;
-        }
-
-        button.disabled = true;
-        button.textContent =
-          "Publishing…";
-
-        try {
-          const expiresAt =
-            getPostExpiryDate(
-              expiry?.value || "1d"
-            );
-
-          const postRef =
-            await addDoc(
-              collection(
-                db,
-                "posts"
-              ),
-              {
-                uid:
-                  state.user.uid,
-                username:
-                  getCurrentUserName(),
-                text,
-                likes: 0,
-                comments: 0,
-                likedBy: [],
-                createdAt:
-                  serverTimestamp(),
-                expiresAt
-              }
-            );
-
-          state.posts = [
-            {
-              id: postRef.id,
-              uid: state.user.uid,
-              username:
-                getCurrentUserName(),
-              text,
-              likes: 0,
-              comments: 0,
-              likedBy: [],
-              createdAt: new Date(),
-              expiresAt
-            },
-            ...(Array.isArray(state.posts)
-              ? state.posts
-              : [])
-          ];
-
-          markHomeActivity();
-          closeModal();
-          toast("Post published ✨");
-        } catch (error) {
-          console.error(
-            "Create post failed:",
-            {
-              code: error?.code,
-              error
-            }
-          );
-
-          toast(
-            friendly(error)
-          );
-
-          button.disabled = false;
-          button.textContent =
-            "Publish Post";
-        }
-      }
-    );
-}
-
-export function showEditPost(id) {
-  const post =
-    state.posts.find(
-      item => item.id === id
-    );
-
-  if (!post || !state.user) {
-    return;
-  }
-
-  if (post.uid !== state.user.uid) {
-    toast(
-      "You can only edit your own posts."
-    );
-    return;
-  }
-
-  const expiryOptions =
-    POST_EXPIRY_OPTIONS.map(
-      option => `
-        <option
-          value="${option.value}"
-        >
-          ${escapeHtml(option.label)}
-        </option>
-      `
-    ).join("");
-
-  showModal(
-    "Edit Post",
-    `
-      <textarea
-        id="editPostText"
-        class="textarea"
-        maxlength="5000"
-        rows="7"
-      >${escapeHtml(post.text || "")}</textarea>
-
-      <div style="height:12px"></div>
-
-      <label
-        class="small"
-        for="editPostExpiry"
-      >
-        Post visibility duration
-      </label>
-
-      <select
-        id="editPostExpiry"
-        class="input"
-        style="margin-top:6px;"
-      >
-        ${expiryOptions}
-      </select>
-
-      <div style="height:16px"></div>
-
-      <button
-        id="saveEditedPost"
-        class="btn btn-primary btn-block"
-        type="button"
-      >
-        Save Changes
-      </button>
-    `
-  );
-
-  document
-    .getElementById("saveEditedPost")
-    ?.addEventListener(
-      "click",
-      async () => {
-        const input =
-          document.getElementById(
-            "editPostText"
-          );
-
-        const expiry =
-          document.getElementById(
-            "editPostExpiry"
-          );
-
-        const button =
-          document.getElementById(
-            "saveEditedPost"
-          );
-
-        if (!input || !button) {
-          return;
-        }
-
-        const text =
-          input.value.trim();
-
-        if (!text) {
-          toast(
-            "Post text cannot be empty."
-          );
-          return;
-        }
-
-        button.disabled = true;
-        button.textContent =
-          "Saving…";
-
-        try {
-          const expiresAt =
-            getPostExpiryDate(
-              expiry?.value || "1d"
-            );
-
-          await updateDoc(
-            doc(
-              db,
-              "posts",
-              id
-            ),
-            {
-              text,
-              expiresAt
-            }
-          );
-
-          state.posts =
-            state.posts.map(
-              item =>
-                item.id === id
-                  ? {
-                      ...item,
-                      text,
-                      expiresAt
-                    }
-                  : item
-            );
-
-          markHomeActivity();
-          closeModal();
-          toast(
-            "Post updated."
-          );
-        } catch (error) {
-          console.error(
-            "Edit post failed:",
-            {
-              postId: id,
-              code: error?.code,
-              error
-            }
-          );
-
-          toast(
-            friendly(error)
-          );
-
-          button.disabled = false;
-          button.textContent =
-            "Save Changes";
-        }
-      }
-    );
-}
-
-export function showDeletePostConfirmation(id) {
-  const post =
-    state.posts.find(
-      item => item.id === id
-    );
-
-  if (!post || !state.user) {
-    return;
-  }
-
-  if (post.uid !== state.user.uid) {
-    toast(
-      "You can only delete your own posts."
-    );
-    return;
-  }
-
-  showModal(
-    "Delete Post",
-    `
-      <p>
-        Are you sure you want to delete this post?
-      </p>
-
-      <div
-        style="
-          display:flex;
-          gap:10px;
-          justify-content:flex-end;
-          margin-top:18px;
-        "
-      >
-        <button
-          id="cancelDeletePost"
-          class="btn btn-ghost"
-          type="button"
-        >
-          Cancel
-        </button>
-
-        <button
-          id="confirmDeletePost"
-          class="btn btn-primary"
-          type="button"
-        >
-          Delete
-        </button>
-      </div>
-    `
-  );
-
-  document
-    .getElementById("cancelDeletePost")
-    ?.addEventListener(
-      "click",
-      closeModal
-    );
-
-  document
-    .getElementById("confirmDeletePost")
-    ?.addEventListener(
-      "click",
-      async () => {
-        const button =
-          document.getElementById(
-            "confirmDeletePost"
-          );
-
-        if (button) {
-          button.disabled = true;
-          button.textContent =
-            "Deleting…";
-        }
-
-        try {
-          await deleteDoc(
-            doc(
-              db,
-              "posts",
-              id
-            )
-          );
-
-          state.posts =
-            state.posts.filter(
-              item => item.id !== id
-            );
-
-          closeModal();
-          toast(
-            "Post deleted."
-          );
-        } catch (error) {
-          console.error(
-            "Delete post failed:",
-            {
-              postId: id,
-              code: error?.code,
-              error
-            }
-          );
-
-          toast(
-            friendly(error)
-          );
-
-          if (button) {
-            button.disabled = false;
-            button.textContent =
-              "Delete";
-          }
-        }
+        card.style.display =
+          !term ||
+          text.includes(term)
+            ? ""
+            : "none";
       }
     );
 }
 
 export async function toggleLike(id) {
-  const user = state.user;
-  const post =
-    state.posts.find(
-      item => item.id === id
+  if (!state.user) {
+    toast(
+      "Please sign in to like posts."
     );
+    return;
+  }
+
+  if (!id) {
+    return;
+  }
 
   if (
-    !user ||
-    !post ||
     pendingLikeIds.has(id)
   ) {
     return;
   }
 
-  const liked =
-    Array.isArray(post.likedBy) &&
-    post.likedBy.includes(
-      user.uid
+  const post =
+    state.posts.find(
+      item =>
+        item.id === id
     );
+
+  if (!post) {
+    toast(
+      "This post is no longer available."
+    );
+    return;
+  }
+
+  const liked =
+    isLiked(post);
 
   pendingLikeIds.add(id);
 
@@ -1432,39 +1511,32 @@ export async function toggleLike(id) {
         id
       ),
       {
-        likes:
-          increment(
-            liked ? -1 : 1
-          ),
-        likedBy:
-          liked
-            ? arrayRemove(user.uid)
-            : arrayUnion(user.uid)
+        likes: increment(
+          liked ? -1 : 1
+        ),
+        likedBy: liked
+          ? arrayRemove(
+              state.user.uid
+            )
+          : arrayUnion(
+              state.user.uid
+            )
       }
     );
 
-    const nextLikedBy =
-      liked
-        ? (
-            Array.isArray(
-              post.likedBy
-            )
-              ? post.likedBy.filter(
-                  uid =>
-                    uid !== user.uid
-                )
-              : []
+    const nextLiked =
+      !liked;
+
+    const nextLikes =
+      Math.max(
+        0,
+        getLikeCount(post) +
+          (
+            nextLiked
+              ? 1
+              : -1
           )
-        : Array.from(
-            new Set([
-              ...(Array.isArray(
-                post.likedBy
-              )
-                ? post.likedBy
-                : []),
-              user.uid
-            ])
-          );
+      );
 
     state.posts =
       state.posts.map(
@@ -1473,232 +1545,132 @@ export async function toggleLike(id) {
             ? {
                 ...item,
                 likes:
-                  Math.max(
-                    0,
-                    Number(
-                      item.likes || 0
-                    ) +
-                      (
-                        liked
-                          ? -1
-                          : 1
-                      )
-                  ),
+                  nextLikes,
                 likedBy:
-                  nextLikedBy
+                  nextLiked
+                    ? Array.from(
+                        new Set([
+                          ...(Array.isArray(
+                            item.likedBy
+                          )
+                            ? item.likedBy
+                            : []),
+                          state.user.uid
+                        ])
+                      )
+                    : (
+                        Array.isArray(
+                          item.likedBy
+                        )
+                          ? item.likedBy.filter(
+                              uid =>
+                                uid !==
+                                state.user.uid
+                            )
+                          : []
+                      )
               }
             : item
       );
 
-    updateLikeButton(id);
+    const updatedPost =
+      state.posts.find(
+        item =>
+          item.id === id
+      );
 
     if (
-      !liked &&
-      post.uid &&
-      post.uid !== user.uid
+      updatedPost?.uid &&
+      updatedPost.uid !==
+        state.user.uid &&
+      nextLiked
     ) {
-      addDoc(
-        collection(
-          db,
-          "users",
-          post.uid,
-          "notifications"
-        ),
-        {
-          type: "like",
-          actorUid:
-            user.uid,
-          actorName:
-            getCurrentUserName(),
-          targetId:
-            id,
-          text:
-            `${getCurrentUserName()} liked your post.`,
-          read: false,
-          createdAt:
-            serverTimestamp()
-        }
-      ).catch(
-        notificationError => {
-          console.warn(
-            "Like notification failed",
-            {
-              postId: id,
-              code:
-                notificationError?.code,
-              error:
-                notificationError
-            }
-          );
-        }
-      );
-    }
-  } catch (error) {
-    console.error(
-      "Like operation failed",
-      {
-        operation:
-          liked
-            ? "unlike"
-            : "like",
-        postId:
-          id,
-        path:
-          `posts/${id}`,
-        uid:
-          user.uid,
-        code:
-          error?.code,
-        error
+      try {
+        await addDoc(
+          collection(
+            db,
+            "users",
+            updatedPost.uid,
+            "notifications"
+          ),
+          {
+            type:
+              "like",
+            actorUid:
+              state.user.uid,
+            actorName:
+              getCurrentUserName(),
+            targetId:
+              id,
+            text:
+              `${getCurrentUserName()} liked your post.`,
+            read: false,
+            createdAt:
+              serverTimestamp()
+          }
+        );
+      } catch (
+        notificationError
+      ) {
+        console.warn(
+          "Could not create like notification:",
+          notificationError
+        );
       }
-    );
+    }
 
+    refreshPostCard(
+      id
+    );
+  } catch (error) {
     toast(
       friendly(error)
     );
   } finally {
-    pendingLikeIds.delete(id);
-    updateLikeButton(id);
-  }
-}
-
-function updateLikeButton(id) {
-  const post =
-    state.posts.find(
-      item => item.id === id
+    pendingLikeIds.delete(
+      id
     );
 
-  const button =
-    document.querySelector(
-      `[data-like="${cssEscape(id)}"]`
-    );
-
-  if (!post || !button) {
-    return;
-  }
-
-  const currentUid =
-    state.user?.uid;
-
-  if (!currentUid) {
-    return;
-  }
-
-  const liked =
-    Array.isArray(post.likedBy) &&
-    post.likedBy.includes(
-      currentUid
-    );
-
-  button.classList.toggle(
-    "active",
-    liked
-  );
-
-  button.innerHTML =
-    `${liked ? "❤️" : "♡"} ${Number(
-      post.likes || 0
-    )}`;
-
-  button.disabled =
-    pendingLikeIds.has(id);
-}
-
-async function loadSavedPostIds() {
-  const user = state.user;
-
-  if (!user) {
-    return;
-  }
-
-  if (
-    savedPostsLoadedForUid ===
-    user.uid
-  ) {
-    return;
-  }
-
-  savedPostIds = new Set();
-  savedPostsLoadedForUid =
-    user.uid;
-
-  try {
-    const snap =
-      await getDocs(
-        collection(
-          db,
-          "users",
-          user.uid,
-          "savedPosts"
-        )
-      );
-
-    snap.forEach(
-      savedDoc => {
-        savedPostIds.add(
-          savedDoc.id
-        );
-      }
-    );
-
-    if (
-      state.page === "home"
-    ) {
-      const posts =
-        Array.isArray(
-          state.posts
-        )
-          ? state.posts
-          : [];
-
-      posts.forEach(
-        post =>
-          updateSaveButton(
-            post.id
-          )
-      );
+    if (button) {
+      button.disabled =
+        false;
     }
-  } catch (error) {
-    console.error(
-      "Saved posts load failed",
-      {
-        path:
-          `users/${user.uid}/savedPosts`,
-        uid:
-          user.uid,
-        code:
-          error?.code,
-        error
-      }
-    );
   }
 }
 
 export async function savePost(id) {
-  const user = state.user;
-  const post =
-    state.posts.find(
-      item => item.id === id
+  if (!state.user) {
+    toast(
+      "Please sign in to save posts."
     );
+    return;
+  }
+
+  if (!id) {
+    return;
+  }
 
   if (
-    !user ||
-    !post ||
     pendingSaveIds.has(id)
   ) {
     return;
   }
 
-  const saved =
-    savedPostIds.has(id) ||
-    (
-      Array.isArray(
-        post.savedBy
-      ) &&
-      post.savedBy.includes(
-        user.uid
-      )
+  const post =
+    state.posts.find(
+      item =>
+        item.id === id
     );
+
+  if (!post) {
+    toast(
+      "This post is no longer available."
+    );
+    return;
+  }
+
+  const saved =
+    isSaved(post);
 
   pendingSaveIds.add(id);
 
@@ -1716,7 +1688,7 @@ export async function savePost(id) {
       doc(
         db,
         "users",
-        user.uid,
+        state.user.uid,
         "savedPosts",
         id
       );
@@ -1726,198 +1698,1038 @@ export async function savePost(id) {
         savedRef
       );
 
-      savedPostIds.delete(id);
+      savedPostIds.delete(
+        id
+      );
+
+      state.posts =
+        state.posts.map(
+          item =>
+            item.id === id
+              ? {
+                  ...item,
+                  savedBy:
+                    Array.isArray(
+                      item.savedBy
+                    )
+                      ? item.savedBy.filter(
+                          uid =>
+                            uid !==
+                            state.user.uid
+                        )
+                      : []
+                }
+              : item
+        );
+
+      toast(
+        "Post removed from Saved."
+      );
     } else {
       await setDoc(
         savedRef,
         {
-          postId:
-            id,
+          postId: id,
           uid:
-            user.uid,
+            state.user.uid,
           createdAt:
             serverTimestamp()
         }
       );
 
-      savedPostIds.add(id);
+      savedPostIds.add(
+        id
+      );
+
+      state.posts =
+        state.posts.map(
+          item =>
+            item.id === id
+              ? {
+                  ...item,
+                  savedBy:
+                    Array.from(
+                      new Set([
+                        ...(Array.isArray(
+                          item.savedBy
+                        )
+                          ? item.savedBy
+                          : []),
+                        state.user.uid
+                      ])
+                    )
+                }
+              : item
+        );
+
+      toast(
+        "Post saved 🔖"
+      );
     }
 
-    updateSaveButton(id);
+    savedPostsLoadedForUid =
+      state.user.uid;
 
-    markHomeActivity();
-
-    toast(
-      saved
-        ? "Removed from saved posts."
-        : "Saved to your vault 🔖"
+    refreshPostCard(
+      id
     );
   } catch (error) {
-    console.error(
-      "Save operation failed",
-      {
-        operation:
-          saved
-            ? "unsave"
-            : "save",
-        postId:
-          id,
-        path:
-          `users/${user.uid}/savedPosts/${id}`,
-        uid:
-          user.uid,
-        code:
-          error?.code,
-        error
-      }
-    );
-
     toast(
       friendly(error)
     );
   } finally {
-    pendingSaveIds.delete(id);
-    updateSaveButton(id);
+    pendingSaveIds.delete(
+      id
+    );
+
+    if (button) {
+      button.disabled =
+        false;
+    }
   }
 }
 
-function updateSaveButton(id) {
-  const button =
-    document.querySelector(
-      `[data-save="${cssEscape(id)}"]`
+function refreshPostCard(id) {
+  const post =
+    state.posts.find(
+      item =>
+        item.id === id
     );
 
-  if (!button) {
+  const card =
+    document.querySelector(
+      `[data-post-card="${cssEscape(id)}"]`
+    );
+
+  if (!post || !card) {
     return;
   }
 
-  const saved =
-    savedPostIds.has(id);
+  const replacement =
+    document.createElement(
+      "div"
+    );
 
-  button.classList.toggle(
-    "active",
-    saved
+  replacement.innerHTML =
+    renderPost(post);
+
+  const nextCard =
+    replacement.firstElementChild;
+
+  if (!nextCard) {
+    return;
+  }
+
+  card.replaceWith(
+    nextCard
   );
 
-  button.textContent =
-    saved
-      ? "🔖 Saved"
-      : "🔖 Save";
-
-  button.disabled =
-    pendingSaveIds.has(id);
+  attachSinglePostEvents(
+    nextCard
+  );
 }
 
-export async function sharePost(id) {
+function attachSinglePostEvents(
+  root
+) {
+  root
+    .querySelectorAll(
+      "[data-like]"
+    )
+    .forEach(
+      button => {
+        button.addEventListener(
+          "click",
+          () => {
+            toggleLike(
+              button.dataset.like
+            );
+          }
+        );
+      }
+    );
+
+  root
+    .querySelectorAll(
+      "[data-save]"
+    )
+    .forEach(
+      button => {
+        button.addEventListener(
+          "click",
+          () => {
+            savePost(
+              button.dataset.save
+            );
+          }
+        );
+      }
+    );
+
+  root
+    .querySelectorAll(
+      "[data-share]"
+    )
+    .forEach(
+      button => {
+        button.addEventListener(
+          "click",
+          () => {
+            sharePost(
+              button.dataset.share
+            );
+          }
+        );
+      }
+    );
+
+  root
+    .querySelectorAll(
+      "[data-comment]"
+    )
+    .forEach(
+      button => {
+        button.addEventListener(
+          "click",
+          () => {
+            showComments(
+              button.dataset.comment
+            );
+          }
+        );
+      }
+    );
+
+  root
+    .querySelectorAll(
+      "[data-edit-post]"
+    )
+    .forEach(
+      button => {
+        button.addEventListener(
+          "click",
+          event => {
+            event.stopPropagation();
+
+            showEditPost(
+              button.dataset.editPost
+            );
+          }
+        );
+      }
+    );
+
+  root
+    .querySelectorAll(
+      "[data-delete-post]"
+    )
+    .forEach(
+      button => {
+        button.addEventListener(
+          "click",
+          event => {
+            event.stopPropagation();
+
+            showDeletePostConfirmation(
+              button.dataset.deletePost
+            );
+          }
+        );
+      }
+    );
+
+  root
+    .querySelectorAll(
+      "[data-menu-post]"
+    )
+    .forEach(
+      button => {
+        button.addEventListener(
+          "click",
+          event => {
+            event.stopPropagation();
+
+            const id =
+              button.dataset.menuPost;
+
+            const menu =
+              document.getElementById(
+                `postMenu-${id}`
+              );
+
+            if (!menu) {
+              return;
+            }
+
+            document
+              .querySelectorAll(
+                ".dropdown-menu"
+              )
+              .forEach(
+                other => {
+                  if (
+                    other !==
+                    menu
+                  ) {
+                    other.classList.add(
+                      "hidden"
+                    );
+                  }
+                }
+              );
+
+            menu.classList.toggle(
+              "hidden"
+            );
+          }
+        );
+      }
+    );
+}
+
+export function showCreatePost() {
+  if (!state.user) {
+    toast(
+      "Please sign in to create a post."
+    );
+    return;
+  }
+
+  showModal(
+    `
+      <div class="modal-header">
+        <h2>Create Post</h2>
+
+        <button
+          class="icon-btn"
+          type="button"
+          data-close-modal
+          aria-label="Close"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <label
+          class="label"
+          for="postText"
+        >
+          What would you like to share?
+        </label>
+
+        <textarea
+          id="postText"
+          class="input"
+          rows="7"
+          maxlength="5000"
+          placeholder="Share something with the community..."
+        ></textarea>
+
+        <label
+          class="label"
+          for="postExpiry"
+          style="
+            margin-top:14px;
+          "
+        >
+          Post duration
+        </label>
+
+        <select
+          id="postExpiry"
+          class="input"
+        >
+          <option value="12h">
+            12 hours
+          </option>
+
+          <option
+            value="1d"
+            selected
+          >
+            1 day
+          </option>
+
+          <option value="7d">
+            1 week
+          </option>
+
+          <option value="30d">
+            30 days
+          </option>
+        </select>
+
+        <div
+          style="
+            display:flex;
+            gap:10px;
+            justify-content:flex-end;
+            margin-top:18px;
+          "
+        >
+          <button
+            class="btn btn-ghost"
+            type="button"
+            data-close-modal
+          >
+            Cancel
+          </button>
+
+          <button
+            class="btn btn-primary"
+            id="publishPostBtn"
+            type="button"
+          >
+            Publish
+          </button>
+        </div>
+      </div>
+    `
+  );
+
+  document
+    .querySelectorAll(
+      "[data-close-modal]"
+    )
+    .forEach(
+      button => {
+        button.addEventListener(
+          "click",
+          closeModal
+        );
+      }
+    );
+
+  document
+    .getElementById(
+      "publishPostBtn"
+    )
+    ?.addEventListener(
+      "click",
+      async () => {
+        const textInput =
+          document.getElementById(
+            "postText"
+          );
+
+        const expiryInput =
+          document.getElementById(
+            "postExpiry"
+          );
+
+        const button =
+          document.getElementById(
+            "publishPostBtn"
+          );
+
+        const text =
+          textInput?.value
+            ?.trim() || "";
+
+        if (!text) {
+          toast(
+            "Write something first."
+          );
+          return;
+        }
+
+        if (
+          text.length >
+          5000
+        ) {
+          toast(
+            "Your post is too long."
+          );
+          return;
+        }
+
+        if (button) {
+          button.disabled = true;
+          button.textContent =
+            "Publishing…";
+        }
+
+        try {
+          const expiryDate =
+            getPostExpiryDate(
+              expiryInput?.value
+            );
+
+          await addDoc(
+            collection(
+              db,
+              "posts"
+            ),
+            {
+              uid:
+                state.user.uid,
+              username:
+                getCurrentUserName(),
+              text,
+              likes: 0,
+              comments: 0,
+              likedBy: [],
+              createdAt:
+                serverTimestamp(),
+              ...(expiryDate
+                ? {
+                    expiresAt:
+                      Timestamp.fromDate(
+                        expiryDate
+                      )
+                  }
+                : {})
+            }
+          );
+
+          closeModal();
+
+          toast(
+            "Post published 🎉"
+          );
+        } catch (error) {
+          toast(
+            friendly(error)
+          );
+
+          if (button) {
+            button.disabled =
+              false;
+
+            button.textContent =
+              "Publish";
+          }
+        }
+      }
+    );
+}
+
+export function showEditPost(id) {
+  if (!state.user) {
+    toast(
+      "Please sign in first."
+    );
+    return;
+  }
+
   const post =
     state.posts.find(
-      item => item.id === id
+      item =>
+        item.id === id
     );
 
   if (!post) {
+    toast(
+      "Post not found."
+    );
+    return;
+  }
+
+  if (
+    post.uid !==
+    state.user.uid
+  ) {
+    toast(
+      "You can only edit your own posts."
+    );
+    return;
+  }
+
+  showModal(
+    `
+      <div class="modal-header">
+        <h2>Edit Post</h2>
+
+        <button
+          class="icon-btn"
+          type="button"
+          data-close-modal
+          aria-label="Close"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <label
+          class="label"
+          for="editPostText"
+        >
+          Post
+        </label>
+
+        <textarea
+          id="editPostText"
+          class="input"
+          rows="7"
+          maxlength="5000"
+        >${escapeHtml(
+          post.text ||
+          post.content ||
+          ""
+        )}</textarea>
+
+        <div
+          style="
+            display:flex;
+            gap:10px;
+            justify-content:flex-end;
+            margin-top:18px;
+          "
+        >
+          <button
+            class="btn btn-ghost"
+            type="button"
+            data-close-modal
+          >
+            Cancel
+          </button>
+
+          <button
+            class="btn btn-primary"
+            id="saveEditedPostBtn"
+            type="button"
+          >
+            Save Changes
+          </button>
+        </div>
+      </div>
+    `
+  );
+
+  document
+    .querySelectorAll(
+      "[data-close-modal]"
+    )
+    .forEach(
+      button => {
+        button.addEventListener(
+          "click",
+          closeModal
+        );
+      }
+    );
+
+  document
+    .getElementById(
+      "saveEditedPostBtn"
+    )
+    ?.addEventListener(
+      "click",
+      async () => {
+        const input =
+          document.getElementById(
+            "editPostText"
+          );
+
+        const button =
+          document.getElementById(
+            "saveEditedPostBtn"
+          );
+
+        const text =
+          input?.value
+            ?.trim() || "";
+
+        if (!text) {
+          toast(
+            "Write something first."
+          );
+          return;
+        }
+
+        if (
+          text.length >
+          5000
+        ) {
+          toast(
+            "Your post is too long."
+          );
+          return;
+        }
+
+        if (button) {
+          button.disabled = true;
+          button.textContent =
+            "Saving…";
+        }
+
+        try {
+          await updateDoc(
+            doc(
+              db,
+              "posts",
+              id
+            ),
+            {
+              text,
+              updatedAt:
+                serverTimestamp()
+            }
+          );
+
+          state.posts =
+            state.posts.map(
+              item =>
+                item.id === id
+                  ? {
+                      ...item,
+                      text
+                    }
+                  : item
+            );
+
+          closeModal();
+
+          refreshPostCard(
+            id
+          );
+
+          toast(
+            "Post updated."
+          );
+        } catch (error) {
+          toast(
+            friendly(error)
+          );
+
+          if (button) {
+            button.disabled =
+              false;
+
+            button.textContent =
+              "Save Changes";
+          }
+        }
+      }
+    );
+}
+
+export function showDeletePostConfirmation(
+  id
+) {
+  if (!state.user) {
+    toast(
+      "Please sign in first."
+    );
+    return;
+  }
+
+  const post =
+    state.posts.find(
+      item =>
+        item.id === id
+    );
+
+  if (!post) {
+    toast(
+      "Post not found."
+    );
+    return;
+  }
+
+  if (
+    post.uid !==
+    state.user.uid
+  ) {
+    toast(
+      "You can only delete your own posts."
+    );
+    return;
+  }
+
+  showModal(
+    `
+      <div class="modal-header">
+        <h2>Delete Post?</h2>
+
+        <button
+          class="icon-btn"
+          type="button"
+          data-close-modal
+          aria-label="Close"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <p>
+          This will permanently remove your post.
+        </p>
+
+        <div
+          style="
+            display:flex;
+            gap:10px;
+            justify-content:flex-end;
+            margin-top:18px;
+          "
+        >
+          <button
+            class="btn btn-ghost"
+            type="button"
+            data-close-modal
+          >
+            Cancel
+          </button>
+
+          <button
+            class="btn btn-primary"
+            id="confirmDeletePostBtn"
+            type="button"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    `
+  );
+
+  document
+    .querySelectorAll(
+      "[data-close-modal]"
+    )
+    .forEach(
+      button => {
+        button.addEventListener(
+          "click",
+          closeModal
+        );
+      }
+    );
+
+  document
+    .getElementById(
+      "confirmDeletePostBtn"
+    )
+    ?.addEventListener(
+      "click",
+      async () => {
+        const button =
+          document.getElementById(
+            "confirmDeletePostBtn"
+          );
+
+        if (button) {
+          button.disabled =
+            true;
+
+          button.textContent =
+            "Deleting…";
+        }
+
+        try {
+          await deleteDoc(
+            doc(
+              db,
+              "posts",
+              id
+            )
+          );
+
+          state.posts =
+            state.posts.filter(
+              item =>
+                item.id !== id
+            );
+
+          savedPostIds.delete(
+            id
+          );
+
+          closeModal();
+
+          document
+            .querySelector(
+              `[data-post-card="${cssEscape(id)}"]`
+            )
+            ?.remove();
+
+          toast(
+            "Post deleted."
+          );
+        } catch (error) {
+          toast(
+            friendly(error)
+          );
+
+          if (button) {
+            button.disabled =
+              false;
+
+            button.textContent =
+              "Delete";
+          }
+        }
+      }
+    );
+}
+
+export async function sharePost(
+  id
+) {
+  const post =
+    state.posts.find(
+      item =>
+        item.id === id
+    );
+
+  if (!post) {
+    toast(
+      "Post not found."
+    );
     return;
   }
 
   const text =
-    `${post.username || "User"}: ${post.text || ""}`;
+    post.text ||
+    post.content ||
+    "";
+
+  const shareData = {
+    title:
+      "Marvel Chat",
+    text:
+      `${getCurrentUserName()} shared a post on Marvel Chat: ${text}`
+  };
 
   try {
     if (
-      navigator.share &&
-      typeof navigator.share ===
-        "function"
+      navigator.share
     ) {
-      await navigator.share({
-        title:
-          "MARVEL CHAT",
-        text
-      });
-    } else if (
-      navigator.clipboard &&
-      typeof navigator.clipboard.writeText ===
-        "function"
+      await navigator.share(
+        shareData
+      );
+      return;
+    }
+
+    const fallback =
+      `${shareData.title}: ${shareData.text}`;
+
+    if (
+      navigator.clipboard
+        ?.writeText
     ) {
       await navigator.clipboard.writeText(
-        text
+        fallback
       );
 
       toast(
-        "Post copied to clipboard 📋"
+        "Post text copied."
       );
-    } else {
-      toast(
-        "Sharing is not available on this device."
-      );
+
+      return;
     }
 
-    markHomeActivity();
-  } catch (e) {
+    toast(
+      "Sharing is not available on this device."
+    );
+  } catch (error) {
     if (
-      e?.name !==
+      error?.name ===
       "AbortError"
     ) {
-      toast(
-        "Could not share this post."
-      );
+      return;
     }
+
+    toast(
+      friendly(error)
+    );
   }
 }
 
-function openYouTubeLiveSearch() {
-  const queryText =
-    "YouTube Live community";
-
-  const url =
-    `https://www.youtube.com/results?search_query=${encodeURIComponent(
-      queryText
-    )}&sp=EgJAAQ%253D%253D`;
-
-  window.open(
-    url,
-    "_blank",
-    "noopener,noreferrer"
-  );
-}
-
-export async function showComments(id) {
+export async function showComments(
+  id
+) {
   const post =
     state.posts.find(
-      item => item.id === id
+      item =>
+        item.id === id
     );
 
   showModal(
-    "Comments",
     `
-      <div
-        id="commentsList"
-        class="list"
-      >
-        <div class="empty">
-          Loading comments…
-        </div>
+      <div class="modal-header">
+        <h2>Comments</h2>
+
+        <button
+          class="icon-btn"
+          type="button"
+          data-close-modal
+          aria-label="Close"
+        >
+          ✕
+        </button>
       </div>
 
-      <div style="height:14px"></div>
+      <div class="modal-body">
+        <div
+          id="commentsList"
+          class="list"
+        >
+          Loading comments…
+        </div>
 
-      <textarea
-        class="textarea"
-        id="commentText"
-        placeholder="Write a comment…"
-      ></textarea>
+        ${
+          state.user
+            ? `
+              <div
+                style="
+                  margin-top:18px;
+                "
+              >
+                <textarea
+                  id="commentText"
+                  class="input"
+                  rows="4"
+                  maxlength="2000"
+                  placeholder="Write a comment..."
+                ></textarea>
 
-      <button
-        class="btn btn-primary btn-block"
-        id="addComment"
-        style="margin-top:8px"
-        type="button"
-      >
-        Add comment
-      </button>
+                <button
+                  class="btn btn-primary"
+                  id="addComment"
+                  type="button"
+                  style="
+                    margin-top:10px;
+                  "
+                >
+                  Add comment
+                </button>
+              </div>
+            `
+            : `
+              <div
+                class="notice"
+                style="
+                  margin-top:18px;
+                "
+              >
+                Sign in to join the conversation.
+              </div>
+            `
+        }
+      </div>
     `
   );
 
+  document
+    .querySelectorAll(
+      "[data-close-modal]"
+    )
+    .forEach(
+      button => {
+        button.addEventListener(
+          "click",
+          closeModal
+        );
+      }
+    );
+
   try {
-    const snap =
+    const snapshot =
       await getDocs(
         query(
           collection(
@@ -1930,16 +2742,16 @@ export async function showComments(id) {
             "createdAt",
             "asc"
           ),
-          limit(50)
+          limit(100)
         )
       );
 
     const comments =
-      snap.docs.map(
-        d => ({
+      snapshot.docs.map(
+        item => ({
           id:
-            d.id,
-          ...d.data()
+            item.id,
+          ...item.data()
         })
       );
 
@@ -1949,28 +2761,22 @@ export async function showComments(id) {
       );
 
     if (list) {
-      list.className =
-        comments.length
-          ? "list"
-          : "empty";
-
       list.innerHTML =
         comments.length
           ? comments
               .map(
-                c => `
+                comment => `
                   <div class="list-item">
-
                     <strong>
                       ${escapeHtml(
-                        c.username ||
+                        comment.username ||
                         "User"
                       )}
                     </strong>
 
                     <div>
                       ${escapeHtml(
-                        c.text ||
+                        comment.text ||
                         ""
                       )}
                     </div>
@@ -1978,18 +2784,17 @@ export async function showComments(id) {
                     <div class="small">
                       ${escapeHtml(
                         formatDate(
-                          c.createdAt
+                          comment.createdAt
                         )
                       )}
                     </div>
-
                   </div>
                 `
               )
               .join("")
           : "No comments yet. Start the conversation.";
     }
-  } catch (e) {
+  } catch (error) {
     const list =
       document.getElementById(
         "commentsList"
@@ -1998,13 +2803,15 @@ export async function showComments(id) {
     if (list) {
       list.innerHTML =
         `<div class="status error">${escapeHtml(
-          friendly(e)
+          friendly(error)
         )}</div>`;
     }
   }
 
   document
-    .getElementById("addComment")
+    .getElementById(
+      "addComment"
+    )
     ?.addEventListener(
       "click",
       async () => {
@@ -2034,14 +2841,16 @@ export async function showComments(id) {
           return;
         }
 
-        const btn =
+        const button =
           document.getElementById(
             "addComment"
           );
 
-        if (btn) {
-          btn.disabled = true;
-          btn.textContent =
+        if (button) {
+          button.disabled =
+            true;
+
+          button.textContent =
             "Adding…";
         }
 
@@ -2103,20 +2912,24 @@ export async function showComments(id) {
                     id,
                   text:
                     `${actorName} commented on your post.`,
-                  read: false,
+                  read:
+                    false,
                   createdAt:
                     serverTimestamp()
                 }
               );
-            } catch (notifErr) {
+            } catch (
+              notificationError
+            ) {
               console.warn(
                 "Could not create comment notification:",
-                notifErr
+                notificationError
               );
             }
           }
 
-          input.value = "";
+          input.value =
+            "";
 
           markHomeActivity();
 
@@ -2127,20 +2940,77 @@ export async function showComments(id) {
           await showComments(
             id
           );
-        } catch (e) {
+        } catch (error) {
           toast(
-            friendly(e)
+            friendly(error)
           );
 
-          if (btn) {
-            btn.disabled =
+          if (button) {
+            button.disabled =
               false;
-            btn.textContent =
+
+            button.textContent =
               "Add comment";
           }
         }
       }
     );
+}
+
+function openYouTubeLiveSearch() {
+  const url =
+    "https://www.youtube.com/results?search_query=live";
+
+  try {
+    window.open(
+      url,
+      "_blank",
+      "noopener,noreferrer"
+    );
+  } catch {
+    window.location.href =
+      url;
+  }
+}
+
+async function cleanupExpiredPosts() {
+  if (!state.user) {
+    return;
+  }
+
+  const expired =
+    state.posts.filter(
+      post =>
+        post.uid ===
+          state.user.uid &&
+        isPostExpired(post)
+    );
+
+  for (
+    const post of expired
+  ) {
+    try {
+      await deleteDoc(
+        doc(
+          db,
+          "posts",
+          post.id
+        )
+      );
+
+      state.posts =
+        state.posts.filter(
+          item =>
+            item.id !==
+            post.id
+        );
+    } catch (error) {
+      console.warn(
+        "Could not clean up expired post:",
+        error
+      );
+    }
+  }
 }
 
 export function attachHomeEvents(
@@ -2158,7 +3028,9 @@ export function attachHomeEvents(
   loadSavedPostIds();
 
   document
-    .getElementById("discoveryClose")
+    .getElementById(
+      "discoveryClose"
+    )
     ?.addEventListener(
       "click",
       () => {
@@ -2197,7 +3069,8 @@ export function attachHomeEvents(
             markHomeActivity();
 
             const action =
-              button.dataset.quick;
+              button.dataset
+                .quick;
 
             if (
               action ===
@@ -2210,6 +3083,7 @@ export function attachHomeEvents(
             ) {
               state.page =
                 "chat";
+
               renderApp();
             } else if (
               action ===
@@ -2217,6 +3091,7 @@ export function attachHomeEvents(
             ) {
               state.page =
                 "timetrust";
+
               renderApp();
             } else if (
               action ===
@@ -2224,8 +3099,10 @@ export function attachHomeEvents(
             ) {
               state.marketBrowseMode =
                 false;
+
               state.page =
                 "market";
+
               renderApp();
             }
           }
@@ -2256,6 +3133,7 @@ export function attachHomeEvents(
       "click",
       () => {
         markHomeActivity();
+
         openYouTubeLiveSearch();
       }
     );
