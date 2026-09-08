@@ -18,6 +18,7 @@ import {
   increment,
   arrayUnion,
   arrayRemove,
+  Timestamp,
   enableMultiTabIndexedDbPersistence
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
@@ -33,12 +34,11 @@ import {
  * by the application to remain available locally when the
  * device temporarily loses internet connectivity.
  *
- * Multi-tab persistence is used so Marvel Chat can safely
- * share the Firestore persistence cache between tabs/windows
- * where the browser supports it.
+ * Multi-tab persistence allows Marvel Chat to share the
+ * Firestore persistence cache between supported tabs/windows.
  *
- * If the browser does not support persistence, or another
- * Firestore client already owns the persistence lease,
+ * Persistence is optional. If the browser does not support
+ * it, or another Firestore client already owns the lease,
  * the application continues normally.
  */
 
@@ -53,14 +53,12 @@ enableMultiTabIndexedDbPersistence(db)
   .catch(error => {
 
     /*
-     * failed-precondition:
-     * Another tab/window may already be using the
-     * persistence lease.
+     * Another tab/window may already own
+     * the persistence lease.
      */
 
     if (
-      error?.code ===
-      "failed-precondition"
+      error?.code === "failed-precondition"
     ) {
 
       console.warn(
@@ -72,14 +70,12 @@ enableMultiTabIndexedDbPersistence(db)
 
 
     /*
-     * unimplemented:
-     * The current browser/device does not support
+     * The browser/device does not support
      * the required IndexedDB functionality.
      */
 
     if (
-      error?.code ===
-      "unimplemented"
+      error?.code === "unimplemented"
     ) {
 
       console.warn(
@@ -91,8 +87,8 @@ enableMultiTabIndexedDbPersistence(db)
 
 
     /*
-     * Any other persistence problem should not stop
-     * the application from starting.
+     * Persistence must never prevent Marvel Chat
+     * from starting.
      */
 
     console.warn(
@@ -104,26 +100,50 @@ enableMultiTabIndexedDbPersistence(db)
 
 
 /* =========================================================
-   EXISTING FIRESTORE EXPORTS
+   FIRESTORE EXPORTS
    ========================================================= */
+
+/*
+ * Keep this file as the central Firestore API wrapper
+ * used by the rest of Marvel Chat V2.
+ *
+ * IMPORTANT:
+ * Do not import Firebase Firestore directly inside feature
+ * modules when an existing wrapper export is available.
+ */
 
 export {
   db,
+
+  // References
   collection,
   doc,
+
+  // Reads
   getDoc,
+  getDocs,
+
+  // Writes
   setDoc,
   updateDoc,
   addDoc,
   deleteDoc,
+
+  // Queries
   query,
   where,
   orderBy,
   limit,
-  getDocs,
+
+  // Realtime
   onSnapshot,
+
+  // Field/server helpers
   serverTimestamp,
   increment,
   arrayUnion,
-  arrayRemove
+  arrayRemove,
+
+  // Timestamp support
+  Timestamp
 };
