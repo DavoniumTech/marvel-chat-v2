@@ -1389,7 +1389,6 @@ function renderForgotPassword() {
         </div>`;
 
       return;
-
     }
 
 
@@ -1506,6 +1505,7 @@ function renderLegalPage(
           Information We Collect
         </h3>
 
+
         <p>
           Depending on the features you use,
           Marvel Chat may store information you
@@ -1520,6 +1520,7 @@ function renderLegalPage(
           How Information Is Used
         </h3>
 
+
         <p>
           We use account and application information
           to provide authentication, profiles,
@@ -1533,6 +1534,7 @@ function renderLegalPage(
           Firebase
         </h3>
 
+
         <p>
           Marvel Chat uses Firebase services for
           authentication and application data.
@@ -1545,6 +1547,7 @@ function renderLegalPage(
         <h3>
           Marketplace Information
         </h3>
+
 
         <p>
           If you create a Market listing,
@@ -1562,6 +1565,7 @@ function renderLegalPage(
           Your Responsibility
         </h3>
 
+
         <p>
           Keep your password and private credentials
           confidential.
@@ -1574,6 +1578,7 @@ function renderLegalPage(
         <h3>
           Data and Policy Updates
         </h3>
+
 
         <p>
           Marvel Chat may update its privacy
@@ -1613,6 +1618,7 @@ function renderLegalPage(
           Community Conduct
         </h3>
 
+
         <p>
           Do not use Marvel Chat to harass,
           threaten, deceive, impersonate, abuse,
@@ -1623,6 +1629,7 @@ function renderLegalPage(
         <h3>
           Your Account
         </h3>
+
 
         <p>
           You are responsible for protecting your
@@ -1638,6 +1645,7 @@ function renderLegalPage(
           User Content
         </h3>
 
+
         <p>
           You are responsible for content you
           create, publish, send or share through
@@ -1652,6 +1660,7 @@ function renderLegalPage(
         <h3>
           Market
         </h3>
+
 
         <p>
           Market listings must be truthful and
@@ -1671,6 +1680,7 @@ function renderLegalPage(
           Service Changes
         </h3>
 
+
         <p>
           Marvel Chat may be improved, changed,
           expanded or temporarily unavailable as
@@ -1682,6 +1692,7 @@ function renderLegalPage(
         <h3>
           Responsible Use
         </h3>
+
 
         <p>
           Use Marvel Chat in accordance with
@@ -1722,6 +1733,7 @@ function renderLegalPage(
           Built By
         </h3>
 
+
         <p>
           <strong>
             Davonium Technologies
@@ -1739,6 +1751,7 @@ function renderLegalPage(
         <h3>
           Contact & Support
         </h3>
+
 
         <p>
           For questions, feedback, bug reports,
@@ -1759,6 +1772,7 @@ function renderLegalPage(
         <h3>
           Copyright
         </h3>
+
 
         <p>
           © ${new Date().getFullYear()}
@@ -2659,11 +2673,11 @@ async function startApplication(
     );
 
 
-    subscribeForPage(
-      state.page,
-      renderApp
-    );
-
+    /*
+     * renderApp() owns page-scoped listener subscription.
+     * Do not subscribe here as well; keeping a single subscription
+     * entry point avoids unnecessary listener work at startup.
+     */
 
     renderApp();
 
