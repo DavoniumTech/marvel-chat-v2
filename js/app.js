@@ -37,7 +37,7 @@ import {
   savePost,
   sharePost,
   showComments,
-  dismissDiscovery
+  attachHomeEvents
 } from "./features /home.js";
 
 import {
@@ -54,14 +54,11 @@ import {
 
 import {
   renderMarket,
-  showSellModal,
   attachMarketEvents
 } from "./features /market.js";
 
 import {
   renderProfile,
-  showEditProfile,
-  showSaved,
   attachProfileEvents
 } from "./features /profile.js";
 
@@ -79,7 +76,6 @@ import {
 
 import {
   renderTimeTrust,
-  showSkillModal,
   attachTimeTrustEvents
 } from "./features /timetrust.js";
 
@@ -94,19 +90,40 @@ const root =
   );
 
 
+/* =========================================================
+   MAIN APPLICATION RENDERER
+   ========================================================= */
+
 export function renderApp() {
 
   applyTheme();
 
+
+  /*
+   * AUTHENTICATION GATE
+   */
+
   if (!state.user) {
+
     renderAuth();
+
     return;
+
   }
 
+
+  /*
+   * ONBOARDING GATE
+   */
+
   if (!state.profile?.country) {
+
     renderOnboarding();
+
     return;
+
   }
+
 
   /*
    * PAGE-SCOPED FIRESTORE LISTENERS
@@ -115,13 +132,18 @@ export function renderApp() {
    * is subscribed to.
    *
    * subscribeForPage() is idempotent, so repeated
-   * renderApp() calls do NOT create duplicate listeners.
+   * renderApp() calls do not create duplicate listeners.
    */
+
   subscribeForPage(
     state.page,
     renderApp
   );
 
+
+  /*
+   * PAGE RENDER MAP
+   */
 
   const pages = {
 
@@ -157,9 +179,18 @@ export function renderApp() {
     pages[state.page] ||
     pages.home;
 
+
+  /*
+   * CHAT FULLSCREEN MODE
+   *
+   * When an active conversation is open,
+   * Chat becomes the entire application viewport.
+   */
+
   const chatFullscreen =
     state.page === "chat" &&
     !!state.activeConversation;
+
 
   const chatUnread =
     totalUnreadCount();
@@ -204,6 +235,8 @@ export function renderApp() {
             class="icon-btn"
             id="searchBtn"
             title="Search"
+            aria-label="Search"
+            type="button"
           >
             ⌕
           </button>
@@ -213,6 +246,8 @@ export function renderApp() {
             class="icon-btn"
             id="notificationBtn"
             title="Notifications"
+            aria-label="Notifications"
+            type="button"
             style="position:relative;"
           >
 
@@ -251,6 +286,8 @@ export function renderApp() {
             class="icon-btn"
             id="themeBtn"
             title="Theme"
+            aria-label="Toggle theme"
+            type="button"
           >
             ${
               state.theme === "dark"
@@ -326,15 +363,23 @@ export function renderApp() {
   `;
 
 
+  /*
+   * GLOBAL SEARCH
+   */
+
   document
     .getElementById(
       "searchBtn"
     )
     ?.addEventListener(
       "click",
-      showSearch
+      () => showSearch(renderApp)
     );
 
+
+  /*
+   * NOTIFICATIONS
+   */
 
   document
     .getElementById(
@@ -342,9 +387,13 @@ export function renderApp() {
     )
     ?.addEventListener(
       "click",
-      showNotifications
+      () => showNotifications(renderApp)
     );
 
+
+  /*
+   * THEME
+   */
 
   document
     .getElementById(
@@ -359,16 +408,28 @@ export function renderApp() {
             ? "light"
             : "dark";
 
-        localStorage.setItem(
-          "marvel_theme",
-          state.theme
-        );
+
+        try {
+
+          localStorage.setItem(
+            "marvel_theme",
+            state.theme
+          );
+
+        } catch {
+          /* Ignore storage errors. */
+        }
+
 
         renderApp();
 
       }
     );
 
+
+  /*
+   * BOTTOM NAVIGATION
+   */
 
   document
     .querySelectorAll(
@@ -381,9 +442,25 @@ export function renderApp() {
           "click",
           () => {
 
-            state.page =
+            const nextPage =
               btn.dataset.nav;
 
+
+            if (
+              !nextPage
+            ) {
+              return;
+            }
+
+
+            state.page =
+              nextPage;
+
+
+            /*
+             * If leaving an active conversation,
+             * clean up only the message listener/state.
+             */
 
             if (
               state.page !== "chat" &&
@@ -413,10 +490,18 @@ export function renderApp() {
     );
 
 
+  /*
+   * PAGE-SPECIFIC EVENTS
+   */
+
   attachEvents();
 
 }
 
+
+/* =========================================================
+   BOTTOM NAVIGATION BUTTON
+   ========================================================= */
 
 function navButton(
   page,
@@ -428,6 +513,7 @@ function navButton(
   const count =
     Number(badgeCount) || 0;
 
+
   return `
     <button
       class="nav-btn ${
@@ -436,6 +522,7 @@ function navButton(
           : ""
       }"
       data-nav="${page}"
+      type="button"
       style="position:relative;"
     >
 
@@ -484,6 +571,7 @@ function navButton(
 function renderAuth() {
 
   applyTheme();
+
 
   root.innerHTML = `
 
@@ -680,8 +768,6 @@ function renderAuth() {
 
         </form>
 
-
-        <!-- LEGAL / INFORMATION LINKS -->
 
         <div
           style="
@@ -932,10 +1018,6 @@ function renderAuth() {
       renderForgotPassword()
   );
 
-
-  /* =======================================================
-     LEGAL / INFORMATION PAGE EVENTS
-     ======================================================= */
 
   document
     .getElementById(
@@ -1929,6 +2011,7 @@ function renderOnboarding() {
                 `<button
                   class="country-option"
                   data-country="${c[0]}"
+                  type="button"
                 >
                   ${escapeHtml(c[1])}
                 </button>`
@@ -1951,6 +2034,7 @@ function renderOnboarding() {
           class="btn btn-primary btn-block"
           id="continueCountry"
           disabled
+          type="button"
         >
           Enter Marvel Chat 🚀
         </button>
@@ -1960,6 +2044,7 @@ function renderOnboarding() {
           class="btn btn-ghost btn-block"
           style="margin-top:8px"
           id="onboardingLogout"
+          type="button"
         >
           Sign out
         </button>
@@ -2016,16 +2101,36 @@ function renderOnboarding() {
               selected;
 
 
-            document.getElementById(
-              "selectedCountry"
-            ).textContent =
-              `Selected: ${label}`;
+            const selectedCountry =
+              document.getElementById(
+                "selectedCountry"
+              );
 
 
-            document.getElementById(
-              "continueCountry"
-            ).disabled =
-              false;
+            if (
+              selectedCountry
+            ) {
+
+              selectedCountry.textContent =
+                `Selected: ${label}`;
+
+            }
+
+
+            const continueButton =
+              document.getElementById(
+                "continueCountry"
+              );
+
+
+            if (
+              continueButton
+            ) {
+
+              continueButton.disabled =
+                false;
+
+            }
 
           }
         );
@@ -2038,7 +2143,7 @@ function renderOnboarding() {
     .getElementById(
       "continueCountry"
     )
-    .addEventListener(
+    ?.addEventListener(
       "click",
       async () => {
 
@@ -2088,7 +2193,7 @@ function renderOnboarding() {
     .getElementById(
       "onboardingLogout"
     )
-    .addEventListener(
+    ?.addEventListener(
       "click",
       () =>
         signOut()
@@ -2098,15 +2203,38 @@ function renderOnboarding() {
 
 
 /* =========================================================
-   EVENT ATTACHMENT
+   PAGE EVENT ATTACHMENT
    ========================================================= */
 
 function attachEvents() {
+
+
+  /* =======================================================
+     HOME
+     ======================================================= */
 
   if (
     state.page ===
     "home"
   ) {
+
+    /*
+     * Home now owns its own quick actions,
+     * discovery overlay and Home-specific events.
+     *
+     * This prevents app.js from duplicating
+     * Home listeners.
+     */
+
+    attachHomeEvents(
+      renderApp
+    );
+
+
+    /*
+     * Create post controls remain connected here
+     * because these are application-level Home actions.
+     */
 
     document
       .getElementById(
@@ -2128,86 +2256,106 @@ function attachEvents() {
       );
 
 
+    /*
+     * LIKE
+     */
+
     document
       .querySelectorAll(
         "[data-like]"
       )
       .forEach(
-        b =>
-          b.addEventListener(
+        button =>
+          button.addEventListener(
             "click",
             () =>
               toggleLike(
-                b.dataset.like
+                button.dataset.like
               )
           )
       );
 
+
+    /*
+     * COMMENTS
+     */
 
     document
       .querySelectorAll(
         "[data-comment]"
       )
       .forEach(
-        b =>
-          b.addEventListener(
+        button =>
+          button.addEventListener(
             "click",
             () =>
               showComments(
-                b.dataset.comment
+                button.dataset.comment
               )
           )
       );
 
+
+    /*
+     * SHARE
+     */
 
     document
       .querySelectorAll(
         "[data-share]"
       )
       .forEach(
-        b =>
-          b.addEventListener(
+        button =>
+          button.addEventListener(
             "click",
             () =>
               sharePost(
-                b.dataset.share
+                button.dataset.share
               )
           )
       );
 
+
+    /*
+     * SAVE
+     */
 
     document
       .querySelectorAll(
         "[data-save]"
       )
       .forEach(
-        b =>
-          b.addEventListener(
+        button =>
+          button.addEventListener(
             "click",
             () =>
               savePost(
-                b.dataset.save
+                button.dataset.save
               )
           )
       );
 
+
+    /*
+     * POST MENU
+     */
 
     document
       .querySelectorAll(
         ".post-menu-btn"
       )
       .forEach(
-        btn => {
+        button => {
 
-          btn.addEventListener(
+          button.addEventListener(
             "click",
-            e => {
+            event => {
 
-              e.stopPropagation();
+              event.stopPropagation();
 
 
               const postId =
-                btn.dataset.menuPost;
+                button.dataset.menuPost;
 
 
               const menu =
@@ -2216,35 +2364,36 @@ function attachEvents() {
                 );
 
 
-              if (menu) {
+              if (!menu) {
+                return;
+              }
 
-                document
-                  .querySelectorAll(
-                    ".dropdown-menu"
-                  )
-                  .forEach(
-                    m => {
 
-                      if (
-                        m !==
-                        menu
-                      ) {
+              document
+                .querySelectorAll(
+                  ".dropdown-menu"
+                )
+                .forEach(
+                  otherMenu => {
 
-                        m.classList.add(
-                          "hidden"
-                        );
+                    if (
+                      otherMenu !==
+                      menu
+                    ) {
 
-                      }
+                      otherMenu.classList.add(
+                        "hidden"
+                      );
 
                     }
-                  );
 
-
-                menu.classList.toggle(
-                  "hidden"
+                  }
                 );
 
-              }
+
+              menu.classList.toggle(
+                "hidden"
+              );
 
             }
           );
@@ -2252,38 +2401,46 @@ function attachEvents() {
         }
       );
 
+
+    /*
+     * EDIT POST
+     */
 
     document
       .querySelectorAll(
         "[data-edit-post]"
       )
       .forEach(
-        btn => {
+        button => {
 
-          btn.addEventListener(
+          button.addEventListener(
             "click",
             () =>
               showEditPost(
-                btn.dataset.editPost
+                button.dataset.editPost
               )
           );
 
         }
       );
 
+
+    /*
+     * DELETE POST
+     */
 
     document
       .querySelectorAll(
         "[data-delete-post]"
       )
       .forEach(
-        btn => {
+        button => {
 
-          btn.addEventListener(
+          button.addEventListener(
             "click",
             () =>
               showDeletePostConfirmation(
-                btn.dataset.deletePost
+                button.dataset.deletePost
               )
           );
 
@@ -2291,196 +2448,24 @@ function attachEvents() {
       );
 
 
-    document
-      .querySelectorAll(
-        "[data-quick]"
-      )
-      .forEach(
-        b => {
+    /*
+     * Close post dropdowns when clicking elsewhere.
+     */
 
-          b.addEventListener(
-            "click",
-            () => {
-
-              const a =
-                b.dataset.quick;
-
-
-              if (
-                a ===
-                "post"
-              ) {
-
-                showCreatePost();
-
-              }
-
-
-              if (
-                a ===
-                "chat"
-              ) {
-
-                state.page =
-                  "chat";
-
-                renderApp();
-
-                setTimeout(
-                  showNewChat,
-                  50
-                );
-
-              }
-
-
-              if (
-                a ===
-                "skill" ||
-                a ===
-                "timetrust"
-              ) {
-
-                if (
-                  a ===
-                  "timetrust"
-                ) {
-
-                  state.page =
-                    "timetrust";
-
-                  renderApp();
-
-                } else {
-
-                  showSkillModal(
-                    "offer"
-                  );
-
-                }
-
-              }
-
-
-              if (
-                a ===
-                "sell" ||
-                a ===
-                "market"
-              ) {
-
-                if (
-                  a ===
-                  "market"
-                ) {
-
-                  state.page =
-                    "market";
-
-                  state.marketBrowseMode =
-                    true;
-
-                  renderApp();
-
-                } else {
-
-                  showSellModal();
-
-                }
-
-              }
-
-            }
-          );
-
-        }
-      );
-
-
-    document
-      .getElementById(
-        "discoveryClose"
-      )
-      ?.addEventListener(
-        "click",
-        () => {
-          dismissDiscovery();
-        }
-      );
-
-
-    document
-      .querySelectorAll(
-        "[data-discovery-nav]"
-      )
-      .forEach(
-        btn => {
-
-          btn.addEventListener(
-            "click",
-            () => {
-
-              const target =
-                btn.dataset.discoveryNav;
-
-              dismissDiscovery();
-
-              if (
-                target ===
-                "market"
-              ) {
-
-                state.page =
-                  "market";
-
-                state.marketBrowseMode =
-                  true;
-
-              }
-
-              if (
-                target ===
-                "timetrust"
-              ) {
-
-                state.page =
-                  "timetrust";
-
-              }
-
-              renderApp();
-
-            }
-          );
-
-        }
-      );
-
-
-    if (
-      document.getElementById(
-        "discoveryBanner"
-      ) &&
-      !window.__marvelDiscoveryTimer
-    ) {
-
-      window.__marvelDiscoveryTimer =
-        setTimeout(
-          () => {
-
-            dismissDiscovery();
-
-            window.__marvelDiscoveryTimer =
-              null;
-
-          },
-          40000
-        );
-
-    }
+    document.addEventListener(
+      "click",
+      closeHomeDropdowns,
+      {
+        once: true
+      }
+    );
 
   }
 
+
+  /* =======================================================
+     CHAT
+     ======================================================= */
 
   if (
     state.page ===
@@ -2491,30 +2476,38 @@ function attachEvents() {
       state.activeConversation
     ) {
 
+      /*
+       * BACK FROM ACTIVE CONVERSATION
+       */
+
       document
         .getElementById(
           "backChats"
         )
         ?.addEventListener(
           "click",
-          () => {
-
-            state.unsubs.messages?.();
-
-            state.unsubs.messages =
-              null;
-
-            state.activeConversation =
-              null;
-
-            state.messages =
-              [];
-
-            renderApp();
-
-          }
+          closeActiveConversation
         );
 
+
+      /*
+       * Some Chat versions expose a separate close
+       * control for the active conversation.
+       */
+
+      document
+        .getElementById(
+          "closeConversation"
+        )
+        ?.addEventListener(
+          "click",
+          closeActiveConversation
+        );
+
+
+      /*
+       * SEND MESSAGE
+       */
 
       document
         .getElementById(
@@ -2522,9 +2515,14 @@ function attachEvents() {
         )
         ?.addEventListener(
           "click",
-          sendMessage
+          () =>
+            sendMessage()
         );
 
+
+      /*
+       * ENTER TO SEND
+       */
 
       document
         .getElementById(
@@ -2532,14 +2530,14 @@ function attachEvents() {
         )
         ?.addEventListener(
           "keydown",
-          e => {
+          event => {
 
             if (
-              e.key ===
+              event.key ===
               "Enter"
             ) {
 
-              e.preventDefault();
+              event.preventDefault();
 
               sendMessage();
 
@@ -2549,54 +2547,70 @@ function attachEvents() {
         );
 
 
+      /*
+       * COPY MESSAGE
+       */
+
       document
         .querySelectorAll(
           "[data-copy-msg]"
         )
         .forEach(
-          btn =>
-            btn.addEventListener(
+          button =>
+            button.addEventListener(
               "click",
               () =>
                 copyMessage(
-                  btn.dataset.copyMsg
+                  button.dataset.copyMsg
                 )
             )
         );
 
+
+      /*
+       * EDIT MESSAGE
+       */
 
       document
         .querySelectorAll(
           "[data-edit-msg]"
         )
         .forEach(
-          btn =>
-            btn.addEventListener(
+          button =>
+            button.addEventListener(
               "click",
               () =>
                 editMessage(
-                  btn.dataset.editMsg
+                  button.dataset.editMsg
                 )
             )
         );
 
+
+      /*
+       * DELETE MESSAGE
+       */
 
       document
         .querySelectorAll(
           "[data-delete-msg]"
         )
         .forEach(
-          btn =>
-            btn.addEventListener(
+          button =>
+            button.addEventListener(
               "click",
               () =>
                 deleteMessage(
-                  btn.dataset.deleteMsg
+                  button.dataset.deleteMsg
                 )
             )
         );
 
     } else {
+
+      /*
+       * NEW CHAT
+       */
 
       document
         .getElementById(
@@ -2624,54 +2638,77 @@ function attachEvents() {
         );
 
 
+      /*
+       * EXISTING CONVERSATIONS
+       */
+
       document
         .querySelectorAll(
           "[data-conversation]"
         )
         .forEach(
-          x => {
+          conversation => {
 
-            x.addEventListener(
+            conversation.addEventListener(
               "click",
-              e => {
+              event => {
+
+                /*
+                 * Pin controls belong to their own
+                 * event handler.
+                 */
 
                 if (
-                  e.target.closest(
+                  event.target.closest(
                     "[data-pin-toggle]"
                   )
                 ) {
+
                   return;
+
                 }
 
 
                 /*
-                 * IMPORTANT:
+                 * Chat menu buttons/options are
+                 * handled inside chat.js.
                  *
-                 * Chat menu buttons/options
-                 * are handled by the delegated
-                 * menu listener inside chat.js.
-                 *
-                 * Do not manually handle those
-                 * clicks here.
+                 * Do not open the conversation when
+                 * a menu action is clicked.
                  */
 
                 if (
-                  e.target.closest(
+                  event.target.closest(
                     "[data-chat-menu]"
                   ) ||
-                  e.target.closest(
+                  event.target.closest(
                     "[data-chat-action]"
                   ) ||
-                  e.target.closest(
+                  event.target.closest(
                     "[data-chat-options]"
                   )
                 ) {
+
                   return;
+
+                }
+
+
+                const conversationId =
+                  conversation.dataset.conversation;
+
+
+                if (
+                  !conversationId
+                ) {
+
+                  return;
+
                 }
 
 
                 openConversation(
-                  x.dataset.conversation,
+                  conversationId,
                   renderApp
                 );
 
@@ -2682,22 +2719,26 @@ function attachEvents() {
         );
 
 
+      /*
+       * PIN CONVERSATION
+       */
+
       document
         .querySelectorAll(
           "[data-pin-toggle]"
         )
         .forEach(
-          btn => {
+          button => {
 
-            btn.addEventListener(
+            button.addEventListener(
               "click",
-              e => {
+              event => {
 
-                e.stopPropagation();
+                event.stopPropagation();
 
 
                 togglePinConversation(
-                  btn.dataset.pinToggle
+                  button.dataset.pinToggle
                 );
 
               }
@@ -2707,16 +2748,23 @@ function attachEvents() {
         );
 
 
+      /*
+       * CHAT SEARCH
+       *
+       * Existing behavior preserved.
+       */
+
       document
         .getElementById(
           "chatSearch"
         )
         ?.addEventListener(
           "input",
-          e => {
+          event => {
 
             state.chatSearchQuery =
-              e.target.value;
+              event.target.value;
+
 
             renderApp();
 
@@ -2727,6 +2775,10 @@ function attachEvents() {
 
   }
 
+
+  /* =======================================================
+     TIMETRUST
+     ======================================================= */
 
   if (
     state.page ===
@@ -2740,6 +2792,10 @@ function attachEvents() {
   }
 
 
+  /* =======================================================
+     MARKET
+     ======================================================= */
+
   if (
     state.page ===
     "market"
@@ -2752,12 +2808,10 @@ function attachEvents() {
   }
 
 
-  /*
-   * PROFILE CONNECTION
-   *
-   * Profile.js owns its own buttons and
-   * Market Account / My Listings actions.
-   */
+  /* =======================================================
+     PROFILE
+     ======================================================= */
+
   if (
     state.page ===
     "profile"
@@ -2767,16 +2821,92 @@ function attachEvents() {
       renderApp
     );
 
+
+    /*
+     * Settings remains owned by app.js because
+     * Settings is an application-level feature.
+     */
+
     document
       .getElementById(
         "settingsBtn"
       )
       ?.addEventListener(
         "click",
-        showSettings
+        () =>
+          showSettings(
+            renderApp
+          )
       );
 
   }
+
+}
+
+
+/* =========================================================
+   HOME DROPDOWN CLEANUP
+   ========================================================= */
+
+function closeHomeDropdowns(
+  event
+) {
+
+  const clickedInsideMenu =
+    event.target.closest(
+      ".dropdown-container"
+    );
+
+
+  if (
+    clickedInsideMenu
+  ) {
+
+    return;
+
+  }
+
+
+  document
+    .querySelectorAll(
+      ".dropdown-menu"
+    )
+    .forEach(
+      menu =>
+        menu.classList.add(
+          "hidden"
+        )
+    );
+
+}
+
+
+/* =========================================================
+   CLOSE ACTIVE CHAT CONVERSATION
+   ========================================================= */
+
+function closeActiveConversation() {
+
+  /*
+   * Stop only the active messages listener.
+   */
+
+  state.unsubs.messages?.();
+
+
+  state.unsubs.messages =
+    null;
+
+
+  state.activeConversation =
+    null;
+
+
+  state.messages =
+    [];
+
+
+  renderApp();
 
 }
 
@@ -2807,7 +2937,6 @@ async function startApplication(
 
 
     renderApp();
-
 
   } catch (e) {
 
@@ -2842,6 +2971,7 @@ async function startApplication(
           <button
             class="btn btn-primary btn-block"
             id="retryApp"
+            type="button"
           >
             Retry
           </button>
@@ -2853,6 +2983,7 @@ async function startApplication(
           <button
             class="btn btn-danger btn-block"
             id="retryLogout"
+            type="button"
           >
             Sign out
           </button>
@@ -2976,7 +3107,9 @@ window.addEventListener(
   "online",
   () => {
 
-    if (state.user) {
+    if (
+      state.user
+    ) {
 
       toast(
         "Back online ⚡"
@@ -2995,7 +3128,9 @@ window.addEventListener(
   "offline",
   () => {
 
-    if (state.user) {
+    if (
+      state.user
+    ) {
 
       toast(
         "Offline mode. Some features may be unavailable."
@@ -3016,13 +3151,13 @@ window.addEventListener(
 
 window.addEventListener(
   "beforeinstallprompt",
-  e => {
+  event => {
 
-    e.preventDefault();
+    event.preventDefault();
 
 
     state.installPrompt =
-      e;
+      event;
 
   }
 );
@@ -3069,17 +3204,17 @@ if (
           }
         )
         .then(
-          r =>
+          registration =>
             console.log(
               "Service worker:",
-              r.scope
+              registration.scope
             )
         )
         .catch(
-          e =>
+          error =>
             console.warn(
               "Service worker:",
-              e
+              error
             )
         );
 
