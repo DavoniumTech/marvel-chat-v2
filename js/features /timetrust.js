@@ -129,140 +129,175 @@ export function showTimeTrustAccountModal(
   renderApp
 ) {
   if (!state.user) {
-    toast(
-      "Please sign in first."
-    );
+    toast("Please sign in first.");
     return;
   }
 
+  const account =
+    getTimeTrustAccount();
 
-  const active =
-    getTimeTrustAccount().active === true;
-
+  const accountExists =
+    account.active === true;
 
   showModal(
-    active
+    accountExists
       ? "Manage TimeTrust Account"
       : "Activate TimeTrust Account",
-
     `
+      <div class="field">
+        <label for="timeTrustProviderName">
+          Skill provider name *
+        </label>
+
+        <input
+          class="input"
+          id="timeTrustProviderName"
+          maxlength="80"
+          value="${escapeHtml(
+            account.providerName ||
+            account.name ||
+            state.profile?.displayName ||
+            state.profile?.username ||
+            ""
+          )}"
+          placeholder="Your provider name"
+        >
+      </div>
+
+      <div class="field">
+        <label for="timeTrustProviderBio">
+          Provider description
+        </label>
+
+        <textarea
+          class="textarea"
+          id="timeTrustProviderBio"
+          maxlength="300"
+          rows="4"
+          placeholder="Tell people what you can teach or help with..."
+        >${escapeHtml(
+          account.bio || ""
+        )}</textarea>
+      </div>
+
+      <div class="field">
+        <label for="timeTrustProviderLocation">
+          Provider location
+        </label>
+
+        <input
+          class="input"
+          id="timeTrustProviderLocation"
+          maxlength="100"
+          value="${escapeHtml(
+            account.location ||
+            state.profile?.country ||
+            ""
+          )}"
+          placeholder="e.g. Abuja, Nigeria"
+        >
+      </div>
+
       <div
         class="card"
         style="
           background:var(--surface2);
-          padding:14px;
-          margin:0 0 14px;
+          padding:12px;
+          margin:12px 0;
           box-shadow:none;
         "
       >
-
         <strong>
-          One Firebase identity
+          Your TimeTrust Account
         </strong>
 
         <p
           class="small"
-          style="margin:6px 0 0;"
+          style="margin:5px 0 0;"
         >
-          TimeTrust uses your existing authenticated Firebase user.
-          No second Firebase Authentication account is created.
+          Your Firebase login remains your only account.
+          This profile controls how you appear as a TimeTrust provider.
         </p>
-
       </div>
-
-
-      <div
-        class="notice"
-        style="margin-bottom:14px;"
-      >
-
-        <strong>
-          ${
-            active
-              ? "Your TimeTrust account is active."
-              : "Your TimeTrust account is inactive."
-          }
-        </strong>
-
-        <p
-          class="small"
-          style="margin:6px 0 0;"
-        >
-          ${
-            active
-              ? "You can publish and manage your skill offers."
-              : "Activation enables publishing and management while leaving discovery available to everyone."
-          }
-        </p>
-
-      </div>
-
 
       <button
         class="btn btn-primary btn-block"
-        id="activateTimeTrustBtn"
+        id="saveTimeTrustAccount"
         type="button"
       >
         ${
-          active
-            ? "Close"
+          accountExists
+            ? "Save TimeTrust Account"
             : "Activate TimeTrust Account ⏱️"
         }
       </button>
     `
   );
 
-
   document
     .getElementById(
-      "activateTimeTrustBtn"
+      "saveTimeTrustAccount"
     )
     ?.addEventListener(
       "click",
       async () => {
+        const nameInput =
+          document.getElementById(
+            "timeTrustProviderName"
+          );
+
+        const bioInput =
+          document.getElementById(
+            "timeTrustProviderBio"
+          );
+
+        const locationInput =
+          document.getElementById(
+            "timeTrustProviderLocation"
+          );
 
         const button =
           document.getElementById(
-            "activateTimeTrustBtn"
+            "saveTimeTrustAccount"
           );
 
-        if (!button) {
+        const providerName =
+          nameInput?.value?.trim() || "";
+
+        const bio =
+          bioInput?.value?.trim() || "";
+
+        const location =
+          locationInput?.value?.trim() || "";
+
+        if (!providerName) {
+          toast(
+            "Enter your skill provider name."
+          );
+
+          nameInput?.focus();
           return;
         }
 
-
-        if (
-          hasTimeTrustAccount()
-        ) {
-          closeModal();
-          return;
+        if (button) {
+          button.disabled = true;
+          button.textContent = "Saving…";
         }
-
-
-        button.disabled = true;
-
-        button.textContent =
-          "Activating…";
-
 
         try {
-
-          const current =
-            state.profile
-              ?.timeTrustAccount ||
-            {};
-
-
-          const account = {
-            ...current,
+          const timeTrustAccount = {
+            ...account,
             active: true,
+            providerName,
+            name: providerName,
+            bio,
+            location,
             createdAt:
-              current.createdAt ||
-              serverTimestamp(),
+              account.createdAt ||
+              new Date(),
             updatedAt:
               serverTimestamp()
           };
-
 
           await updateDoc(
             doc(
@@ -271,39 +306,30 @@ export function showTimeTrustAccountModal(
               state.user.uid
             ),
             {
-              timeTrustAccount:
-                account
+              timeTrustAccount
             }
           );
 
-
           state.profile = {
             ...state.profile,
-
             timeTrustAccount: {
-              ...current,
-              active: true,
-              createdAt:
-                current.createdAt ||
-                new Date(),
-              updatedAt:
-                new Date()
+              ...timeTrustAccount,
+              updatedAt: new Date()
             }
           };
-
 
           closeModal();
 
           toast(
-            "TimeTrust account activated ⏱️"
+            accountExists
+              ? "TimeTrust Account updated ✨"
+              : "TimeTrust Account activated ⏱️"
           );
 
           renderApp?.();
-
         } catch (error) {
-
           console.error(
-            "[TimeTrust] Account activation failed:",
+            "[TimeTrust] Account save failed:",
             error
           );
 
@@ -311,14 +337,14 @@ export function showTimeTrustAccountModal(
             friendly(error)
           );
 
-          button.disabled =
-            false;
-
-          button.textContent =
-            "Activate TimeTrust Account ⏱️";
-
+          if (button) {
+            button.disabled = false;
+            button.textContent =
+              accountExists
+                ? "Save TimeTrust Account"
+                : "Activate TimeTrust Account ⏱️";
+          }
         }
-
       }
     );
 }
