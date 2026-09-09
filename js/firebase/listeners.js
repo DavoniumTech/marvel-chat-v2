@@ -20,21 +20,6 @@ import {
    MARVEL CHAT — PAGE-SCOPED FIRESTORE LISTENERS
    =========================================================
 
-   OLD BEHAVIOUR:
-   After login, the application subscribed to:
-
-   - posts
-   - conversations
-   - conversationPreferences
-   - listings
-   - skills
-   - skillRequests
-   - notifications
-
-   all at the same time.
-
-   NEW BEHAVIOUR:
-
    HOME
      -> posts
 
@@ -54,14 +39,9 @@ import {
 
    NOTIFICATIONS
      -> one user-specific listener kept globally
-        so the existing notification badge can remain
-        real-time.
 
    ACTIVE CHAT MESSAGES
      -> still owned by chat.js
-
-   IMPORTANT:
-   This file does NOT rewrite the feature modules.
    ========================================================= */
 
 
@@ -81,7 +61,6 @@ let notificationUid = null;
    ========================================================= */
 
 function clearPageListeners() {
-
   const pageListeners = [
     "posts",
     "conversations",
@@ -91,21 +70,12 @@ function clearPageListeners() {
     "requests"
   ];
 
-  pageListeners.forEach(
-    name => {
-
-      if (
-        state.unsubs[name]
-      ) {
-
-        state.unsubs[name]();
-
-        state.unsubs[name] =
-          null;
-      }
-
+  pageListeners.forEach(name => {
+    if (state.unsubs[name]) {
+      state.unsubs[name]();
+      state.unsubs[name] = null;
     }
-  );
+  });
 }
 
 
@@ -113,52 +83,30 @@ function clearPageListeners() {
    GENERIC SNAPSHOT SUBSCRIBER
    ========================================================= */
 
-function sub(
-  name,
-  firestoreQuery,
-  handler
-) {
-
-  /*
-   * Safety:
-   * If this listener already exists,
-   * stop it before creating another one.
-   */
-
+function sub(name, firestoreQuery, handler) {
   state.unsubs[name]?.();
 
-  state.unsubs[name] =
-    onSnapshot(
+  state.unsubs[name] = onSnapshot(
+    firestoreQuery,
 
-      firestoreQuery,
-
-      snapshot => {
-
-        try {
-
-          handler(snapshot);
-
-        } catch (error) {
-
-          console.error(
-            `MARVEL LISTENER HANDLER ERROR [${name}]:`,
-            error
-          );
-
-        }
-
-      },
-
-      error => {
-
+    snapshot => {
+      try {
+        handler(snapshot);
+      } catch (error) {
         console.error(
-          `MARVEL FIRESTORE LISTENER ERROR [${name}]:`,
+          `MARVEL LISTENER HANDLER ERROR [${name}]:`,
           error
         );
-
       }
+    },
 
-    );
+    error => {
+      console.error(
+        `MARVEL FIRESTORE LISTENER ERROR [${name}]:`,
+        error
+      );
+    }
+  );
 
   return state.unsubs[name];
 }
@@ -166,181 +114,108 @@ function sub(
 
 /* =========================================================
    NOTIFICATION LISTENER
-   =========================================================
-
-   This is the only collection listener that remains active
-   while the user moves between pages.
-
-   Why?
-
-   Because your existing UI has a notification badge in the
-   top bar and the application expects notifications to arrive
-   in real time.
-
-   We deliberately DO NOT re-render the whole application
-   whenever a notification arrives.
-
-   The badge is updated directly.
    ========================================================= */
 
 function ensureNotificationListener() {
-
   if (!state.user) {
     return;
   }
 
-
-  const uid =
-    state.user.uid;
-
-
-  /*
-   * Already subscribed for this user.
-   */
+  const uid = state.user.uid;
 
   if (
     notificationUid === uid &&
     state.unsubs.notifications
   ) {
-
     return;
   }
 
-
-  /*
-   * If another user's notification listener exists,
-   * remove it first.
-   */
-
   state.unsubs.notifications?.();
 
+  notificationUid = uid;
 
-  notificationUid =
-    uid;
+  let isInitialNotificationLoad = true;
 
-
-  let isInitialNotificationLoad =
-    true;
-
-
-  state.unsubs.notifications =
-    onSnapshot(
-
-      query(
-        collection(
-          db,
-          "users",
-          uid,
-          "notifications"
-        ),
-        orderBy(
-          "createdAt",
-          "desc"
-        ),
-        limit(50)
+  state.unsubs.notifications = onSnapshot(
+    query(
+      collection(
+        db,
+        "users",
+        uid,
+        "notifications"
       ),
+      orderBy(
+        "createdAt",
+        "desc"
+      ),
+      limit(50)
+    ),
 
-      snapshot => {
+    snapshot => {
+      const list = snapshot.docs.map(d => ({
+        id: d.id,
+        ...d.data()
+      }));
 
-        const list =
-          snapshot.docs.map(
-            d => ({
-              id: d.id,
-              ...d.data()
-            })
+      state.notifications = list;
+
+      state.unreadNotificationsCount =
+        list.filter(
+          notification => !notification.read
+        ).length;
+
+
+      /*
+       * Do not play a sound for the initial
+       * notification load.
+       */
+
+      if (isInitialNotificationLoad) {
+        isInitialNotificationLoad = false;
+      } else {
+        const hasNewUnread =
+          snapshot.docChanges().some(
+            change =>
+              change.type === "added" &&
+              !change.doc.data().read
           );
 
-
-        state.notifications =
-          list;
-
-
-        state.unreadNotificationsCount =
-          list.filter(
-            notification =>
-              !notification.read
-          ).length;
-
-
-        /*
-         * Do not play a sound for the initial
-         * notification load.
-         */
-
-        if (
-          isInitialNotificationLoad
-        ) {
-
-          isInitialNotificationLoad =
-            false;
-
-        } else {
-
-          /*
-           * Only play sound for genuinely new,
-           * unread notification documents.
-           */
-
-          const hasNewUnread =
-            snapshot.docChanges().some(
-              change =>
-                change.type === "added" &&
-                !change.doc.data().read
-            );
-
-
-          if (
-            hasNewUnread
-          ) {
-
-            playNotificationSound();
-
-          }
-
+        if (hasNewUnread) {
+          playNotificationSound();
         }
-
-
-        /*
-         * Update existing notification badge
-         * without rebuilding the entire page.
-         */
-
-        const badgeEl =
-          document.getElementById(
-            "notificationBadge"
-          );
-
-
-        if (
-          badgeEl
-        ) {
-
-          badgeEl.textContent =
-            state.unreadNotificationsCount > 0
-              ? state.unreadNotificationsCount
-              : "";
-
-
-          badgeEl.style.display =
-            state.unreadNotificationsCount > 0
-              ? "inline-block"
-              : "none";
-
-        }
-
-      },
-
-      error => {
-
-        console.error(
-          "MARVEL FIRESTORE LISTENER ERROR [notifications]:",
-          error
-        );
-
       }
 
-    );
 
+      /*
+       * Update the existing notification badge
+       * without rebuilding the whole application.
+       */
+
+      const badgeEl =
+        document.getElementById(
+          "notificationBadge"
+        );
+
+      if (badgeEl) {
+        badgeEl.textContent =
+          state.unreadNotificationsCount > 0
+            ? state.unreadNotificationsCount
+            : "";
+
+        badgeEl.style.display =
+          state.unreadNotificationsCount > 0
+            ? "inline-block"
+            : "none";
+      }
+    },
+
+    error => {
+      console.error(
+        "MARVEL FIRESTORE LISTENER ERROR [notifications]:",
+        error
+      );
+    }
+  );
 }
 
 
@@ -352,75 +227,50 @@ export function subscribeForPage(
   page,
   renderCallback
 ) {
-
-  /*
-   * No authenticated user:
-   * there is nothing to subscribe to.
-   */
-
   if (!state.user) {
     return;
   }
 
-
-  const uid =
-    state.user.uid;
+  const uid = state.user.uid;
 
 
   /*
    * Keep notifications available everywhere.
-   *
-   * This is ONE listener per authenticated user,
-   * not one listener per application feature.
    */
 
   ensureNotificationListener();
 
 
   /*
-   * IMPORTANT:
-   *
-   * renderApp() can run many times.
-   *
-   * If we are still on the same page and the same
-   * user is authenticated, DO NOT create listeners again.
+   * Do not recreate listeners when renderApp()
+   * runs repeatedly on the same page.
    */
 
   if (
     activeUid === uid &&
     activePage === page
   ) {
-
     return;
   }
 
 
   /*
    * Page changed.
-   *
-   * Stop the old page's listeners first.
+   * Stop listeners belonging to the previous page.
    */
 
   clearPageListeners();
 
-
-  activeUid =
-    uid;
-
-  activePage =
-    page;
+  activeUid = uid;
+  activePage = page;
 
 
   /* =======================================================
      HOME
      ======================================================= */
 
-  if (
-    page === "home"
-  ) {
-
+  if (page === "home") {
     sub(
-
       "posts",
 
       query(
@@ -436,14 +286,81 @@ export function subscribeForPage(
       ),
 
       snapshot => {
+        const recentPosts =
+          snapshot.docs.map(d => ({
+            id: d.id,
+            ...d.data()
+          }));
+
+
+        /*
+         * Keep track of the posts currently supplied
+         * by the Home listener.
+         */
+
+        const recentIds = new Set(
+          recentPosts.map(
+            post => post.id
+          )
+        );
+
+
+        /*
+         * Preserve posts that were loaded elsewhere,
+         * such as older posts from Profile > My Posts
+         * or Profile > Saved Posts.
+         *
+         * This prevents returning to Home from replacing
+         * those posts and causing:
+         *
+         * "Post no longer available"
+         */
+
+        const preservedPosts =
+          (
+            Array.isArray(state.posts)
+              ? state.posts
+              : []
+          ).filter(
+            post =>
+              post?.id &&
+              !state.homePostIds.has(
+                post.id
+              )
+          );
+
+
+        /*
+         * Merge by document ID so that we never create
+         * duplicate posts in state.posts.
+         */
+
+        const byId = new Map();
+
+        recentPosts.forEach(post => {
+          byId.set(
+            post.id,
+            post
+          );
+        });
+
+        preservedPosts.forEach(post => {
+          if (!byId.has(post.id)) {
+            byId.set(
+              post.id,
+              post
+            );
+          }
+        });
+
 
         state.posts =
-          snapshot.docs.map(
-            d => ({
-              id: d.id,
-              ...d.data()
-            })
+          Array.from(
+            byId.values()
           );
+
+        state.homePostIds =
+          recentIds;
 
 
         /*
@@ -455,15 +372,10 @@ export function subscribeForPage(
           typeof renderCallback ===
             "function"
         ) {
-
           renderCallback();
-
         }
-
       }
-
     );
-
 
     return;
   }
@@ -473,16 +385,13 @@ export function subscribeForPage(
      CHAT
      ======================================================= */
 
-  if (
-    page === "chat"
-  ) {
+  if (page === "chat") {
 
     /*
      * Conversation list
      */
 
     sub(
-
       "conversations",
 
       query(
@@ -499,47 +408,37 @@ export function subscribeForPage(
       ),
 
       snapshot => {
-
         state.conversations =
           snapshot.docs
-
-            .map(
-              d => ({
-                id: d.id,
-                ...d.data()
-              })
-            )
-
+            .map(d => ({
+              id: d.id,
+              ...d.data()
+            }))
             .sort(
               (a, b) => {
-
                 const aTime =
                   a.updatedAt?.toMillis
                     ? a.updatedAt.toMillis()
                     : 0;
-
 
                 const bTime =
                   b.updatedAt?.toMillis
                     ? b.updatedAt.toMillis()
                     : 0;
 
-
                 return bTime - aTime;
-
               }
             );
 
 
         /*
-         * Keep currently open conversation
-         * synchronized with its latest conversation data.
+         * Keep the currently open conversation
+         * synchronized with its latest data.
          */
 
         if (
           state.activeConversation
         ) {
-
           const current =
             state.conversations.find(
               conversation =>
@@ -547,25 +446,16 @@ export function subscribeForPage(
                 state.activeConversation.id
             );
 
-
-          if (
-            current
-          ) {
-
+          if (current) {
             state.activeConversation =
               current;
-
           }
-
         }
 
 
         /*
-         * If the user is on Chat's conversation
-         * list, update the UI.
-         *
-         * If an individual conversation is open,
-         * chat.js owns the message listener.
+         * If no individual conversation is open,
+         * update the Chat conversation list.
          */
 
         if (
@@ -574,25 +464,17 @@ export function subscribeForPage(
           typeof renderCallback ===
             "function"
         ) {
-
           renderCallback();
-
         }
-
       }
-
     );
 
 
     /*
      * Conversation preferences
-     *
-     * This is intentionally only loaded while Chat
-     * is the active page.
      */
 
     sub(
-
       "preferences",
 
       query(
@@ -605,38 +487,25 @@ export function subscribeForPage(
       ),
 
       snapshot => {
-
         const preferences = {};
 
-
-        snapshot.docs.forEach(
-          d => {
-
-            preferences[d.id] =
-              d.data();
-
-          }
-        );
-
+        snapshot.docs.forEach(d => {
+          preferences[d.id] =
+            d.data();
+        });
 
         state.conversationPreferences =
           preferences;
-
 
         if (
           state.page === "chat" &&
           typeof renderCallback ===
             "function"
         ) {
-
           renderCallback();
-
         }
-
       }
-
     );
-
 
     return;
   }
@@ -646,12 +515,8 @@ export function subscribeForPage(
      MARKET
      ======================================================= */
 
-  if (
-    page === "market"
-  ) {
-
+  if (page === "market") {
     sub(
-
       "listings",
 
       query(
@@ -672,30 +537,21 @@ export function subscribeForPage(
       ),
 
       snapshot => {
-
         state.listings =
-          snapshot.docs.map(
-            d => ({
-              id: d.id,
-              ...d.data()
-            })
-          );
-
+          snapshot.docs.map(d => ({
+            id: d.id,
+            ...d.data()
+          }));
 
         if (
           state.page === "market" &&
           typeof renderCallback ===
             "function"
         ) {
-
           renderCallback();
-
         }
-
       }
-
     );
-
 
     return;
   }
@@ -705,16 +561,13 @@ export function subscribeForPage(
      TIMETRUST
      ======================================================= */
 
-  if (
-    page === "timetrust"
-  ) {
+  if (page === "timetrust") {
 
     /*
      * Available skills
      */
 
     sub(
-
       "skills",
 
       query(
@@ -730,28 +583,20 @@ export function subscribeForPage(
       ),
 
       snapshot => {
-
         state.skills =
-          snapshot.docs.map(
-            d => ({
-              id: d.id,
-              ...d.data()
-            })
-          );
-
+          snapshot.docs.map(d => ({
+            id: d.id,
+            ...d.data()
+          }));
 
         if (
           state.page === "timetrust" &&
           typeof renderCallback ===
             "function"
         ) {
-
           renderCallback();
-
         }
-
       }
-
     );
 
 
@@ -760,7 +605,6 @@ export function subscribeForPage(
      */
 
     sub(
-
       "requests",
 
       query(
@@ -776,30 +620,21 @@ export function subscribeForPage(
       ),
 
       snapshot => {
-
         state.requests =
-          snapshot.docs.map(
-            d => ({
-              id: d.id,
-              ...d.data()
-            })
-          );
-
+          snapshot.docs.map(d => ({
+            id: d.id,
+            ...d.data()
+          }));
 
         if (
           state.page === "timetrust" &&
           typeof renderCallback ===
             "function"
         ) {
-
           renderCallback();
-
         }
-
       }
-
     );
-
 
     return;
   }
@@ -809,21 +644,17 @@ export function subscribeForPage(
      PROFILE / OTHER STATIC PAGES
      =======================================================
 
-     No Firestore collection listener is required.
+     Profile-specific data is loaded by profile.js.
+     No collection listener is required here.
      ======================================================= */
-
 }
 
 
 /* =========================================================
    STOP EVERYTHING
-   =========================================================
-
-   Used during logout or authentication changes.
    ========================================================= */
 
 export function stopAllListeners() {
-
   const allListeners = [
     "posts",
     "conversations",
@@ -835,33 +666,16 @@ export function stopAllListeners() {
     "preferences"
   ];
 
-
-  allListeners.forEach(
-    name => {
-
-      if (
-        state.unsubs[name]
-      ) {
-
-        state.unsubs[name]();
-
-        state.unsubs[name] =
-          null;
-      }
-
+  allListeners.forEach(name => {
+    if (state.unsubs[name]) {
+      state.unsubs[name]();
+      state.unsubs[name] = null;
     }
-  );
+  });
 
+  activePage = null;
 
-  activePage =
-    null;
+  activeUid = null;
 
-
-  activeUid =
-    null;
-
-
-  notificationUid =
-    null;
-
+  notificationUid = null;
 }
