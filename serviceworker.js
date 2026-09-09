@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marvel-chat-v2-cache-v4';
+const CACHE_NAME = 'marvel-chat-v2-cache-v5';
 
 const ASSETS_TO_PRECACHE = [
   './',
@@ -36,19 +36,6 @@ const ASSETS_TO_PRECACHE = [
   './pwa/updates.js',
   './assets/icon-192.png',
   './assets/icon-512.png',
-
-  /*
-   * Correct feature paths added in addition to
-   * the existing entries above.
-   */
-  './js/features/home.js',
-  './js/features/chat.js',
-  './js/features/market.js',
-  './js/features/profile.js',
-  './js/features/notifications.js',
-  './js/features/search.js',
-  './js/features/settings.js',
-  './js/features/timetrust.js'
 ];
 
 
@@ -201,7 +188,8 @@ self.addEventListener(
    PUSH NOTIFICATIONS
    ========================================================= */
 
-// Handle incoming Web Push notifications (FCM background messages) with correct GitHub Pages destination and icon branding
+// Handle incoming Web Push notifications (FCM background messages)
+// with correct GitHub Pages destination and icon branding.
 
 self.addEventListener(
   'push',
@@ -359,7 +347,7 @@ self.addEventListener(
 
           if (
             client.url.startsWith(
-              'https://davoniumtech.github.io/marvel-chat-v2/' 
+              'https://davoniumtech.github.io/marvel-chat-v2/'
             ) &&
             'focus' in client
           ) {
