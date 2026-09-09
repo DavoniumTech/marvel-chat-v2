@@ -1,4 +1,13 @@
-import { state, escapeHtml, initials, formatDate, friendly } from "../state.js";
+// 2. js/features /home.js
+
+import {
+  state,
+  escapeHtml,
+  initials,
+  formatDate,
+  friendly
+} from "../state.js";
+
 import {
   db,
   collection,
@@ -17,50 +26,80 @@ import {
   limit,
   Timestamp
 } from "../firebase/firestore.js";
-import { showModal, closeModal } from "../components/modal.js";
-import { toast } from "../components/toast.js";
 
-const DISCOVERY_STORAGE_KEY = "marvel_discovery_seen_v1";
-const DISCOVERY_LAST_ACTIVE_KEY = "marvel_home_last_active_v1";
+import {
+  showModal,
+  closeModal
+} from "../components/modal.js";
+
+import {
+  toast
+} from "../components/toast.js";
+
+const DISCOVERY_STORAGE_KEY =
+  "marvel_discovery_seen_v1";
+
+const DISCOVERY_LAST_ACTIVE_KEY =
+  "marvel_home_last_active_v1";
+
 const DISCOVERY_INACTIVE_DAYS = 2;
+
 const DISCOVERY_DURATION_SECONDS = 40;
 
 let discoveryTimer = null;
+
 let discoveryStartedAt = 0;
-let savedPostIds = new Set();
-let savedPostsLoadedForUid = null;
 
-const pendingLikeIds = new Set();
-const pendingSaveIds = new Set();
+let savedPostIds =
+  new Set();
 
-let homeDocumentClickHandler = null;
+let savedPostsLoadedForUid =
+  null;
+
+const pendingLikeIds =
+  new Set();
+
+const pendingSaveIds =
+  new Set();
+
+let homeDocumentClickHandler =
+  null;
 
 const POST_EXPIRY_OPTIONS = [
   {
     value: "12h",
     label: "12 hours",
-    milliseconds: 12 * 60 * 60 * 1000
+    milliseconds:
+      12 * 60 * 60 * 1000
   },
   {
     value: "1d",
     label: "1 day",
-    milliseconds: 24 * 60 * 60 * 1000
+    milliseconds:
+      24 * 60 * 60 * 1000
   },
   {
     value: "7d",
     label: "1 week",
-    milliseconds: 7 * 24 * 60 * 60 * 1000
+    milliseconds:
+      7 * 24 * 60 * 60 * 1000
   },
   {
     value: "30d",
     label: "30 days",
-    milliseconds: 30 * 24 * 60 * 60 * 1000
+    milliseconds:
+      30 * 24 * 60 * 60 * 1000
   }
 ];
 
 function cssEscape(value) {
-  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
-    return CSS.escape(String(value));
+  if (
+    typeof CSS !== "undefined" &&
+    typeof CSS.escape === "function"
+  ) {
+    return CSS.escape(
+      String(value)
+    );
   }
 
   return String(value).replace(
@@ -78,16 +117,19 @@ function getCurrentUserName() {
 }
 
 function getPostExpiryDate(value) {
-  const option = POST_EXPIRY_OPTIONS.find(
-    item => item.value === value
-  );
+  const option =
+    POST_EXPIRY_OPTIONS.find(
+      item =>
+        item.value === value
+    );
 
   if (!option) {
     return null;
   }
 
   return new Date(
-    Date.now() + option.milliseconds
+    Date.now() +
+      option.milliseconds
   );
 }
 
@@ -100,23 +142,38 @@ function timestampToDate(value) {
     return value;
   }
 
-  if (typeof value?.toDate === "function") {
+  if (
+    typeof value?.toDate ===
+    "function"
+  ) {
     return value.toDate();
   }
 
-  if (typeof value === "number") {
+  if (
+    typeof value ===
+    "number"
+  ) {
     return new Date(value);
   }
 
-  if (typeof value === "string") {
-    const parsed = new Date(value);
+  if (
+    typeof value ===
+    "string"
+  ) {
+    const parsed =
+      new Date(value);
 
-    return Number.isNaN(parsed.getTime())
+    return Number.isNaN(
+      parsed.getTime()
+    )
       ? null
       : parsed;
   }
 
-  if (typeof value?.seconds === "number") {
+  if (
+    typeof value?.seconds ===
+    "number"
+  ) {
     return new Date(
       value.seconds * 1000
     );
@@ -130,15 +187,19 @@ function isPostExpired(post) {
     return false;
   }
 
-  const expiry = timestampToDate(
-    post.expiresAt
-  );
+  const expiry =
+    timestampToDate(
+      post.expiresAt
+    );
 
   if (!expiry) {
     return false;
   }
 
-  return expiry.getTime() <= Date.now();
+  return (
+    expiry.getTime() <=
+    Date.now()
+  );
 }
 
 function formatExpiryLabel(post) {
@@ -146,32 +207,37 @@ function formatExpiryLabel(post) {
     return "";
   }
 
-  const expiry = timestampToDate(
-    post.expiresAt
-  );
+  const expiry =
+    timestampToDate(
+      post.expiresAt
+    );
 
   if (!expiry) {
     return "";
   }
 
   const remaining =
-    expiry.getTime() - Date.now();
+    expiry.getTime() -
+    Date.now();
 
   if (remaining <= 0) {
     return "Expired";
   }
 
-  const minutes = Math.floor(
-    remaining / 60000
-  );
+  const minutes =
+    Math.floor(
+      remaining / 60000
+    );
 
-  const hours = Math.floor(
-    minutes / 60
-  );
+  const hours =
+    Math.floor(
+      minutes / 60
+    );
 
-  const days = Math.floor(
-    hours / 24
-  );
+  const days =
+    Math.floor(
+      hours / 24
+    );
 
   if (days > 0) {
     return `${days}d remaining`;
@@ -213,12 +279,17 @@ function shouldShowDiscovery() {
     const lastActive =
       Number(lastActiveRaw);
 
-    if (!Number.isFinite(lastActive)) {
+    if (
+      !Number.isFinite(
+        lastActive
+      )
+    ) {
       return true;
     }
 
     const inactiveMilliseconds =
-      Date.now() - lastActive;
+      Date.now() -
+      lastActive;
 
     const inactiveThreshold =
       DISCOVERY_INACTIVE_DAYS *
@@ -270,15 +341,28 @@ function openDiscoveryDestination(
 ) {
   dismissDiscovery();
 
-  if (destination === "market") {
-    state.marketBrowseMode = false;
-    state.page = "market";
+  if (
+    destination ===
+    "market"
+  ) {
+    state.marketBrowseMode =
+      false;
+
+    state.page =
+      "market";
+
     renderApp();
+
     return;
   }
 
-  if (destination === "timetrust") {
-    state.page = "timetrust";
+  if (
+    destination ===
+    "timetrust"
+  ) {
+    state.page =
+      "timetrust";
+
     renderApp();
   }
 }
@@ -315,6 +399,7 @@ function startDiscoveryCountdown() {
     !counter
   ) {
     stopDiscoveryCountdown();
+
     return;
   }
 
@@ -336,6 +421,7 @@ function startDiscoveryCountdown() {
       )
     ) {
       stopDiscoveryCountdown();
+
       return;
     }
 
@@ -352,7 +438,7 @@ function startDiscoveryCountdown() {
     const remainingSeconds =
       Math.ceil(
         remainingMilliseconds /
-        1000
+          1000
       );
 
     const progress =
@@ -377,9 +463,11 @@ function startDiscoveryCountdown() {
       );
 
     if (
-      remainingMilliseconds <= 0
+      remainingMilliseconds <=
+      0
     ) {
       stopDiscoveryCountdown();
+
       dismissDiscovery();
     }
   };
@@ -586,9 +674,12 @@ async function loadSavedPostIds() {
     state.user?.uid;
 
   if (!uid) {
-    savedPostIds = new Set();
+    savedPostIds =
+      new Set();
+
     savedPostsLoadedForUid =
       null;
+
     return;
   }
 
@@ -613,9 +704,13 @@ async function loadSavedPostIds() {
     savedPostIds =
       new Set(
         snapshot.docs.map(
-          item => item.id
+          item =>
+            item.id
         )
       );
+
+    state.savedPostCount =
+      savedPostIds.size;
 
     savedPostsLoadedForUid =
       uid;
@@ -644,7 +739,8 @@ async function loadSavedPostIds() {
                   )
                     ? post.savedBy.filter(
                         id =>
-                          id !== uid
+                          id !==
+                          uid
                       )
                     : []
                 )
@@ -671,7 +767,9 @@ function refreshSavedButtons() {
           button.dataset.save;
 
         const saved =
-          savedPostIds.has(id);
+          savedPostIds.has(
+            id
+          );
 
         button.innerHTML =
           saved
@@ -729,9 +827,10 @@ function isSaved(post) {
     return false;
   }
 
-  return savedPostIds.has(
-    post.id
-  ) ||
+  return (
+    savedPostIds.has(
+      post.id
+    ) ||
     (
       Array.isArray(
         post?.savedBy
@@ -739,7 +838,8 @@ function isSaved(post) {
       post.savedBy.includes(
         state.user.uid
       )
-    );
+    )
+  );
 }
 
 function renderPostActions(post) {
@@ -770,8 +870,14 @@ function renderPostActions(post) {
     >
       <button
         type="button"
-        class="btn ${liked ? "btn-primary" : "btn-ghost"}"
-        data-like="${cssEscape(post.id)}"
+        class="btn ${
+          liked
+            ? "btn-primary"
+            : "btn-ghost"
+        }"
+        data-like="${cssEscape(
+          post.id
+        )}"
         style="
           min-width:0;
           padding:10px 8px;
@@ -784,7 +890,9 @@ function renderPostActions(post) {
       <button
         type="button"
         class="btn btn-ghost"
-        data-comment="${cssEscape(post.id)}"
+        data-comment="${cssEscape(
+          post.id
+        )}"
         style="
           min-width:0;
           padding:10px 8px;
@@ -797,7 +905,9 @@ function renderPostActions(post) {
       <button
         type="button"
         class="btn btn-ghost"
-        data-share="${cssEscape(post.id)}"
+        data-share="${cssEscape(
+          post.id
+        )}"
         style="
           min-width:0;
           padding:10px 8px;
@@ -809,22 +919,35 @@ function renderPostActions(post) {
 
       <button
         type="button"
-        class="btn ${saved ? "btn-primary" : "btn-ghost"}"
-        data-save="${cssEscape(post.id)}"
+        class="btn ${
+          saved
+            ? "btn-primary"
+            : "btn-ghost"
+        }"
+        data-save="${cssEscape(
+          post.id
+        )}"
         style="
           min-width:0;
           padding:10px 8px;
           white-space:nowrap;
         "
       >
-        🔖 ${saved ? "Saved" : "Save"}
+        🔖 ${
+          saved
+            ? "Saved"
+            : "Save"
+        }
       </button>
     </div>
   `;
 }
 
 function renderPost(post) {
-  if (!post || !post.id) {
+  if (
+    !post ||
+    !post.id
+  ) {
     return "";
   }
 
@@ -857,7 +980,9 @@ function renderPost(post) {
   return `
     <article
       class="card post-card"
-      data-post-card="${cssEscape(post.id)}"
+      data-post-card="${cssEscape(
+        post.id
+      )}"
       style="
         margin-bottom:18px;
         padding:24px;
@@ -883,7 +1008,9 @@ function renderPost(post) {
             avatar
               ? `
                 <img
-                  src="${escapeHtml(avatar)}"
+                  src="${escapeHtml(
+                    avatar
+                  )}"
                   alt=""
                   style="
                     width:54px;
@@ -929,7 +1056,9 @@ function renderPost(post) {
                 overflow-wrap:anywhere;
               "
             >
-              ${escapeHtml(author)}
+              ${escapeHtml(
+                author
+              )}
             </strong>
 
             <div
@@ -978,7 +1107,9 @@ function renderPost(post) {
                 <button
                   type="button"
                   class="icon-btn"
-                  data-menu-post="${cssEscape(post.id)}"
+                  data-menu-post="${cssEscape(
+                    post.id
+                  )}"
                   aria-label="Post options"
                   title="Post options"
                 >
@@ -999,7 +1130,9 @@ function renderPost(post) {
                   <button
                     type="button"
                     class="btn btn-ghost btn-block"
-                    data-edit-post="${cssEscape(post.id)}"
+                    data-edit-post="${cssEscape(
+                      post.id
+                    )}"
                   >
                     ✏️ Edit
                   </button>
@@ -1007,7 +1140,9 @@ function renderPost(post) {
                   <button
                     type="button"
                     class="btn btn-ghost btn-block"
-                    data-delete-post="${cssEscape(post.id)}"
+                    data-delete-post="${cssEscape(
+                      post.id
+                    )}"
                   >
                     🗑️ Delete
                   </button>
@@ -1056,7 +1191,9 @@ function renderPost(post) {
           : ""
       }
 
-      ${renderPostActions(post)}
+      ${renderPostActions(
+        post
+      )}
     </article>
   `;
 }
@@ -1145,7 +1282,7 @@ function renderQuickActions() {
     <section
       style="
         display:grid;
-        grid-template-columns:repeat(4,minmax(0,1fr));
+        grid-template-columns:repeat(2,minmax(0,1fr));
         gap:14px;
         margin-bottom:26px;
       "
@@ -1318,12 +1455,11 @@ export function renderHome() {
 
   const posts =
     Array.isArray(state.posts)
-      ? state.posts
-          .filter(
-            post =>
-              post &&
-              !isPostExpired(post)
-          )
+      ? state.posts.filter(
+          post =>
+            post &&
+            !isPostExpired(post)
+        )
       : [];
 
   const showDiscovery =
@@ -1458,11 +1594,14 @@ function filterRenderedPosts(value) {
     );
 }
 
-export async function toggleLike(id) {
+export async function toggleLike(
+  id
+) {
   if (!state.user) {
     toast(
       "Please sign in to like posts."
     );
+
     return;
   }
 
@@ -1486,6 +1625,7 @@ export async function toggleLike(id) {
     toast(
       "This post is no longer available."
     );
+
     return;
   }
 
@@ -1511,16 +1651,18 @@ export async function toggleLike(id) {
         id
       ),
       {
-        likes: increment(
-          liked ? -1 : 1
-        ),
-        likedBy: liked
-          ? arrayRemove(
-              state.user.uid
-            )
-          : arrayUnion(
-              state.user.uid
-            )
+        likes:
+          increment(
+            liked ? -1 : 1
+          ),
+        likedBy:
+          liked
+            ? arrayRemove(
+                state.user.uid
+              )
+            : arrayUnion(
+                state.user.uid
+              )
       }
     );
 
@@ -1604,7 +1746,8 @@ export async function toggleLike(id) {
               id,
             text:
               `${getCurrentUserName()} liked your post.`,
-            read: false,
+            read:
+              false,
             createdAt:
               serverTimestamp()
           }
@@ -1638,11 +1781,14 @@ export async function toggleLike(id) {
   }
 }
 
-export async function savePost(id) {
+export async function savePost(
+  id
+) {
   if (!state.user) {
     toast(
       "Please sign in to save posts."
     );
+
     return;
   }
 
@@ -1666,6 +1812,7 @@ export async function savePost(id) {
     toast(
       "This post is no longer available."
     );
+
     return;
   }
 
@@ -1702,6 +1849,9 @@ export async function savePost(id) {
         id
       );
 
+      state.savedPostCount =
+        savedPostIds.size;
+
       state.posts =
         state.posts.map(
           item =>
@@ -1729,7 +1879,8 @@ export async function savePost(id) {
       await setDoc(
         savedRef,
         {
-          postId: id,
+          postId:
+            id,
           uid:
             state.user.uid,
           createdAt:
@@ -1740,6 +1891,9 @@ export async function savePost(id) {
       savedPostIds.add(
         id
       );
+
+      state.savedPostCount =
+        savedPostIds.size;
 
       state.posts =
         state.posts.map(
@@ -1789,7 +1943,9 @@ export async function savePost(id) {
   }
 }
 
-function refreshPostCard(id) {
+function refreshPostCard(
+  id
+) {
   const post =
     state.posts.find(
       item =>
@@ -1842,7 +1998,8 @@ function attachSinglePostEvents(
           "click",
           () => {
             toggleLike(
-              button.dataset.like
+              button.dataset
+                .like
             );
           }
         );
@@ -1859,7 +2016,8 @@ function attachSinglePostEvents(
           "click",
           () => {
             savePost(
-              button.dataset.save
+              button.dataset
+                .save
             );
           }
         );
@@ -1876,7 +2034,8 @@ function attachSinglePostEvents(
           "click",
           () => {
             sharePost(
-              button.dataset.share
+              button.dataset
+                .share
             );
           }
         );
@@ -1893,7 +2052,8 @@ function attachSinglePostEvents(
           "click",
           () => {
             showComments(
-              button.dataset.comment
+              button.dataset
+                .comment
             );
           }
         );
@@ -1912,7 +2072,8 @@ function attachSinglePostEvents(
             event.stopPropagation();
 
             showEditPost(
-              button.dataset.editPost
+              button.dataset
+                .editPost
             );
           }
         );
@@ -1931,7 +2092,8 @@ function attachSinglePostEvents(
             event.stopPropagation();
 
             showDeletePostConfirmation(
-              button.dataset.deletePost
+              button.dataset
+                .deletePost
             );
           }
         );
@@ -1950,7 +2112,8 @@ function attachSinglePostEvents(
             event.stopPropagation();
 
             const id =
-              button.dataset.menuPost;
+              button.dataset
+                .menuPost;
 
             const menu =
               document.getElementById(
@@ -1992,6 +2155,7 @@ export function showCreatePost() {
     toast(
       "Please sign in to create a post."
     );
+
     return;
   }
 
@@ -2131,6 +2295,7 @@ export function showCreatePost() {
           toast(
             "Write something first."
           );
+
           return;
         }
 
@@ -2141,11 +2306,14 @@ export function showCreatePost() {
           toast(
             "Your post is too long."
           );
+
           return;
         }
 
         if (button) {
-          button.disabled = true;
+          button.disabled =
+            true;
+
           button.textContent =
             "Publishing…";
         }
@@ -2205,11 +2373,14 @@ export function showCreatePost() {
     );
 }
 
-export function showEditPost(id) {
+export function showEditPost(
+  id
+) {
   if (!state.user) {
     toast(
       "Please sign in first."
     );
+
     return;
   }
 
@@ -2223,6 +2394,7 @@ export function showEditPost(id) {
     toast(
       "Post not found."
     );
+
     return;
   }
 
@@ -2233,6 +2405,7 @@ export function showEditPost(id) {
     toast(
       "You can only edit your own posts."
     );
+
     return;
   }
 
@@ -2336,6 +2509,7 @@ export function showEditPost(id) {
           toast(
             "Write something first."
           );
+
           return;
         }
 
@@ -2346,11 +2520,14 @@ export function showEditPost(id) {
           toast(
             "Your post is too long."
           );
+
           return;
         }
 
         if (button) {
-          button.disabled = true;
+          button.disabled =
+            true;
+
           button.textContent =
             "Saving…";
         }
@@ -2413,6 +2590,7 @@ export function showDeletePostConfirmation(
     toast(
       "Please sign in first."
     );
+
     return;
   }
 
@@ -2426,6 +2604,7 @@ export function showDeletePostConfirmation(
     toast(
       "Post not found."
     );
+
     return;
   }
 
@@ -2436,6 +2615,7 @@ export function showDeletePostConfirmation(
     toast(
       "You can only delete your own posts."
     );
+
     return;
   }
 
@@ -2580,6 +2760,7 @@ export async function sharePost(
     toast(
       "Post not found."
     );
+
     return;
   }
 
@@ -2602,6 +2783,7 @@ export async function sharePost(
       await navigator.share(
         shareData
       );
+
       return;
     }
 
@@ -2831,6 +3013,7 @@ export async function showComments(
           toast(
             "Write a comment first."
           );
+
           return;
         }
 
@@ -2838,6 +3021,7 @@ export async function showComments(
           toast(
             "Please sign in first."
           );
+
           return;
         }
 
