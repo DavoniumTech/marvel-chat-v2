@@ -3,6 +3,8 @@ export const state = {
   profile: null,
   page: "home",
   posts: [],
+  homePostIds: new Set(),
+  savedPostCount: null,
   conversations: [],
   activeConversation: null,
   messages: [],
