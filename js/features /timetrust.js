@@ -1,18 +1,33 @@
-import { state, escapeHtml, friendly, initials, formatDate } from "../state.js";
+import {
+  state,
+  escapeHtml,
+  friendly,
+  initials,
+  formatDate
+} from "../state.js";
+
 import {
   db,
   collection,
   doc,
   getDoc,
-  setDoc, 
   updateDoc,
   deleteDoc,
   addDoc,
   serverTimestamp
 } from "../firebase/firestore.js";
-import { showModal, closeModal } from "../components/modal.js";
+
+import {
+  showModal,
+  closeModal
+} from "../components/modal.js";
+
 import { toast } from "../components/toast.js";
-import { createConversation } from "./chat.js";
+
+import {
+  createConversation
+} from "./chat.js";
+
 
 const skillCategories = [
   "All",
@@ -28,9 +43,14 @@ const skillCategories = [
   "Other"
 ];
 
+
 function getTimeTrustAccount() {
-  return state.profile?.timeTrustAccount || {};
+  return (
+    state.profile?.timeTrustAccount ||
+    {}
+  );
 }
+
 
 export function hasTimeTrustAccount() {
   return (
@@ -38,6 +58,7 @@ export function hasTimeTrustAccount() {
     getTimeTrustAccount().active === true
   );
 }
+
 
 export function showTimeTrustAccountRequired(
   renderApp
@@ -49,6 +70,7 @@ export function showTimeTrustAccountRequired(
     return;
   }
 
+
   showModal(
     "TimeTrust account required",
     `
@@ -56,6 +78,7 @@ export function showTimeTrustAccountRequired(
         class="notice"
         style="margin-bottom:14px;"
       >
+
         <strong>
           Activate TimeTrust to publish or manage skills.
         </strong>
@@ -67,7 +90,9 @@ export function showTimeTrustAccountRequired(
           You can continue browsing TimeTrust without creating another account.
           Your Firebase login remains your only account.
         </p>
+
       </div>
+
 
       <button
         class="btn btn-primary btn-block"
@@ -79,19 +104,22 @@ export function showTimeTrustAccountRequired(
     `
   );
 
+
   document
-    .getElementById("timeTrustGoProfile")
+    .getElementById(
+      "timeTrustGoProfile"
+    )
     ?.addEventListener(
       "click",
       () => {
-        closeModal();
-        state.page = "profile";
 
-        if (
-          typeof renderApp === "function"
-        ) {
-          renderApp();
-        }
+        closeModal();
+
+        state.page =
+          "profile";
+
+        renderApp?.();
+
       }
     );
 }
@@ -107,16 +135,16 @@ export function showTimeTrustAccountModal(
     return;
   }
 
-  const account =
-    getTimeTrustAccount();
 
   const active =
-    account.active === true;
+    getTimeTrustAccount().active === true;
+
 
   showModal(
     active
       ? "Manage TimeTrust Account"
       : "Activate TimeTrust Account",
+
     `
       <div
         class="card"
@@ -127,6 +155,7 @@ export function showTimeTrustAccountModal(
           box-shadow:none;
         "
       >
+
         <strong>
           One Firebase identity
         </strong>
@@ -138,12 +167,15 @@ export function showTimeTrustAccountModal(
           TimeTrust uses your existing authenticated Firebase user.
           No second Firebase Authentication account is created.
         </p>
+
       </div>
+
 
       <div
         class="notice"
         style="margin-bottom:14px;"
       >
+
         <strong>
           ${
             active
@@ -162,7 +194,9 @@ export function showTimeTrustAccountModal(
               : "Activation enables publishing and management while leaving discovery available to everyone."
           }
         </p>
+
       </div>
+
 
       <button
         class="btn btn-primary btn-block"
@@ -178,11 +212,15 @@ export function showTimeTrustAccountModal(
     `
   );
 
+
   document
-    .getElementById("activateTimeTrustBtn")
+    .getElementById(
+      "activateTimeTrustBtn"
+    )
     ?.addEventListener(
       "click",
       async () => {
+
         const button =
           document.getElementById(
             "activateTimeTrustBtn"
@@ -192,31 +230,39 @@ export function showTimeTrustAccountModal(
           return;
         }
 
-        if (hasTimeTrustAccount()) {
+
+        if (
+          hasTimeTrustAccount()
+        ) {
           closeModal();
           return;
         }
 
+
         button.disabled = true;
+
         button.textContent =
           "Activating…";
 
+
         try {
-          const currentAccount =
-            state.profile?.timeTrustAccount || {};
 
-          const now =
-            new Date();
+          const current =
+            state.profile
+              ?.timeTrustAccount ||
+            {};
 
-          const nextAccount = {
-            ...currentAccount,
+
+          const account = {
+            ...current,
             active: true,
             createdAt:
-              currentAccount.createdAt ||
+              current.createdAt ||
               serverTimestamp(),
             updatedAt:
               serverTimestamp()
           };
+
 
           await updateDoc(
             doc(
@@ -226,21 +272,25 @@ export function showTimeTrustAccountModal(
             ),
             {
               timeTrustAccount:
-                nextAccount
+                account
             }
           );
 
+
           state.profile = {
             ...state.profile,
+
             timeTrustAccount: {
-              ...nextAccount,
+              ...current,
+              active: true,
               createdAt:
-                currentAccount.createdAt ||
-                now,
+                current.createdAt ||
+                new Date(),
               updatedAt:
-                now
+                new Date()
             }
           };
+
 
           closeModal();
 
@@ -248,11 +298,7 @@ export function showTimeTrustAccountModal(
             "TimeTrust account activated ⏱️"
           );
 
-          if (
-            typeof renderApp === "function"
-          ) {
-            renderApp();
-          }
+          renderApp?.();
 
         } catch (error) {
 
@@ -270,402 +316,698 @@ export function showTimeTrustAccountModal(
 
           button.textContent =
             "Activate TimeTrust Account ⏱️";
+
         }
+
       }
     );
 }
 
 
-export function renderTimeTrust(renderApp) {
-  const searchQuery = (state.search || "").toLowerCase();
-  const selectedCategory = state.timeCategory || "All";
-  const sortBy = state.timeSort || "newest";
-  const timeTab = state.timeTab || "offers";
-
-  const processItem = (item) => ({
+function normalizeSkill(item) {
+  return {
     id: item.id,
     uid: item.uid || "",
-    username: item.username || "User",
-    title: item.title || item.skill || "Untitled Skill",
-    description: item.description || "",
-    hours: item.hours || "1 hour",
-    category: item.category || "Other",
-    type: item.type || "offer",
-    createdAt: item.createdAt,
-    updatedAt: item.updatedAt
-  });
+    username:
+      item.username ||
+      "User",
+    title:
+      item.title ||
+      item.skill ||
+      "Untitled Skill",
+    description:
+      item.description ||
+      "",
+    hours:
+      item.hours ||
+      "1 hour",
+    category:
+      item.category ||
+      "Other",
+    type:
+      item.type ||
+      "offer",
+    createdAt:
+      item.createdAt,
+    updatedAt:
+      item.updatedAt
+  };
+}
 
-  const rawOffers = (state.skills || []).map(processItem);
+
+function timestamp(value) {
+  if (value?.toMillis) {
+    return value.toMillis();
+  }
+
+  if (value?.toDate) {
+    return value.toDate().getTime();
+  }
+
+  if (!value) {
+    return 0;
+  }
+
+  const time =
+    new Date(value).getTime();
+
+  return Number.isFinite(time)
+    ? time
+    : 0;
+}
+
+
+export function renderTimeTrust(
+  renderApp
+) {
+  const searchQuery =
+    (state.search || "")
+      .toLowerCase();
+
+  const selectedCategory =
+    state.timeCategory ||
+    "All";
+
+  const sortBy =
+    state.timeSort ||
+    "newest";
+
+  const timeTab =
+    state.timeTab ||
+    "offers";
+
+  const offers =
+    (state.skills || [])
+      .map(normalizeSkill);
+
 
   let pool =
     timeTab === "my"
-      ? rawOffers.filter(x => x.uid === state.user?.uid)
-      : rawOffers;
+      ? offers.filter(
+          item =>
+            item.uid ===
+            state.user?.uid
+        )
+      : offers;
 
-  if (selectedCategory !== "All" && timeTab !== "my") {
-    pool = pool.filter(
-      x =>
-        (x.category || "Other").toLowerCase() ===
-        selectedCategory.toLowerCase()
-    );
+
+  if (
+    selectedCategory !== "All" &&
+    timeTab !== "my"
+  ) {
+
+    pool =
+      pool.filter(
+        item =>
+          item.category
+            .toLowerCase() ===
+          selectedCategory
+            .toLowerCase()
+      );
+
   }
+
 
   if (searchQuery) {
-    pool = pool.filter(
-      x =>
-        x.title.toLowerCase().includes(searchQuery) ||
-        x.description.toLowerCase().includes(searchQuery) ||
-        x.username.toLowerCase().includes(searchQuery) ||
-        x.category.toLowerCase().includes(searchQuery)
-    );
+
+    pool =
+      pool.filter(
+        item =>
+          item.title
+            .toLowerCase()
+            .includes(searchQuery) ||
+
+          item.description
+            .toLowerCase()
+            .includes(searchQuery) ||
+
+          item.username
+            .toLowerCase()
+            .includes(searchQuery) ||
+
+          item.category
+            .toLowerCase()
+            .includes(searchQuery)
+      );
+
   }
 
-  pool.sort((a, b) => {
-    const timeA = a.createdAt?.toMillis
-      ? a.createdAt.toMillis()
-      : a.createdAt
-        ? new Date(a.createdAt).getTime()
-        : 0;
 
-    const timeB = b.createdAt?.toMillis
-      ? b.createdAt.toMillis()
-      : b.createdAt
-        ? new Date(b.createdAt).getTime()
-        : 0;
+  pool.sort(
+    (a, b) =>
+      sortBy === "newest"
+        ? timestamp(b.createdAt) -
+          timestamp(a.createdAt)
+        : timestamp(a.createdAt) -
+          timestamp(b.createdAt)
+  );
 
-    return sortBy === "newest" ? timeB - timeA : timeA - timeB;
-  });
 
-  const myOffersCount = rawOffers.filter(
-    x => x.uid === state.user?.uid
-  ).length;
+  const myOffersCount =
+    offers.filter(
+      item =>
+        item.uid ===
+        state.user?.uid
+    ).length;
+
+
+  const activeAccount =
+    hasTimeTrustAccount();
+
 
   return `
-    <div class="page timetrust-page">
+    <div
+      class="page timetrust-page"
+    >
+
       <section class="hero">
-        <h1>TimeTrust ⏱️</h1>
-        <p>Discover skilled community members, offer your own expertise, and discover useful knowledge.</p>
+
+        <h1>
+          TimeTrust ⏱️
+        </h1>
+
+        <p>
+          Discover skilled community members, offer your own expertise,
+          and discover useful knowledge.
+        </p>
+
       </section>
 
-      ${
-        hasTimeTrustAccount()
-          ? `
-            <div
-              class="notice"
-              style="margin-bottom:16px;"
-            >
-              <strong>
-                TimeTrust account active.
-              </strong>
-              <span class="small">
-                You can publish and manage your skill offers.
-              </span>
-            </div>
-          `
-          : `
-            <div
-              class="notice"
-              style="margin-bottom:16px;"
-            >
-              <strong>
-                Browse TimeTrust freely.
-              </strong>
-              <span class="small">
-                Activate your TimeTrust account from Profile before publishing or managing an offer.
-              </span>
-            </div>
-          `
-      }
 
-      <div class="grid grid2" style="margin-bottom: 16px;">
-        <div class="card stat" style="padding: 14px; margin:0;">
-          <span class="small">Provider Marketplace</span>
-          <strong style="font-size: 18px; display:block; margin: 4px 0;">Discover Skills </strong>
-          <span class="small">Connect directly with expert peers.</span>
-        </div>
+      <div
+        class="notice"
+        style="margin-bottom:16px;"
+      >
 
-        <div class="card stat" style="padding: 14px; margin:0;">
-          <span class="small">Available Offers</span>
-          <strong style="font-size: 18px; display:block; margin: 4px 0;">${rawOffers.length} Active</strong>
-          <span class="small">Ready for private connection.</span>
-        </div>
+        <strong>
+          ${
+            activeAccount
+              ? "TimeTrust account active."
+              : "Browse TimeTrust freely."
+          }
+        </strong>
+
+        <span class="small">
+          ${
+            activeAccount
+              ? "You can publish and manage your skill offers."
+              : "Activate your TimeTrust account from Profile before publishing or managing an offer."
+          }
+        </span>
+
       </div>
+
+
+      <div
+        class="grid grid2"
+        style="margin-bottom:16px;"
+      >
+
+        <div
+          class="card stat"
+          style="
+            padding:14px;
+            margin:0;
+          "
+        >
+
+          <span class="small">
+            Provider Marketplace
+          </span>
+
+          <strong
+            style="
+              font-size:18px;
+              display:block;
+              margin:4px 0;
+            "
+          >
+            Discover Skills
+          </strong>
+
+          <span class="small">
+            Connect directly with expert peers.
+          </span>
+
+        </div>
+
+
+        <div
+          class="card stat"
+          style="
+            padding:14px;
+            margin:0;
+          "
+        >
+
+          <span class="small">
+            Available Offers
+          </span>
+
+          <strong
+            style="
+              font-size:18px;
+              display:block;
+              margin:4px 0;
+            "
+          >
+            ${offers.length} Active
+          </strong>
+
+          <span class="small">
+            Ready for private connection.
+          </span>
+
+        </div>
+
+      </div>
+
 
       <div class="section-title">
-        <h2>Skill Offers</h2>
-        <button class="btn btn-primary" id="offerSkillBtn">
-          + Offer a skill
-        </button>
+
+        <h2>
+          Skill Offers
+        </h2>
+
+        ${
+          activeAccount
+            ? `
+              <button
+                class="btn btn-primary"
+                id="offerSkillBtn"
+                type="button"
+              >
+                + Offer a skill
+              </button>
+            `
+            : ""
+        }
+
       </div>
 
-      <div class="segmented" style="margin-bottom: 12px;">
+
+      <div
+        class="segmented"
+        style="margin-bottom:12px;"
+      >
+
         <button
-          class="btn ${timeTab === "offers" ? "btn-primary" : "btn-ghost"}"
+          class="btn ${
+            timeTab === "offers"
+              ? "btn-primary"
+              : "btn-ghost"
+          }"
           data-time-tab="offers"
           style="flex:1;"
         >
-          Community Offers (${rawOffers.length})
+          Community Offers (${offers.length})
         </button>
 
+
         <button
-          class="btn ${timeTab === "my" ? "btn-primary" : "btn-ghost"}"
+          class="btn ${
+            timeTab === "my"
+              ? "btn-primary"
+              : "btn-ghost"
+          }"
           data-time-tab="my"
           style="flex:1;"
         >
           My Offers (${myOffersCount})
         </button>
+
       </div>
 
-      <div style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;">
-        <div class="search" style="flex: 1; min-width: 200px; margin: 0;">
+
+      <div
+        style="
+          display:flex;
+          gap:8px;
+          margin-bottom:12px;
+          flex-wrap:wrap;
+        "
+      >
+
+        <div
+          class="search"
+          style="
+            flex:1;
+            min-width:200px;
+            margin:0;
+          "
+        >
+
           <input
             class="input"
             id="timeSearch"
             placeholder="Search skills, topics or providers…"
-            value="${escapeHtml(state.search || "")}"
+            value="${escapeHtml(
+              state.search || ""
+            )}"
           >
+
         </div>
+
 
         <select
           class="select"
           id="timeSortSelect"
-          style="width: auto; padding: 6px 12px; font-size: 13px;"
+          style="
+            width:auto;
+            padding:6px 12px;
+            font-size:13px;
+          "
         >
-          <option value="newest" ${sortBy === "newest" ? "selected" : ""}>
+
+          <option
+            value="newest"
+            ${
+              sortBy === "newest"
+                ? "selected"
+                : ""
+            }
+          >
             Newest first
           </option>
-          <option value="oldest" ${sortBy === "oldest" ? "selected" : ""}>
+
+          <option
+            value="oldest"
+            ${
+              sortBy === "oldest"
+                ? "selected"
+                : ""
+            }
+          >
             Oldest first
           </option>
+
         </select>
+
       </div>
+
 
       ${
         timeTab !== "my"
           ? `
-        <div
-          style="
-            display: flex;
-            gap: 6px;
-            overflow-x: auto;
-            padding-bottom: 8px;
-            margin-bottom: 16px;
-            white-space: nowrap;
-          "
-        >
-          ${skillCategories
-            .map(
-              cat => `
-              <button
-                class="btn ${
-                  selectedCategory.toLowerCase() === cat.toLowerCase()
-                    ? "btn-primary"
-                    : "btn-ghost"
-                }"
-                data-time-cat="${escapeHtml(cat)}"
-                style="
-                  padding: 4px 10px;
-                  font-size: 12px;
-                  border-radius: 999px;
-                "
-              >
-                ${escapeHtml(cat)}
-              </button>
-            `
-            )
-            .join("")}
-        </div>
-      `
+            <div
+              style="
+                display:flex;
+                gap:6px;
+                overflow-x:auto;
+                padding-bottom:8px;
+                margin-bottom:16px;
+                white-space:nowrap;
+              "
+            >
+
+              ${skillCategories
+                .map(
+                  category => `
+                    <button
+                      class="btn ${
+                        selectedCategory
+                          .toLowerCase() ===
+                        category.toLowerCase()
+                          ? "btn-primary"
+                          : "btn-ghost"
+                      }"
+                      data-time-cat="${escapeHtml(
+                        category
+                      )}"
+                      style="
+                        padding:4px 10px;
+                        font-size:12px;
+                        border-radius:999px;
+                      "
+                    >
+                      ${escapeHtml(
+                        category
+                      )}
+                    </button>
+                  `
+                )
+                .join("")}
+
+            </div>
+          `
           : ""
       }
 
+
       <div id="timeTrustItems">
+
         ${
           pool.length
             ? `
-          <div class="list">
-            ${pool
-              .map(x => {
-                const isOwner = x.uid === state.user?.uid;
+              <div class="list">
 
-                return `
-                  <div
-                    class="list-item"
-                    style="cursor: pointer;"
-                    data-view-skill="${escapeHtml(x.id)}"
-                  >
-                    <div
-                      class="profile-row"
-                      style="
-                        align-items: flex-start;
-                        justify-content: space-between;
-                      "
-                    >
-                      <div
-                        style="
-                          display: flex;
-                          gap: 10px;
-                          align-items: flex-start;
-                          flex: 1;
-                        "
-                      >
+                ${pool
+                  .map(
+                    item => {
+
+                      const isOwner =
+                        item.uid ===
+                        state.user?.uid;
+
+
+                      return `
                         <div
-                          class="avatar"
-                          style="font-size: 16px;"
+                          class="list-item"
+                          style="cursor:pointer;"
+                          data-view-skill="${escapeHtml(
+                            item.id
+                          )}"
                         >
-                          ${escapeHtml(initials(x.username))}
-                        </div>
-
-                        <div
-                          class="profile-meta"
-                          style="flex: 1;"
-                        >
-                          <div
-                            style="
-                              display: flex;
-                              align-items: center;
-                              gap: 6px;
-                              flex-wrap: wrap;
-                            "
-                          >
-                            <strong style="font-size: 15px;">
-                              ${escapeHtml(x.title)}
-                            </strong>
-
-                            <span
-                              class="badge"
-                              style="background: var(--surface2);"
-                            >
-                              ${escapeHtml(x.category)}
-                            </span>
-                          </div>
 
                           <div
-                            class="small"
-                            style="margin-top: 2px;"
-                          >
-                            Provider:
-                            @${escapeHtml(x.username)}
-                            ·
-                            ${escapeHtml(formatDate(x.createdAt))}
-                          </div>
-
-                          <p
-                            class="small"
+                            class="profile-row"
                             style="
-                              margin: 6px 0;
-                              color: var(--text-secondary);
-                              display: -webkit-box;
-                              -webkit-line-clamp: 2;
-                              -webkit-box-orient: vertical;
-                              overflow: hidden;
+                              align-items:flex-start;
+                              justify-content:space-between;
                             "
                           >
-                            ${escapeHtml(x.description)}
-                          </p>
 
-                          <div
-                            style="
-                              display: flex;
-                              gap: 8px;
-                              align-items: center;
-                              margin-top: 6px;
-                            "
-                          >
-                            <span
-                              class="badge"
+                            <div
                               style="
-                                font-weight: 600;
-                                background: var(--surface2);
+                                display:flex;
+                                gap:10px;
+                                align-items:flex-start;
+                                flex:1;
                               "
                             >
-                              ⏱️ Session:
-                              ${escapeHtml(x.hours)}
-                            </span>
 
-                            ${
-                              isOwner
-                                ? `
-                              <span
-                                class="badge"
-                                style="
-                                  background: rgba(79, 70, 229, 0.1);
-                                  color: var(--primary);
-                                "
+                              <div
+                                class="avatar"
+                                style="font-size:16px;"
                               >
-                                Your Offer
-                              </span>
-                            `
-                                : ""
-                            }
+                                ${escapeHtml(
+                                  initials(
+                                    item.username
+                                  )
+                                )}
+                              </div>
+
+
+                              <div
+                                class="profile-meta"
+                                style="flex:1;"
+                              >
+
+                                <div
+                                  style="
+                                    display:flex;
+                                    align-items:center;
+                                    gap:6px;
+                                    flex-wrap:wrap;
+                                  "
+                                >
+
+                                  <strong
+                                    style="font-size:15px;"
+                                  >
+                                    ${escapeHtml(
+                                      item.title
+                                    )}
+                                  </strong>
+
+                                  <span
+                                    class="badge"
+                                    style="
+                                      background:var(--surface2);
+                                    "
+                                  >
+                                    ${escapeHtml(
+                                      item.category
+                                    )}
+                                  </span>
+
+                                </div>
+
+
+                                <div
+                                  class="small"
+                                  style="margin-top:2px;"
+                                >
+                                  Provider:
+                                  @${escapeHtml(
+                                    item.username
+                                  )}
+                                  ·
+                                  ${escapeHtml(
+                                    formatDate(
+                                      item.createdAt
+                                    )
+                                  )}
+                                </div>
+
+
+                                <p
+                                  class="small"
+                                  style="
+                                    margin:6px 0;
+                                    color:var(--text-secondary);
+                                    display:-webkit-box;
+                                    -webkit-line-clamp:2;
+                                    -webkit-box-orient:vertical;
+                                    overflow:hidden;
+                                  "
+                                >
+                                  ${escapeHtml(
+                                    item.description
+                                  )}
+                                </p>
+
+
+                                <div
+                                  style="
+                                    display:flex;
+                                    gap:8px;
+                                    align-items:center;
+                                    margin-top:6px;
+                                  "
+                                >
+
+                                  <span
+                                    class="badge"
+                                    style="
+                                      font-weight:600;
+                                      background:var(--surface2);
+                                    "
+                                  >
+                                    ⏱️ Session:
+                                    ${escapeHtml(
+                                      item.hours
+                                    )}
+                                  </span>
+
+
+                                  ${
+                                    isOwner
+                                      ? `
+                                        <span
+                                          class="badge"
+                                          style="
+                                            background:rgba(79,70,229,.1);
+                                            color:var(--primary);
+                                          "
+                                        >
+                                          Your Offer
+                                        </span>
+                                      `
+                                      : ""
+                                  }
+
+                                </div>
+
+                              </div>
+
+                            </div>
+
                           </div>
+
                         </div>
-                      </div>
-                    </div>
-                  </div>
-                `;
-              })
-              .join("")}
-          </div>
-        `
+                      `;
+                    }
+                  )
+                  .join("")}
+
+              </div>
+            `
             : `
-          <div
-            class="card empty"
-            style="
-              padding: 40px 20px;
-              text-align: center;
-            "
-          >
-            <div
-              style="
-                font-size: 42px;
-                margin-bottom: 8px;
-              "
-            >
-              ⏱️
-            </div>
+              <div
+                class="card empty"
+                style="
+                  padding:40px 20px;
+                  text-align:center;
+                "
+              >
 
-            <h3>
-              ${
-                timeTab === "my"
-                  ? "You haven't published any skill offers yet."
-                  : "No skill offers found."
-              }
-            </h3>
+                <div
+                  style="
+                    font-size:42px;
+                    margin-bottom:8px;
+                  "
+                >
+                  ⏱️
+                </div>
 
-            <p
-              style="
-                color: var(--text-secondary);
-                margin-bottom: 16px;
-              "
-            >
-              ${
-                timeTab === "my"
-                  ? "Publish your first skill offer to start helping members."
-                  : "Try adjusting your search or category filters."
-              }
-            </p>
 
-            <button
-              class="btn btn-primary"
-              id="emptyOfferBtn"
-            >
-              Offer a skill
-            </button>
-          </div>
-        `
+                <h3>
+                  ${
+                    timeTab === "my"
+                      ? "You haven't published any skill offers yet."
+                      : "No skill offers found."
+                  }
+                </h3>
+
+
+                <p
+                  style="
+                    color:var(--text-secondary);
+                    margin-bottom:16px;
+                  "
+                >
+                  ${
+                    timeTab === "my"
+                      ? "Publish your first skill offer to start helping members."
+                      : "Try adjusting your search or category filters."
+                  }
+                </p>
+
+
+                ${
+                  activeAccount
+                    ? `
+                      <button
+                        class="btn btn-primary"
+                        id="emptyOfferBtn"
+                        type="button"
+                      >
+                        Offer a skill
+                      </button>
+                    `
+                    : ""
+                }
+
+              </div>
+            `
         }
+
       </div>
+
     </div>
   `;
 }
+
 
 export function showSkillModal(
   type = "offer",
   renderApp,
   existingItem = null
 ) {
-  const isEdit = !!existingItem;
+  const isEdit =
+    !!existingItem;
+
 
   if (!state.user) {
     toast(
@@ -674,6 +1016,7 @@ export function showSkillModal(
     return;
   }
 
+
   if (!hasTimeTrustAccount()) {
     showTimeTrustAccountRequired(
       renderApp
@@ -681,11 +1024,18 @@ export function showSkillModal(
     return;
   }
 
+
   showModal(
-    isEdit ? "Edit skill offer" : "Offer your skill",
+    isEdit
+      ? "Edit skill offer"
+      : "Offer your skill",
+
     `
       <div class="field">
-        <label>Skill title *</label>
+
+        <label>
+          Skill title *
+        </label>
 
         <input
           class="input"
@@ -697,52 +1047,83 @@ export function showSkillModal(
             ""
           )}"
         >
+
       </div>
 
+
       <div class="grid grid2">
+
         <div class="field">
-          <label>Category *</label>
+
+          <label>
+            Category *
+          </label>
 
           <select
             class="select"
             id="skillCategory"
           >
+
             ${skillCategories
-              .filter(c => c !== "All")
+              .filter(
+                category =>
+                  category !== "All"
+              )
               .map(
-                c => `
-                <option
-                  value="${escapeHtml(c)}"
-                  ${
-                    (existingItem?.category || "Other") === c
-                      ? "selected"
-                      : ""
-                  }
-                >
-                  ${escapeHtml(c)}
-                </option>
-              `
+                category => `
+                  <option
+                    value="${escapeHtml(
+                      category
+                    )}"
+                    ${
+                      (
+                        existingItem
+                          ?.category ||
+                        "Other"
+                      ) === category
+                        ? "selected"
+                        : ""
+                    }
+                  >
+                    ${escapeHtml(
+                      category
+                    )}
+                  </option>
+                `
               )
               .join("")}
+
           </select>
+
         </div>
 
+
         <div class="field">
-          <label>Estimated time / session</label>
+
+          <label>
+            Estimated time / session
+          </label>
 
           <input
             class="input"
             id="skillHours"
             placeholder="e.g. 1 hour"
             value="${escapeHtml(
-              existingItem?.hours || "1 hour"
+              existingItem?.hours ||
+              "1 hour"
             )}"
           >
+
         </div>
+
       </div>
 
+
       <div class="field">
-        <label>Description *</label>
+
+        <label>
+          Description *
+        </label>
 
         <textarea
           class="textarea"
@@ -750,231 +1131,348 @@ export function showSkillModal(
           rows="4"
           placeholder="Describe what you can teach or help with, and what learners can expect…"
         >${escapeHtml(
-          existingItem?.description || ""
+          existingItem?.description ||
+          ""
         )}</textarea>
+
       </div>
+
 
       <button
         class="btn btn-primary btn-block"
         id="saveSkillBtn"
+        type="button"
       >
-        ${isEdit ? "Save Changes" : "Publish offer ⏱️"}
+        ${
+          isEdit
+            ? "Save Changes"
+            : "Publish offer ⏱️"
+        }
       </button>
     `
   );
 
+
   document
-    .getElementById("saveSkillBtn")
-    ?.addEventListener("click", async () => {
-      const titleInput =
-        document.getElementById("skillTitle");
+    .getElementById(
+      "saveSkillBtn"
+    )
+    ?.addEventListener(
+      "click",
+      async () => {
 
-      const descInput =
-        document.getElementById("skillDescription");
-
-      const hoursInput =
-        document.getElementById("skillHours");
-
-      const catInput =
-        document.getElementById("skillCategory");
-
-      const saveBtn =
-        document.getElementById("saveSkillBtn");
-
-      const title =
-        titleInput.value.trim();
-
-      const description =
-        descInput.value.trim();
-
-      const hours =
-        hoursInput.value.trim() || "1 hour";
-
-      const category =
-        catInput.value || "Other";
-
-      if (!title) {
-        toast("Please enter a skill title.");
-        titleInput.focus();
-        return;
-      }
-
-      if (!description) {
-        toast("Please enter a description.");
-        descInput.focus();
-        return;
-      }
-
-      try {
-        saveBtn.disabled = true;
-        saveBtn.textContent =
-          isEdit ? "Saving…" : "Publishing…";
-
-        const username =
-          state.profile?.displayName ||
-          state.profile?.username ||
-          "User";
-
-        if (isEdit) {
-          await updateDoc(
-            doc(db, "skills", existingItem.id),
-            {
-              title,
-              description,
-              hours,
-              category,
-              updatedAt: serverTimestamp()
-            }
+        const titleInput =
+          document.getElementById(
+            "skillTitle"
           );
 
-          closeModal();
+        const descriptionInput =
+          document.getElementById(
+            "skillDescription"
+          );
 
+        const hoursInput =
+          document.getElementById(
+            "skillHours"
+          );
+
+        const categoryInput =
+          document.getElementById(
+            "skillCategory"
+          );
+
+        const saveButton =
+          document.getElementById(
+            "saveSkillBtn"
+          );
+
+
+        const title =
+          titleInput
+            ?.value
+            .trim() || "";
+
+        const description =
+          descriptionInput
+            ?.value
+            .trim() || "";
+
+        const hours =
+          hoursInput
+            ?.value
+            .trim() ||
+          "1 hour";
+
+        const category =
+          categoryInput
+            ?.value ||
+          "Other";
+
+
+        if (!title) {
           toast(
-            "Skill offer updated successfully ✨"
-          );
-        } else {
-          await addDoc(
-            collection(db, "skills"),
-            {
-              uid: state.user.uid,
-              username,
-              title,
-              description,
-              hours,
-              category,
-              type: "offer",
-              createdAt: serverTimestamp(),
-              updatedAt: serverTimestamp()
-            }
+            "Please enter a skill title."
           );
 
-          closeModal();
+          titleInput?.focus();
 
-          toast(
-            "Skill offer published ⏱️"
-          );
+          return;
         }
 
-        if (typeof renderApp === "function") {
-          renderApp();
+
+        if (!description) {
+          toast(
+            "Please enter a description."
+          );
+
+          descriptionInput?.focus();
+
+          return;
         }
-      } catch (e) {
-        console.error(
-          "SKILL SAVE ERROR:",
-          e
-        );
 
-        toast(
-          friendly(e)
-        );
 
-        saveBtn.disabled = false;
+        try {
 
-        saveBtn.textContent =
-          isEdit
-            ? "Save Changes"
-            : "Publish offer ⏱️";
+          saveButton.disabled =
+            true;
+
+          saveButton.textContent =
+            isEdit
+              ? "Saving…"
+              : "Publishing…";
+
+
+          const username =
+            state.profile
+              ?.displayName ||
+            state.profile
+              ?.username ||
+            "User";
+
+
+          if (isEdit) {
+
+            if (
+              existingItem.uid !==
+              state.user.uid
+            ) {
+              throw new Error(
+                "You can only edit your own skill offers."
+              );
+            }
+
+
+            await updateDoc(
+              doc(
+                db,
+                "skills",
+                existingItem.id
+              ),
+              {
+                title,
+                description,
+                hours,
+                category,
+                updatedAt:
+                  serverTimestamp()
+              }
+            );
+
+
+            closeModal();
+
+            toast(
+              "Skill offer updated successfully ✨"
+            );
+
+          } else {
+
+            await addDoc(
+              collection(
+                db,
+                "skills"
+              ),
+              {
+                uid:
+                  state.user.uid,
+                username,
+                title,
+                description,
+                hours,
+                category,
+                type:
+                  "offer",
+                createdAt:
+                  serverTimestamp(),
+                updatedAt:
+                  serverTimestamp()
+              }
+            );
+
+
+            closeModal();
+
+            toast(
+              "Skill offer published ⏱️"
+            );
+
+          }
+
+
+          renderApp?.();
+
+        } catch (error) {
+
+          console.error(
+            "[TimeTrust] Skill save error:",
+            error
+          );
+
+          toast(
+            friendly(error)
+          );
+
+          saveButton.disabled =
+            false;
+
+          saveButton.textContent =
+            isEdit
+              ? "Save Changes"
+              : "Publish offer ⏱️";
+
+        }
+
       }
-    });
+    );
 }
+
 
 export function showSkillDetails(
   item,
   renderApp
 ) {
   const isOwner =
-    item.uid === state.user?.uid;
+    item.uid ===
+    state.user?.uid;
+
 
   showModal(
     "Skill Offer Details",
+
     `
       <div
         style="
-          display: flex;
-          flex-direction: column;
-          gap: 14px;
+          display:flex;
+          flex-direction:column;
+          gap:14px;
         "
       >
+
         <div
           style="
-            display: flex;
-            align-items: center;
-            gap: 10px;
+            display:flex;
+            align-items:center;
+            gap:10px;
           "
         >
+
           <div
             class="avatar"
-            style="font-size: 18px;"
+            style="font-size:18px;"
           >
             ${escapeHtml(
-              initials(item.username)
+              initials(
+                item.username
+              )
             )}
           </div>
 
+
           <div>
+
             <strong
               style="
-                font-size: 16px;
-                display: block;
+                font-size:16px;
+                display:block;
               "
             >
-              ${escapeHtml(item.title)}
+              ${escapeHtml(
+                item.title
+              )}
             </strong>
 
             <span class="small">
               Offered by
-              @${escapeHtml(item.username)}
+              @${escapeHtml(
+                item.username
+              )}
               ·
               ${escapeHtml(
-                formatDate(item.createdAt)
+                formatDate(
+                  item.createdAt
+                )
               )}
             </span>
+
           </div>
+
         </div>
+
 
         <div
           style="
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
+            display:flex;
+            gap:8px;
+            flex-wrap:wrap;
           "
         >
-          <span
-            class="badge"
-            style="background: var(--surface2);"
-          >
-            📂
-            ${escapeHtml(
-              item.category || "Other"
-            )}
-          </span>
 
           <span
             class="badge"
-            style="background: var(--surface2);"
+            style="
+              background:var(--surface2);
+            "
+          >
+            📂
+            ${escapeHtml(
+              item.category ||
+              "Other"
+            )}
+          </span>
+
+
+          <span
+            class="badge"
+            style="
+              background:var(--surface2);
+            "
           >
             ⏱️ Session:
             ${escapeHtml(
-              item.hours || "1 hour"
+              item.hours ||
+              "1 hour"
             )}
           </span>
+
         </div>
+
 
         <div
           class="card"
           style="
-            background: var(--surface2);
-            padding: 12px;
-            margin: 0;
-            box-shadow: none;
+            background:var(--surface2);
+            padding:12px;
+            margin:0;
+            box-shadow:none;
           "
         >
+
           <span
             class="small"
             style="
-              font-weight: 600;
-              display: block;
-              margin-bottom: 4px;
+              font-weight:600;
+              display:block;
+              margin-bottom:4px;
             "
           >
             About this skill offer
@@ -982,91 +1480,113 @@ export function showSkillDetails(
 
           <p
             style="
-              white-space: pre-wrap;
-              word-break: break-word;
-              margin: 0;
-              font-size: 14px;
+              white-space:pre-wrap;
+              word-break:break-word;
+              margin:0;
+              font-size:14px;
             "
           >
-            ${escapeHtml(item.description)}
+            ${escapeHtml(
+              item.description
+            )}
           </p>
+
         </div>
 
-        <div style="margin-top: 8px;">
+
+        <div style="margin-top:8px;">
+
           ${
             isOwner
+
               ? hasTimeTrustAccount()
+
                 ? `
-            <div
-              style="
-                display: flex;
-                gap: 8px;
-              "
-            >
-              <button
-                class="btn btn-secondary"
-                id="editSkillDetail"
-                style="flex: 1;"
-              >
-                Edit offer
-              </button>
+                  <div
+                    style="
+                      display:flex;
+                      gap:8px;
+                    "
+                  >
 
-              <button
-                class="btn btn-danger"
-                id="deleteSkillDetail"
-                style="flex: 1;"
-              >
-                Delete offer
-              </button>
-            </div>
-          `
+                    <button
+                      class="btn btn-secondary"
+                      id="editSkillDetail"
+                      style="flex:1;"
+                    >
+                      Edit offer
+                    </button>
+
+
+                    <button
+                      class="btn btn-danger"
+                      id="deleteSkillDetail"
+                      style="flex:1;"
+                    >
+                      Delete offer
+                    </button>
+
+                  </div>
+                `
+
                 : `
-            <div
-              class="notice"
-              style="margin-bottom:10px;"
-            >
-              <strong>
-                Activate TimeTrust to manage this offer.
-              </strong>
-              <p
-                class="small"
-                style="margin:6px 0 0;"
-              >
-                Your existing skill remains readable, but publishing, editing,
-                and deleting require an active TimeTrust account.
-              </p>
-            </div>
+                  <div
+                    class="notice"
+                    style="margin-bottom:10px;"
+                  >
 
-            <button
-              class="btn btn-primary btn-block"
-              id="activateSkillAccountBtn"
-              type="button"
-            >
-              ⏱️ Activate from Profile
-            </button>
-          `
+                    <strong>
+                      Activate TimeTrust to manage this offer.
+                    </strong>
+
+                    <p
+                      class="small"
+                      style="margin:6px 0 0;"
+                    >
+                      Your existing skill remains readable,
+                      but publishing, editing, and deleting
+                      require an active TimeTrust account.
+                    </p>
+
+                  </div>
+
+
+                  <button
+                    class="btn btn-primary btn-block"
+                    id="activateSkillAccountBtn"
+                    type="button"
+                  >
+                    ⏱️ Activate from Profile
+                  </button>
+                `
+
               : `
-            <button
-              class="btn btn-primary btn-block"
-              id="messageProviderBtn"
-            >
-              Message Provider
-              @${escapeHtml(
-                item.username
-              )}
-              💬
-            </button>
-          `
+                <button
+                  class="btn btn-primary btn-block"
+                  id="messageProviderBtn"
+                  type="button"
+                >
+                  Message Provider
+                  @${escapeHtml(
+                    item.username
+                  )}
+                  💬
+                </button>
+              `
           }
+
         </div>
+
       </div>
     `
   );
+
 
   if (
     isOwner &&
     !hasTimeTrustAccount()
   ) {
+
     document
       .getElementById(
         "activateSkillAccountBtn"
@@ -1074,26 +1594,31 @@ export function showSkillDetails(
       ?.addEventListener(
         "click",
         () => {
-          closeModal();
-          state.page = "profile";
 
-          if (
-            typeof renderApp === "function"
-          ) {
-            renderApp();
-          }
+          closeModal();
+
+          state.page =
+            "profile";
+
+          renderApp?.();
+
         }
       );
 
     return;
   }
 
+
   if (isOwner) {
+
     document
-      .getElementById("editSkillDetail")
+      .getElementById(
+        "editSkillDetail"
+      )
       ?.addEventListener(
         "click",
         () => {
+
           closeModal();
 
           showSkillModal(
@@ -1101,63 +1626,58 @@ export function showSkillDetails(
             renderApp,
             item
           );
+
         }
       );
 
+
     document
-      .getElementById("deleteSkillDetail")
+      .getElementById(
+        "deleteSkillDetail"
+      )
       ?.addEventListener(
         "click",
-        () => {
+        () =>
           showDeleteSkillConfirmation(
             item,
             renderApp
-          );
-        }
+          )
       );
 
     return;
   }
 
-  /*
-   * =========================================================
-   * TIME TRUST -> CHAT CONNECTION
-   * =========================================================
-   *
-   * This is the only important behavior changed for the
-   * current bug.
-   *
-   * We retrieve the provider directly by UID instead of
-   * performing a collection query using where("uid", ...).
-   *
-   * The chat module already uses the user's UID as the
-   * document ID and createConversation() already opens the
-   * correct conversation and changes state.page to "chat".
-   * =========================================================
-   */
 
   document
-    .getElementById("messageProviderBtn")
+    .getElementById(
+      "messageProviderBtn"
+    )
     ?.addEventListener(
       "click",
       async () => {
-        const connectBtn =
+
+        const button =
           document.getElementById(
             "messageProviderBtn"
           );
 
-        if (!connectBtn) {
+        if (!button) {
           return;
         }
 
-        try {
-          connectBtn.disabled = true;
 
-          connectBtn.textContent =
+        try {
+
+          button.disabled =
+            true;
+
+          button.textContent =
             `Opening chat with ${item.username}…`;
+
 
           const targetUid =
             item.uid;
+
 
           if (
             !targetUid ||
@@ -1168,27 +1688,27 @@ export function showSkillDetails(
             );
           }
 
+
           if (
             targetUid ===
             state.user.uid
           ) {
+
             toast(
               "You cannot contact yourself."
             );
 
-            connectBtn.disabled = false;
+            button.disabled =
+              false;
 
-            connectBtn.textContent =
+            button.textContent =
               `Message Provider @${item.username} 💬`;
 
             return;
           }
 
-          /*
-           * Get the provider directly by UID.
-           * This matches the existing chat architecture.
-           */
-          const profileSnap =
+
+          const profileSnapshot =
             await getDoc(
               doc(
                 db,
@@ -1197,8 +1717,10 @@ export function showSkillDetails(
               )
             );
 
+
           let profile = {
-            uid: targetUid,
+            uid:
+              targetUid,
             username:
               item.username ||
               "User",
@@ -1207,75 +1729,65 @@ export function showSkillDetails(
               "User"
           };
 
+
           if (
-            profileSnap.exists()
+            profileSnapshot.exists()
           ) {
+
+            const data =
+              profileSnapshot.data();
+
             profile = {
-              id: profileSnap.id,
-              ...profileSnap.data(),
+              id:
+                profileSnapshot.id,
+              ...data,
               uid:
-                profileSnap.data()
-                  .uid ||
+                data.uid ||
                 targetUid
             };
+
           }
 
-          /*
-           * Create or reuse the existing conversation.
-           *
-           * chat.js handles:
-           * - finding an existing conversation
-           * - creating one when necessary
-           * - restoring a hidden conversation
-           * - setting state.activeConversation
-           * - setting state.page = "chat"
-           * - rendering the Chat page
-           */
+
           await createConversation(
             profile,
             renderApp
           );
 
-          /*
-           * Explicit final navigation guard.
-           *
-           * This does not replace the chat module.
-           * It simply guarantees that TimeTrust leaves
-           * the TimeTrust page after the connection action.
-           */
-          state.page = "chat";
 
-          if (
-            typeof renderApp ===
-            "function"
-          ) {
-            renderApp();
-          }
+          state.page =
+            "chat";
+
+          renderApp?.();
+
 
           toast(
             `Interest sent to @${item.username} ⏱️`
           );
-        } catch (e) {
+
+        } catch (error) {
+
           console.error(
-            "CONNECT PROVIDER ERROR:",
-            e
+            "[TimeTrust] Connect provider error:",
+            error
           );
 
           toast(
             "Could not open this conversation. Please try again."
           );
 
-          connectBtn.disabled =
+          button.disabled =
             false;
 
-          connectBtn.textContent =
-            `Message Provider @${escapeHtml(
-              item.username
-            )} 💬`;
+          button.textContent =
+            `Message Provider @${item.username} 💬`;
+
         }
+
       }
     );
 }
+
 
 function showDeleteSkillConfirmation(
   item,
@@ -1288,6 +1800,7 @@ function showDeleteSkillConfirmation(
     return;
   }
 
+
   if (!hasTimeTrustAccount()) {
     showTimeTrustAccountRequired(
       renderApp
@@ -1295,8 +1808,10 @@ function showDeleteSkillConfirmation(
     return;
   }
 
+
   if (
-    item.uid !== state.user.uid
+    item.uid !==
+    state.user.uid
   ) {
     toast(
       "You can only manage your own skill offers."
@@ -1304,70 +1819,93 @@ function showDeleteSkillConfirmation(
     return;
   }
 
+
   showModal(
     "Delete this skill offer?",
+
     `
       <p class="small">
         Are you sure you want to delete
         <strong>
-          ${escapeHtml(item.title)}
+          ${escapeHtml(
+            item.title
+          )}
         </strong>?
         This action cannot be undone.
       </p>
 
+
       <div
         style="
-          display: flex;
-          gap: 10px;
-          margin-top: 16px;
+          display:flex;
+          gap:10px;
+          margin-top:16px;
         "
       >
+
         <button
           class="btn btn-ghost"
           id="cancelDelSkill"
-          style="flex: 1;"
+          style="flex:1;"
         >
           Cancel
         </button>
 
+
         <button
           class="btn btn-danger"
           id="confirmDelSkill"
-          style="flex: 1;"
+          style="flex:1;"
         >
           Delete
         </button>
+
       </div>
     `
   );
 
+
   document
-    .getElementById("cancelDelSkill")
+    .getElementById(
+      "cancelDelSkill"
+    )
     ?.addEventListener(
       "click",
       () => {
+
+        closeModal();
+
         showSkillDetails(
           item,
           renderApp
         );
+
       }
     );
 
+
   document
-    .getElementById("confirmDelSkill")
+    .getElementById(
+      "confirmDelSkill"
+    )
     ?.addEventListener(
       "click",
       async () => {
-        const confirmBtn =
+
+        const button =
           document.getElementById(
             "confirmDelSkill"
           );
 
-        try {
-          confirmBtn.disabled = true;
 
-          confirmBtn.textContent =
+        try {
+
+          button.disabled =
+            true;
+
+          button.textContent =
             "Deleting…";
+
 
           await deleteDoc(
             doc(
@@ -1377,43 +1915,46 @@ function showDeleteSkillConfirmation(
             )
           );
 
+
           closeModal();
 
           toast(
             "Skill offer deleted successfully."
           );
 
-          if (
-            typeof renderApp ===
-            "function"
-          ) {
-            renderApp();
-          }
-        } catch (e) {
+          renderApp?.();
+
+        } catch (error) {
+
           console.error(
-            "DELETE SKILL ERROR:",
-            e
+            "[TimeTrust] Delete skill error:",
+            error
           );
 
           toast(
-            "Could not delete skill offer."
+            friendly(error)
           );
 
-          confirmBtn.disabled =
+          button.disabled =
             false;
 
-          confirmBtn.textContent =
+          button.textContent =
             "Delete";
+
         }
+
       }
     );
 }
+
 
 export function attachTimeTrustEvents(
   renderApp
 ) {
   document
-    .getElementById("offerSkillBtn")
+    .getElementById(
+      "offerSkillBtn"
+    )
     ?.addEventListener(
       "click",
       () =>
@@ -1423,8 +1964,11 @@ export function attachTimeTrustEvents(
         )
     );
 
+
   document
-    .getElementById("emptyOfferBtn")
+    .getElementById(
+      "emptyOfferBtn"
+    )
     ?.addEventListener(
       "click",
       () =>
@@ -1433,118 +1977,159 @@ export function attachTimeTrustEvents(
           renderApp
         )
     );
+
 
   document
     .querySelectorAll(
       "[data-time-tab]"
     )
-    .forEach(b => {
-      b.addEventListener(
-        "click",
-        () => {
-          state.timeTab =
-            b.dataset.timeTab;
+    .forEach(
+      button => {
 
-          renderApp();
-        }
-      );
-    });
+        button.addEventListener(
+          "click",
+          () => {
+
+            state.timeTab =
+              button.dataset.timeTab;
+
+            renderApp();
+
+          }
+        );
+
+      }
+    );
+
 
   document
     .querySelectorAll(
       "[data-time-cat]"
     )
-    .forEach(b => {
-      b.addEventListener(
-        "click",
-        () => {
-          state.timeCategory =
-            b.dataset.timeCat;
+    .forEach(
+      button => {
 
-          renderApp();
-        }
-      );
-    });
+        button.addEventListener(
+          "click",
+          () => {
+
+            state.timeCategory =
+              button.dataset.timeCat;
+
+            renderApp();
+
+          }
+        );
+
+      }
+    );
+
 
   const searchInput =
     document.getElementById(
       "timeSearch"
     );
 
+
   if (searchInput) {
+
     searchInput.addEventListener(
       "input",
-      e => {
+      event => {
+
         state.search =
-          e.target.value;
+          event.target.value;
 
         renderApp();
 
+
         setTimeout(
           () => {
+
             const input =
               document.getElementById(
                 "timeSearch"
               );
 
-            if (input) {
-              input.focus();
-
-              input.selectionStart =
-                input.value.length;
-
-              input.selectionEnd =
-                input.value.length;
+            if (!input) {
+              return;
             }
+
+
+            input.focus();
+
+            input.selectionStart =
+              input.value.length;
+
+            input.selectionEnd =
+              input.value.length;
+
           },
           0
         );
+
       }
     );
+
   }
+
 
   const sortSelect =
     document.getElementById(
       "timeSortSelect"
     );
 
+
   if (sortSelect) {
+
     sortSelect.addEventListener(
       "change",
-      e => {
+      event => {
+
         state.timeSort =
-          e.target.value;
+          event.target.value;
 
         renderApp();
+
       }
     );
+
   }
+
 
   document
     .querySelectorAll(
       "[data-view-skill]"
     )
-    .forEach(card => {
-      card.addEventListener(
-        "click",
-        () => {
-          const id =
-            card.dataset.viewSkill;
+    .forEach(
+      card => {
 
-          const item =
-            (state.skills || [])
-              .find(
-                x =>
-                  x.id === id
+        card.addEventListener(
+          "click",
+          () => {
+
+            const item =
+              (state.skills || [])
+                .find(
+                  skill =>
+                    skill.id ===
+                    card.dataset
+                      .viewSkill
+                );
+
+
+            if (item) {
+
+              showSkillDetails(
+                item,
+                renderApp
               );
 
-          if (item) {
-            showSkillDetails(
-              item,
-              renderApp
-            );
+            }
+
           }
-        }
-      );
-    });
+        );
+
+      }
+    );
 }
