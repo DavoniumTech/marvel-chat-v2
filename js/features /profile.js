@@ -111,6 +111,7 @@ export function renderProfile(renderApp) {
   loadProfileSavedPostIds(renderApp);
 
   const profile = state.profile || {};
+
   const name =
     profile.displayName ||
     profile.username ||
@@ -282,56 +283,78 @@ export function renderProfile(renderApp) {
 
       <div class="card">
 
-        <div
-          style="
-            display:flex;
-            justify-content:space-between;
-            align-items:flex-start;
-            gap:12px;
-            flex-wrap:wrap;
-          "
-        >
+        ${
+          hasTimeTrustAccount()
+            ? `
+              <div class="profile-row">
 
-          <div>
+                <div class="avatar">
+                  ${escapeHtml(
+                    initials(
+                      profile.timeTrustAccount?.providerName ||
+                      profile.timeTrustAccount?.name ||
+                      name
+                    )
+                  )}
+                </div>
 
-            <strong>
-              ${
-                hasTimeTrustAccount()
-                  ? "TimeTrust Account Active"
-                  : "TimeTrust Account Not Active"
-              }
-            </strong>
+                <div class="profile-meta">
 
-            <p
-              class="small"
-              style="margin:5px 0 0;"
-            >
-              ${
-                hasTimeTrustAccount()
-                  ? "You can publish and manage your TimeTrust skill offers."
-                  : "Browse TimeTrust freely. Activate your account to publish or manage skill offers."
-              }
-            </p>
+                  <strong style="font-size:17px;">
+                    ${escapeHtml(
+                      profile.timeTrustAccount?.providerName ||
+                      profile.timeTrustAccount?.name ||
+                      name
+                    )}
+                  </strong>
 
-          </div>
+                  <span class="small">
+                    TimeTrust provider
+                  </span>
+
+                  ${
+                    profile.timeTrustAccount?.location
+                      ? `
+                        <span class="small">
+                          📍 ${escapeHtml(
+                            profile.timeTrustAccount.location
+                          )}
+                        </span>
+                      `
+                      : ""
+                  }
+
+                </div>
+
+              </div>
 
 
-          <span
-            class="badge"
-            style="${
-              hasTimeTrustAccount()
-                ? "background:var(--primary);color:#fff;"
-                : "background:var(--surface2);"
-            }"
-          >
-            ${
-              hasTimeTrustAccount()
-                ? "Active"
-                : "Inactive"
-            }
-          </span>
+              <p class="small">
+                ${escapeHtml(
+                  profile.timeTrustAccount?.bio ||
+                  "No TimeTrust provider description added yet."
+                )}
+              </p>
 
-        </div>
+
+              <span class="badge">
+                Active
+              </span>
+            `
+            : `
+              <strong>
+                TimeTrust Account Not Active
+              </strong>
+
+              <p class="small">
+                Browse TimeTrust freely. Activate your account to publish or manage skill offers.
+              </p>
+
+              <span class="badge">
+                Inactive
+              </span>
+            `
+        }
 
 
         <div style="margin-top:12px;">
@@ -494,7 +517,7 @@ export function renderProfile(renderApp) {
       <div class="grid">
 
         <button
-          class="btn btn-ghost"
+          class="btn btn-primary"
           id="editProfileBtn"
           type="button"
         >
@@ -554,10 +577,10 @@ export function showEditProfile(renderApp) {
 
         <input
           class="input"
-          id="editDisplayName"
+          id="profileDisplayName"
+          maxlength="80"
           value="${escapeHtml(
-            profile.displayName ||
-            ""
+            profile.displayName || ""
           )}"
         >
 
@@ -572,10 +595,10 @@ export function showEditProfile(renderApp) {
 
         <input
           class="input"
-          id="editUsername"
+          id="profileUsername"
+          maxlength="40"
           value="${escapeHtml(
-            profile.username ||
-            ""
+            profile.username || ""
           )}"
         >
 
@@ -589,13 +612,12 @@ export function showEditProfile(renderApp) {
         </label>
 
         <textarea
-          class="textarea"
-          id="editBio"
+          class="input"
+          id="profileBio"
           maxlength="300"
-          placeholder="Tell the community about yourself…"
+          rows="4"
         >${escapeHtml(
-          profile.bio ||
-          ""
+          profile.bio || ""
         )}</textarea>
 
       </div>
@@ -606,7 +628,7 @@ export function showEditProfile(renderApp) {
         id="saveProfile"
         type="button"
       >
-        Save changes
+        Save profile
       </button>
     `
   );
@@ -621,7 +643,7 @@ export function showEditProfile(renderApp) {
         const displayName =
           document
             .getElementById(
-              "editDisplayName"
+              "profileDisplayName"
             )
             ?.value
             .trim() || "";
@@ -629,7 +651,7 @@ export function showEditProfile(renderApp) {
         const username =
           document
             .getElementById(
-              "editUsername"
+              "profileUsername"
             )
             ?.value
             .trim() || "";
@@ -637,7 +659,7 @@ export function showEditProfile(renderApp) {
         const bio =
           document
             .getElementById(
-              "editBio"
+              "profileBio"
             )
             ?.value
             .trim() || "";
@@ -667,12 +689,19 @@ export function showEditProfile(renderApp) {
           );
 
 
-          await updateProfile(
-            state.user,
-            {
-              displayName
-            }
-          );
+          try {
+            await updateProfile(
+              state.user,
+              {
+                displayName
+              }
+            );
+          } catch (authError) {
+            console.warn(
+              "[Profile] Auth display-name update warning:",
+              authError
+            );
+          }
 
 
           state.profile = {
@@ -684,9 +713,8 @@ export function showEditProfile(renderApp) {
 
 
           closeModal();
-
           toast(
-            "Profile updated ✨"
+            "Profile updated."
           );
 
           renderApp?.();
@@ -701,320 +729,11 @@ export function showEditProfile(renderApp) {
           toast(
             friendly(error)
           );
+
         }
-      }
-    );
-}
-
-
-async function showMyListings(renderApp) {
-  if (!state.user) {
-    toast(
-      "Please sign in first."
-    );
-    return;
-  }
-
-
-  const button =
-    document.getElementById(
-      "myListingsBtn"
-    );
-
-
-  if (button) {
-    button.disabled = true;
-    button.textContent =
-      "Loading listings…";
-  }
-
-
-  try {
-
-    const snapshot =
-      await getDocs(
-        query(
-          collection(
-            db,
-            "listings"
-          ),
-          where(
-            "uid",
-            "==",
-            state.user.uid
-          ),
-          limit(50)
-        )
-      );
-
-
-    const listings =
-      snapshot.docs.map(
-        listingDoc => ({
-          id: listingDoc.id,
-          ...listingDoc.data()
-        })
-      );
-
-
-    const otherListings =
-      (state.listings || []).filter(
-        listing =>
-          listing.uid !==
-          state.user.uid
-      );
-
-
-    state.listings = [
-      ...listings,
-      ...otherListings
-    ];
-
-
-    showProfileListingsModal(
-      renderApp
-    );
-
-  } catch (error) {
-
-    console.error(
-      "[Profile] My listings error:",
-      error
-    );
-
-    toast(
-      friendly(error)
-    );
-
-  } finally {
-
-    if (button) {
-      button.disabled = false;
-      button.innerHTML =
-        "📋 My Listings";
-    }
-
-  }
-}
-
-
-function showProfileListingsModal(
-  renderApp
-) {
-  const listings =
-    (state.listings || []).filter(
-      listing =>
-        listing.uid ===
-        state.user?.uid
-    );
-
-
-  showModal(
-    "My Listings",
-
-    listings.length
-      ? `
-        <div
-          style="
-            display:flex;
-            flex-direction:column;
-            gap:8px;
-          "
-        >
-
-          ${listings
-            .map(
-              listing => `
-                <button
-                  type="button"
-                  class="list-item"
-                  data-profile-listing="${escapeHtml(
-                    listing.id
-                  )}"
-                  style="
-                    width:100%;
-                    border:0;
-                    text-align:left;
-                    cursor:pointer;
-                    background:var(--surface);
-                  "
-                >
-
-                  <div
-                    style="
-                      display:flex;
-                      justify-content:space-between;
-                      gap:10px;
-                      align-items:flex-start;
-                    "
-                  >
-
-                    <div
-                      style="
-                        min-width:0;
-                        flex:1;
-                      "
-                    >
-
-                      <strong
-                        style="
-                          display:block;
-                          overflow-wrap:anywhere;
-                        "
-                      >
-                        ${escapeHtml(
-                          listing.title ||
-                          "Untitled listing"
-                        )}
-                      </strong>
-
-                      <span class="small">
-                        ${
-                          listing.status ===
-                          "sold"
-                            ? "🏷️ Sold"
-                            : "🟢 Active"
-                        }
-                        ·
-                        ${escapeHtml(
-                          listing.category ||
-                          "Other"
-                        )}
-                      </span>
-
-                    </div>
-
-
-                    <strong
-                      style="
-                        color:var(--primary);
-                        white-space:nowrap;
-                      "
-                    >
-                      ₦${Number(
-                        listing.price ||
-                        0
-                      ).toLocaleString()}
-                    </strong>
-
-                  </div>
-
-                </button>
-              `
-            )
-            .join("")}
-
-        </div>
-
-
-        <div
-          class="notice"
-          style="margin-top:12px;"
-        >
-          💡 To edit, mark as sold,
-          reactivate, or delete a listing,
-          open it from Marvel Market.
-        </div>
-      `
-      : `
-        <div
-          class="empty"
-          style="
-            text-align:center;
-            padding:20px 8px;
-          "
-        >
-
-          <div
-            style="
-              font-size:40px;
-              margin-bottom:8px;
-            "
-          >
-            🛍️
-          </div>
-
-          <h3>
-            No listings yet
-          </h3>
-
-          <p class="small">
-            Open Marvel Market to
-            create your first listing.
-          </p>
-
-        </div>
-      `
-  );
-
-
-  document
-    .querySelectorAll(
-      "[data-profile-listing]"
-    )
-    .forEach(
-      item => {
-
-        item.addEventListener(
-          "click",
-          () => {
-
-            closeModal();
-
-            showListingDetails(
-              item.dataset.profileListing,
-              renderApp
-            );
-
-          }
-        );
 
       }
     );
-}
-
-
-function mergePostsIntoState(posts) {
-  const byId = new Map();
-
-  (
-    Array.isArray(state.posts)
-      ? state.posts
-      : []
-  ).forEach(
-    post => {
-      if (post?.id) {
-        byId.set(
-          post.id,
-          post
-        );
-      }
-    }
-  );
-
-
-  (
-    Array.isArray(posts)
-      ? posts
-      : []
-  ).forEach(
-    post => {
-      if (post?.id) {
-        byId.set(
-          post.id,
-          post
-        );
-      }
-    }
-  );
-
-
-  state.posts =
-    Array.from(
-      byId.values()
-    );
-
-  return posts;
 }
 
 
@@ -1037,6 +756,33 @@ function postTime(value) {
   return Number.isFinite(time)
     ? time
     : 0;
+}
+
+
+function mergePostsIntoState(posts) {
+  const map =
+    new Map(
+      (state.posts || []).map(
+        post => [
+          post.id,
+          post
+        ]
+      )
+    );
+
+  posts.forEach(post => {
+    if (post?.id) {
+      map.set(
+        post.id,
+        post
+      );
+    }
+  });
+
+  state.posts =
+    Array.from(
+      map.values()
+    );
 }
 
 
@@ -1126,71 +872,70 @@ function renderProfilePost(
       >
 
         ${
-          isOwner
-            ? `
-              <button
-                class="btn btn-ghost"
-                type="button"
-                data-edit-post="${escapeHtml(
-                  post.id
-                )}"
-              >
-                ✏️ Edit
-              </button>
-
-              <button
-                class="btn btn-danger"
-                type="button"
-                data-delete-post="${escapeHtml(
-                  post.id
-                )}"
-              >
-                🗑️ Delete
-              </button>
-            `
-            : ""
-        }
-
-
-        ${
           mode === "saved"
             ? `
               <button
                 class="btn btn-ghost"
                 type="button"
-                data-save="${escapeHtml(
+                data-share="${escapeHtml(
                   post.id
                 )}"
               >
-                🔖 Saved
+                📤 Share
               </button>
             `
-            : ""
+            : `
+              ${
+                isOwner
+                  ? `
+                    <button
+                      class="btn btn-ghost"
+                      type="button"
+                      data-edit-post="${escapeHtml(
+                        post.id
+                      )}"
+                    >
+                      ✏️ Edit
+                    </button>
+
+                    <button
+                      class="btn btn-danger"
+                      type="button"
+                      data-delete-post="${escapeHtml(
+                        post.id
+                      )}"
+                    >
+                      🗑️ Delete
+                    </button>
+                  `
+                  : ""
+              }
+
+
+              <button
+                class="btn btn-ghost"
+                type="button"
+                data-share="${escapeHtml(
+                  post.id
+                )}"
+              >
+                📤 Share
+              </button>
+
+
+              <button
+                class="btn btn-ghost"
+                type="button"
+                data-comment="${escapeHtml(
+                  post.id
+                )}"
+              >
+                💬 ${Number(
+                  post?.comments || 0
+                )}
+              </button>
+            `
         }
-
-
-        <button
-          class="btn btn-ghost"
-          type="button"
-          data-share="${escapeHtml(
-            post.id
-          )}"
-        >
-          📤 Share
-        </button>
-
-
-        <button
-          class="btn btn-ghost"
-          type="button"
-          data-comment="${escapeHtml(
-            post.id
-          )}"
-        >
-          💬 ${Number(
-            post?.comments || 0
-          )}
-        </button>
 
       </div>
 
@@ -1200,6 +945,7 @@ function renderProfilePost(
 
 
 function attachProfilePostEvents() {
+
   document
     .querySelectorAll(
       "[data-edit-post]"
@@ -1620,9 +1366,128 @@ export async function showSaved(
 }
 
 
+async function showMyListings(
+  renderApp
+) {
+  if (!state.user) {
+    toast(
+      "Please sign in first."
+    );
+    return;
+  }
+
+  const listings =
+    (state.listings || [])
+      .filter(
+        listing =>
+          listing.uid ===
+          state.user.uid
+      );
+
+  if (!listings.length) {
+    showModal(
+      "My Listings",
+      `
+        <div
+          class="empty"
+          style="
+            text-align:center;
+            padding:20px 8px;
+          "
+        >
+          <div
+            style="
+              font-size:40px;
+              margin-bottom:8px;
+            "
+          >
+            🛍️
+          </div>
+
+          <p>
+            You have no listings yet.
+          </p>
+        </div>
+      `
+    );
+    return;
+  }
+
+  showModal(
+    "My Listings",
+    `
+      <div
+        style="
+          display:flex;
+          flex-direction:column;
+          gap:10px;
+        "
+      >
+        ${listings
+          .map(
+            listing => `
+              <button
+                class="btn btn-ghost"
+                type="button"
+                data-profile-listing="${escapeHtml(
+                  listing.id
+                )}"
+                style="
+                  text-align:left;
+                  width:100%;
+                "
+              >
+                <strong>
+                  ${escapeHtml(
+                    listing.title ||
+                    listing.name ||
+                    "Listing"
+                  )}
+                </strong>
+
+                <span class="small">
+                  ${escapeHtml(
+                    listing.description ||
+                    ""
+                  )}
+                </span>
+              </button>
+            `
+          )
+          .join("")}
+      </div>
+    `
+  );
+
+
+  document
+    .querySelectorAll(
+      "[data-profile-listing]"
+    )
+    .forEach(
+      button => {
+
+        button.addEventListener(
+          "click",
+          () => {
+
+            showListingDetails(
+              button.dataset.profileListing,
+              renderApp
+            );
+
+          }
+        );
+
+      }
+    );
+}
+
+
 export function attachProfileEvents(
   renderApp
 ) {
+
   document
     .getElementById(
       "editProfileBtn"
