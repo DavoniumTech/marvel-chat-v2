@@ -11,6 +11,10 @@ import {
   collection,
   doc,
   getDoc,
+  getDocs,
+  query,
+  where,
+  limit,
   updateDoc,
   deleteDoc,
   addDoc,
@@ -22,12 +26,13 @@ import {
   closeModal
 } from "../components/modal.js";
 
-import { toast } from "../components/toast.js";
+import {
+  toast
+} from "../components/toast.js";
 
 import {
   createConversation
 } from "./chat.js";
-
 
 const skillCategories = [
   "All",
@@ -43,22 +48,124 @@ const skillCategories = [
   "Other"
 ];
 
-
-function getTimeTrustAccount() {
+function getAccount() {
   return (
     state.profile?.timeTrustAccount ||
     {}
   );
 }
 
-
 export function hasTimeTrustAccount() {
   return (
     !!state.user &&
-    getTimeTrustAccount().active === true
+    getAccount().active === true
   );
 }
 
+function providerProfile() {
+  const account =
+    getAccount();
+
+  return {
+    providerName:
+      account.providerName ||
+      account.name ||
+      state.profile?.displayName ||
+      state.profile?.username ||
+      "User",
+
+    providerBio:
+      account.bio ||
+      "",
+
+    providerLocation:
+      account.location ||
+      state.profile?.country ||
+      ""
+  };
+}
+
+function timeValue(value) {
+  if (
+    value?.toMillis
+  ) {
+    return value.toMillis();
+  }
+
+  if (
+    value?.toDate
+  ) {
+    return value.toDate().getTime();
+  }
+
+  const n =
+    new Date(
+      value ||
+      0
+    ).getTime();
+
+  return Number.isFinite(n)
+    ? n
+    : 0;
+}
+
+function normalizeSkill(
+  item
+) {
+  return {
+    id:
+      item.id,
+
+    uid:
+      item.uid ||
+      "",
+
+    providerName:
+      item.providerName ||
+      item.username ||
+      "User",
+
+    providerBio:
+      item.providerBio ||
+      "",
+
+    providerLocation:
+      item.providerLocation ||
+      "",
+
+    username:
+      item.username ||
+      item.providerName ||
+      "User",
+
+    title:
+      item.title ||
+      item.skill ||
+      "Untitled Skill",
+
+    description:
+      item.description ||
+      "",
+
+    hours:
+      item.hours ||
+      "1 hour",
+
+    category:
+      item.category ||
+      "Other",
+
+    type:
+      item.type ||
+      "offer",
+
+    createdAt:
+      item.createdAt,
+
+    updatedAt:
+      item.updatedAt
+  };
+}
 
 export function showTimeTrustAccountRequired(
   renderApp
@@ -70,7 +177,6 @@ export function showTimeTrustAccountRequired(
     return;
   }
 
-
   showModal(
     "TimeTrust account required",
     `
@@ -80,19 +186,20 @@ export function showTimeTrustAccountRequired(
       >
 
         <strong>
-          Activate TimeTrust to publish or manage skills.
+          Activate TimeTrust to
+          publish or manage skills.
         </strong>
 
         <p
           class="small"
           style="margin:6px 0 0;"
         >
-          You can continue browsing TimeTrust without creating another account.
-          Your Firebase login remains your only account.
+          You can browse TimeTrust freely.
+          Your Firebase login remains
+          your only account.
         </p>
 
       </div>
-
 
       <button
         class="btn btn-primary btn-block"
@@ -104,7 +211,6 @@ export function showTimeTrustAccountRequired(
     `
   );
 
-
   document
     .getElementById(
       "timeTrustGoProfile"
@@ -112,40 +218,46 @@ export function showTimeTrustAccountRequired(
     ?.addEventListener(
       "click",
       () => {
-
         closeModal();
 
         state.page =
           "profile";
 
         renderApp?.();
-
       }
     );
 }
-
 
 export function showTimeTrustAccountModal(
   renderApp
 ) {
   if (!state.user) {
-    toast("Please sign in first.");
+    toast(
+      "Please sign in first."
+    );
     return;
   }
 
   const account =
-    getTimeTrustAccount();
+    getAccount();
 
-  const accountExists =
+  const active =
     account.active === true;
 
+  const provider =
+    providerProfile();
+
   showModal(
-    accountExists
+    active
       ? "Manage TimeTrust Account"
       : "Activate TimeTrust Account",
+
     `
       <div class="field">
-        <label for="timeTrustProviderName">
+
+        <label
+          for="timeTrustProviderName"
+        >
           Skill provider name *
         </label>
 
@@ -154,18 +266,19 @@ export function showTimeTrustAccountModal(
           id="timeTrustProviderName"
           maxlength="80"
           value="${escapeHtml(
-            account.providerName ||
-            account.name ||
-            state.profile?.displayName ||
-            state.profile?.username ||
-            ""
+            provider.providerName
           )}"
           placeholder="Your provider name"
         >
+
       </div>
 
+
       <div class="field">
-        <label for="timeTrustProviderBio">
+
+        <label
+          for="timeTrustProviderBio"
+        >
           Provider description
         </label>
 
@@ -174,14 +287,19 @@ export function showTimeTrustAccountModal(
           id="timeTrustProviderBio"
           maxlength="300"
           rows="4"
-          placeholder="Tell people what you can teach or help with..."
+          placeholder="Tell people what you can teach or help with…"
         >${escapeHtml(
-          account.bio || ""
+          provider.providerBio
         )}</textarea>
+
       </div>
 
+
       <div class="field">
-        <label for="timeTrustProviderLocation">
+
+        <label
+          for="timeTrustProviderLocation"
+        >
           Provider location
         </label>
 
@@ -190,13 +308,13 @@ export function showTimeTrustAccountModal(
           id="timeTrustProviderLocation"
           maxlength="100"
           value="${escapeHtml(
-            account.location ||
-            state.profile?.country ||
-            ""
+            provider.providerLocation
           )}"
           placeholder="e.g. Abuja, Nigeria"
         >
+
       </div>
+
 
       <div
         class="card"
@@ -207,6 +325,7 @@ export function showTimeTrustAccountModal(
           box-shadow:none;
         "
       >
+
         <strong>
           Your TimeTrust Account
         </strong>
@@ -215,10 +334,15 @@ export function showTimeTrustAccountModal(
           class="small"
           style="margin:5px 0 0;"
         >
-          Your Firebase login remains your only account.
-          This profile controls how you appear as a TimeTrust provider.
+          This uses your existing
+          Firebase identity. These
+          details control how you
+          appear to people viewing
+          your skill offers.
         </p>
+
       </div>
+
 
       <button
         class="btn btn-primary btn-block"
@@ -226,7 +350,7 @@ export function showTimeTrustAccountModal(
         type="button"
       >
         ${
-          accountExists
+          active
             ? "Save TimeTrust Account"
             : "Activate TimeTrust Account ⏱️"
         }
@@ -262,13 +386,16 @@ export function showTimeTrustAccountModal(
           );
 
         const providerName =
-          nameInput?.value?.trim() || "";
+          nameInput?.value.trim() ||
+          "";
 
         const bio =
-          bioInput?.value?.trim() || "";
+          bioInput?.value.trim() ||
+          "";
 
         const location =
-          locationInput?.value?.trim() || "";
+          locationInput?.value.trim() ||
+          "";
 
         if (!providerName) {
           toast(
@@ -276,25 +403,38 @@ export function showTimeTrustAccountModal(
           );
 
           nameInput?.focus();
+
           return;
         }
 
         if (button) {
-          button.disabled = true;
-          button.textContent = "Saving…";
+          button.disabled =
+            true;
+
+          button.textContent =
+            "Saving…";
         }
 
         try {
-          const timeTrustAccount = {
+          const accountData = {
             ...account,
-            active: true,
+
+            active:
+              true,
+
             providerName,
-            name: providerName,
+
+            name:
+              providerName,
+
             bio,
+
             location,
+
             createdAt:
               account.createdAt ||
               new Date(),
+
             updatedAt:
               serverTimestamp()
           };
@@ -306,22 +446,113 @@ export function showTimeTrustAccountModal(
               state.user.uid
             ),
             {
-              timeTrustAccount
+              timeTrustAccount:
+                accountData
             }
           );
 
           state.profile = {
             ...state.profile,
+
             timeTrustAccount: {
-              ...timeTrustAccount,
-              updatedAt: new Date()
+              ...accountData,
+
+              updatedAt:
+                new Date()
             }
           };
+
+          /*
+           * Keep the provider identity
+           * inside existing skill offers.
+           * This makes an edited TimeTrust
+           * account appear immediately on
+           * the TimeTrust page.
+           */
+          try {
+            const own =
+              await getDocs(
+                query(
+                  collection(
+                    db,
+                    "skills"
+                  ),
+                  where(
+                    "uid",
+                    "==",
+                    state.user.uid
+                  ),
+                  limit(100)
+                )
+              );
+
+            await Promise.all(
+              own.docs.map(
+                skillDoc =>
+                  updateDoc(
+                    doc(
+                      db,
+                      "skills",
+                      skillDoc.id
+                    ),
+                    {
+                      username:
+                        providerName,
+
+                      providerName:
+                        providerName,
+
+                      providerBio:
+                        bio,
+
+                      providerLocation:
+                        location,
+
+                      updatedAt:
+                        serverTimestamp()
+                    }
+                  )
+              )
+            );
+
+            state.skills =
+              (
+                state.skills ||
+                []
+              ).map(
+                skill =>
+                  skill.uid ===
+                  state.user.uid
+                    ? {
+                        ...skill,
+
+                        username:
+                          providerName,
+
+                        providerName:
+                          providerName,
+
+                        providerBio:
+                          bio,
+
+                        providerLocation:
+                          location
+                      }
+                    : skill
+              );
+          } catch (
+            syncError
+          ) {
+            console.warn(
+              "[TimeTrust] Existing skill metadata sync skipped:",
+              syncError
+            );
+          }
 
           closeModal();
 
           toast(
-            accountExists
+            active
               ? "TimeTrust Account updated ✨"
               : "TimeTrust Account activated ⏱️"
           );
@@ -338,9 +569,11 @@ export function showTimeTrustAccountModal(
           );
 
           if (button) {
-            button.disabled = false;
+            button.disabled =
+              false;
+
             button.textContent =
-              accountExists
+              active
                 ? "Save TimeTrust Account"
                 : "Activate TimeTrust Account ⏱️";
           }
@@ -349,65 +582,15 @@ export function showTimeTrustAccountModal(
     );
 }
 
-
-function normalizeSkill(item) {
-  return {
-    id: item.id,
-    uid: item.uid || "",
-    username:
-      item.username ||
-      "User",
-    title:
-      item.title ||
-      item.skill ||
-      "Untitled Skill",
-    description:
-      item.description ||
-      "",
-    hours:
-      item.hours ||
-      "1 hour",
-    category:
-      item.category ||
-      "Other",
-    type:
-      item.type ||
-      "offer",
-    createdAt:
-      item.createdAt,
-    updatedAt:
-      item.updatedAt
-  };
-}
-
-
-function timestamp(value) {
-  if (value?.toMillis) {
-    return value.toMillis();
-  }
-
-  if (value?.toDate) {
-    return value.toDate().getTime();
-  }
-
-  if (!value) {
-    return 0;
-  }
-
-  const time =
-    new Date(value).getTime();
-
-  return Number.isFinite(time)
-    ? time
-    : 0;
-}
-
-
 export function renderTimeTrust(
   renderApp
 ) {
   const searchQuery =
-    (state.search || "")
+    String(
+      state.search ||
+      ""
+    )
+      .trim()
       .toLowerCase();
 
   const selectedCategory =
@@ -423,25 +606,31 @@ export function renderTimeTrust(
     "offers";
 
   const offers =
-    (state.skills || [])
-      .map(normalizeSkill);
+    (
+      state.skills ||
+      []
+    ).map(
+      normalizeSkill
+    );
 
+  const myOffers =
+    offers.filter(
+      item =>
+        item.uid ===
+        state.user?.uid
+    );
 
   let pool =
     timeTab === "my"
-      ? offers.filter(
-          item =>
-            item.uid ===
-            state.user?.uid
-        )
-      : offers;
-
+      ? [...myOffers]
+      : [...offers];
 
   if (
-    selectedCategory !== "All" &&
-    timeTab !== "my"
+    selectedCategory !==
+      "All" &&
+    timeTab !==
+      "my"
   ) {
-
     pool =
       pool.filter(
         item =>
@@ -450,56 +639,52 @@ export function renderTimeTrust(
           selectedCategory
             .toLowerCase()
       );
-
   }
 
-
   if (searchQuery) {
-
     pool =
       pool.filter(
         item =>
-          item.title
+          [
+            item.providerName,
+            item.providerBio,
+            item.providerLocation,
+            item.title,
+            item.description,
+            item.username,
+            item.category
+          ]
+            .join(" ")
             .toLowerCase()
-            .includes(searchQuery) ||
-
-          item.description
-            .toLowerCase()
-            .includes(searchQuery) ||
-
-          item.username
-            .toLowerCase()
-            .includes(searchQuery) ||
-
-          item.category
-            .toLowerCase()
-            .includes(searchQuery)
+            .includes(
+              searchQuery
+            )
       );
-
   }
 
-
   pool.sort(
-    (a, b) =>
-      sortBy === "newest"
-        ? timestamp(b.createdAt) -
-          timestamp(a.createdAt)
-        : timestamp(a.createdAt) -
-          timestamp(b.createdAt)
+    (
+      a,
+      b
+    ) =>
+      sortBy ===
+      "newest"
+        ? timeValue(
+            b.createdAt
+          ) -
+          timeValue(
+            a.createdAt
+          )
+        : timeValue(
+            a.createdAt
+          ) -
+          timeValue(
+            b.createdAt
+          )
   );
 
-
-  const myOffersCount =
-    offers.filter(
-      item =>
-        item.uid ===
-        state.user?.uid
-    ).length;
-
-
-  const activeAccount =
+  const active =
     hasTimeTrustAccount();
-
 
   return `
     <div
@@ -513,8 +698,10 @@ export function renderTimeTrust(
         </h1>
 
         <p>
-          Discover skilled community members, offer your own expertise,
-          and discover useful knowledge.
+          Discover skilled community
+          members, offer your own
+          expertise, and exchange
+          useful knowledge.
         </p>
 
       </section>
@@ -527,7 +714,7 @@ export function renderTimeTrust(
 
         <strong>
           ${
-            activeAccount
+            active
               ? "TimeTrust account active."
               : "Browse TimeTrust freely."
           }
@@ -535,8 +722,8 @@ export function renderTimeTrust(
 
         <span class="small">
           ${
-            activeAccount
-              ? "You can publish and manage your skill offers."
+            active
+              ? "Your provider name and description appear on your skill offers."
               : "Activate your TimeTrust account from Profile before publishing or managing an offer."
           }
         </span>
@@ -568,11 +755,12 @@ export function renderTimeTrust(
               margin:4px 0;
             "
           >
-            Discover Skills
+            Skill Exchange
           </strong>
 
           <span class="small">
-            Connect directly with expert peers.
+            Connect directly with
+            expert peers.
           </span>
 
         </div>
@@ -597,7 +785,8 @@ export function renderTimeTrust(
               margin:4px 0;
             "
           >
-            ${offers.length} Active
+            ${offers.length}
+            Active
           </strong>
 
           <span class="small">
@@ -616,7 +805,7 @@ export function renderTimeTrust(
         </h2>
 
         ${
-          activeAccount
+          active
             ? `
               <button
                 class="btn btn-primary"
@@ -639,27 +828,32 @@ export function renderTimeTrust(
 
         <button
           class="btn ${
-            timeTab === "offers"
+            timeTab ===
+            "offers"
               ? "btn-primary"
               : "btn-ghost"
           }"
           data-time-tab="offers"
-          style="flex:1;"
+          style="flex:1"
+          type="button"
         >
-          Community Offers (${offers.length})
+          Community Offers
+          (${offers.length})
         </button>
-
 
         <button
           class="btn ${
-            timeTab === "my"
+            timeTab ===
+            "my"
               ? "btn-primary"
               : "btn-ghost"
           }"
           data-time-tab="my"
-          style="flex:1;"
+          style="flex:1"
+          type="button"
         >
-          My Offers (${myOffersCount})
+          My Offers
+          (${myOffers.length})
         </button>
 
       </div>
@@ -688,8 +882,10 @@ export function renderTimeTrust(
             id="timeSearch"
             placeholder="Search skills, topics or providers…"
             value="${escapeHtml(
-              state.search || ""
+              state.search ||
+              ""
             )}"
+            autocomplete="off"
           >
 
         </div>
@@ -708,7 +904,8 @@ export function renderTimeTrust(
           <option
             value="newest"
             ${
-              sortBy === "newest"
+              sortBy ===
+              "newest"
                 ? "selected"
                 : ""
             }
@@ -719,7 +916,8 @@ export function renderTimeTrust(
           <option
             value="oldest"
             ${
-              sortBy === "oldest"
+              sortBy ===
+              "oldest"
                 ? "selected"
                 : ""
             }
@@ -733,7 +931,8 @@ export function renderTimeTrust(
 
 
       ${
-        timeTab !== "my"
+        timeTab !==
+        "my"
           ? `
             <div
               style="
@@ -748,29 +947,32 @@ export function renderTimeTrust(
 
               ${skillCategories
                 .map(
-                  category => `
-                    <button
-                      class="btn ${
-                        selectedCategory
-                          .toLowerCase() ===
-                        category.toLowerCase()
-                          ? "btn-primary"
-                          : "btn-ghost"
-                      }"
-                      data-time-cat="${escapeHtml(
-                        category
-                      )}"
-                      style="
-                        padding:4px 10px;
-                        font-size:12px;
-                        border-radius:999px;
-                      "
-                    >
-                      ${escapeHtml(
-                        category
-                      )}
-                    </button>
-                  `
+                  category =>
+                    `
+                      <button
+                        class="btn ${
+                          selectedCategory
+                            .toLowerCase() ===
+                          category
+                            .toLowerCase()
+                            ? "btn-primary"
+                            : "btn-ghost"
+                        }"
+                        data-time-cat="${escapeHtml(
+                          category
+                        )}"
+                        style="
+                          padding:4px 10px;
+                          font-size:12px;
+                          border-radius:999px;
+                        "
+                        type="button"
+                      >
+                        ${escapeHtml(
+                          category
+                        )}
+                      </button>
+                    `
                 )
                 .join("")}
 
@@ -780,7 +982,9 @@ export function renderTimeTrust(
       }
 
 
-      <div id="timeTrustItems">
+      <div
+        id="timeTrustItems"
+      >
 
         ${
           pool.length
@@ -790,11 +994,14 @@ export function renderTimeTrust(
                 ${pool
                   .map(
                     item => {
-
-                      const isOwner =
+                      const owner =
                         item.uid ===
                         state.user?.uid;
 
+                      const providerName =
+                        item.providerName ||
+                        item.username ||
+                        "User";
 
                       return `
                         <div
@@ -809,141 +1016,160 @@ export function renderTimeTrust(
                             class="profile-row"
                             style="
                               align-items:flex-start;
-                              justify-content:space-between;
                             "
                           >
 
                             <div
+                              class="avatar"
                               style="
-                                display:flex;
-                                gap:10px;
-                                align-items:flex-start;
+                                font-size:16px;
+                              "
+                            >
+                              ${escapeHtml(
+                                initials(
+                                  providerName
+                                )
+                              )}
+                            </div>
+
+
+                            <div
+                              class="profile-meta"
+                              style="
                                 flex:1;
                               "
                             >
 
-                              <div
-                                class="avatar"
-                                style="font-size:16px;"
+                              <strong
+                                style="
+                                  display:block;
+                                  font-size:18px;
+                                  font-weight:900;
+                                  line-height:1.2;
+                                "
                               >
                                 ${escapeHtml(
-                                  initials(
-                                    item.username
-                                  )
+                                  providerName
                                 )}
+                              </strong>
+
+
+                              <div
+                                class="small"
+                                style="
+                                  margin-top:3px;
+                                "
+                              >
+                                @${escapeHtml(
+                                  providerName
+                                )}
+
+                                ${
+                                  item.providerLocation
+                                    ? ` · ${escapeHtml(
+                                        item.providerLocation
+                                      )}`
+                                    : ""
+                                }
+
                               </div>
 
 
+                              ${
+                                item.providerBio
+                                  ? `
+                                    <p
+                                      class="small"
+                                      style="
+                                        margin:5px 0;
+                                      "
+                                    >
+                                      ${escapeHtml(
+                                        item.providerBio
+                                      )}
+                                    </p>
+                                  `
+                                  : ""
+                              }
+
+
+                              <strong
+                                style="
+                                  display:block;
+                                  font-size:16px;
+                                  margin-top:5px;
+                                "
+                              >
+                                ${escapeHtml(
+                                  item.title
+                                )}
+                              </strong>
+
+
+                              <p
+                                class="small"
+                                style="
+                                  margin:4px 0;
+                                  display:-webkit-box;
+                                  -webkit-line-clamp:2;
+                                  -webkit-box-orient:vertical;
+                                  overflow:hidden;
+                                "
+                              >
+                                ${escapeHtml(
+                                  item.description
+                                )}
+                              </p>
+
+
                               <div
-                                class="profile-meta"
-                                style="flex:1;"
+                                style="
+                                  display:flex;
+                                  gap:8px;
+                                  align-items:center;
+                                  margin-top:6px;
+                                  flex-wrap:wrap;
+                                "
                               >
 
-                                <div
+                                <span
+                                  class="badge"
                                   style="
-                                    display:flex;
-                                    align-items:center;
-                                    gap:6px;
-                                    flex-wrap:wrap;
+                                    background:var(--surface2);
                                   "
                                 >
-
-                                  <strong
-                                    style="font-size:15px;"
-                                  >
-                                    ${escapeHtml(
-                                      item.title
-                                    )}
-                                  </strong>
-
-                                  <span
-                                    class="badge"
-                                    style="
-                                      background:var(--surface2);
-                                    "
-                                  >
-                                    ${escapeHtml(
-                                      item.category
-                                    )}
-                                  </span>
-
-                                </div>
-
-
-                                <div
-                                  class="small"
-                                  style="margin-top:2px;"
-                                >
-                                  Provider:
-                                  @${escapeHtml(
-                                    item.username
-                                  )}
-                                  ·
+                                  📂
                                   ${escapeHtml(
-                                    formatDate(
-                                      item.createdAt
-                                    )
+                                    item.category
                                   )}
-                                </div>
+                                </span>
 
-
-                                <p
-                                  class="small"
+                                <span
+                                  class="badge"
                                   style="
-                                    margin:6px 0;
-                                    color:var(--text-secondary);
-                                    display:-webkit-box;
-                                    -webkit-line-clamp:2;
-                                    -webkit-box-orient:vertical;
-                                    overflow:hidden;
+                                    background:var(--surface2);
                                   "
                                 >
+                                  ⏱️
                                   ${escapeHtml(
-                                    item.description
+                                    item.hours
                                   )}
-                                </p>
+                                </span>
 
-
-                                <div
-                                  style="
-                                    display:flex;
-                                    gap:8px;
-                                    align-items:center;
-                                    margin-top:6px;
-                                  "
-                                >
-
-                                  <span
-                                    class="badge"
-                                    style="
-                                      font-weight:600;
-                                      background:var(--surface2);
-                                    "
-                                  >
-                                    ⏱️ Session:
-                                    ${escapeHtml(
-                                      item.hours
-                                    )}
-                                  </span>
-
-
-                                  ${
-                                    isOwner
-                                      ? `
-                                        <span
-                                          class="badge"
-                                          style="
-                                            background:rgba(79,70,229,.1);
-                                            color:var(--primary);
-                                          "
-                                        >
-                                          Your Offer
-                                        </span>
-                                      `
-                                      : ""
-                                  }
-
-                                </div>
+                                ${
+                                  owner
+                                    ? `
+                                      <span
+                                        class="badge"
+                                        style="
+                                          color:var(--primary);
+                                        "
+                                      >
+                                        Your Offer
+                                      </span>
+                                    `
+                                    : ""
+                                }
 
                               </div>
 
@@ -969,40 +1195,31 @@ export function renderTimeTrust(
               >
 
                 <div
-                  style="
-                    font-size:42px;
-                    margin-bottom:8px;
-                  "
+                  style="font-size:42px;"
                 >
                   ⏱️
                 </div>
 
-
                 <h3>
                   ${
-                    timeTab === "my"
+                    timeTab ===
+                    "my"
                       ? "You haven't published any skill offers yet."
                       : "No skill offers found."
                   }
                 </h3>
 
-
-                <p
-                  style="
-                    color:var(--text-secondary);
-                    margin-bottom:16px;
-                  "
-                >
+                <p class="small">
                   ${
-                    timeTab === "my"
+                    timeTab ===
+                    "my"
                       ? "Publish your first skill offer to start helping members."
                       : "Try adjusting your search or category filters."
                   }
                 </p>
 
-
                 ${
-                  activeAccount
+                  active
                     ? `
                       <button
                         class="btn btn-primary"
@@ -1025,16 +1242,11 @@ export function renderTimeTrust(
   `;
 }
 
-
 export function showSkillModal(
   type = "offer",
   renderApp,
   existingItem = null
 ) {
-  const isEdit =
-    !!existingItem;
-
-
   if (!state.user) {
     toast(
       "Please sign in first."
@@ -1042,36 +1254,91 @@ export function showSkillModal(
     return;
   }
 
-
-  if (!hasTimeTrustAccount()) {
-    showTimeTrustAccountRequired(
+  if (
+    !hasTimeTrustAccount()
+  ) {
+    return showTimeTrustAccountRequired(
       renderApp
     );
-    return;
   }
 
+  const editing =
+    !!existingItem;
+
+  const provider =
+    providerProfile();
 
   showModal(
-    isEdit
+    editing
       ? "Edit skill offer"
       : "Offer your skill",
 
     `
+      <div
+        class="card"
+        style="
+          background:var(--surface2);
+          padding:12px;
+          margin:0 0 14px;
+          box-shadow:none;
+        "
+      >
+
+        <strong
+          style="font-size:17px;"
+        >
+          ${escapeHtml(
+            provider.providerName
+          )}
+        </strong>
+
+        ${
+          provider.providerBio
+            ? `
+              <p
+                class="small"
+                style="margin:5px 0 0;"
+              >
+                ${escapeHtml(
+                  provider.providerBio
+                )}
+              </p>
+            `
+            : ""
+        }
+
+        ${
+          provider.providerLocation
+            ? `
+              <span class="small">
+                ${escapeHtml(
+                  provider.providerLocation
+                )}
+              </span>
+            `
+            : ""
+        }
+
+      </div>
+
+
       <div class="field">
 
-        <label>
+        <label
+          for="skillTitle"
+        >
           Skill title *
         </label>
 
         <input
           class="input"
           id="skillTitle"
-          placeholder="e.g. Advanced Coding assisting"
           value="${escapeHtml(
             existingItem?.title ||
             existingItem?.skill ||
             ""
           )}"
+          placeholder="e.g. Advanced coding"
         >
 
       </div>
@@ -1081,7 +1348,9 @@ export function showSkillModal(
 
         <div class="field">
 
-          <label>
+          <label
+            for="skillCategory"
+          >
             Category *
           </label>
 
@@ -1092,30 +1361,32 @@ export function showSkillModal(
 
             ${skillCategories
               .filter(
-                category =>
-                  category !== "All"
+                c =>
+                  c !==
+                  "All"
               )
               .map(
-                category => `
-                  <option
-                    value="${escapeHtml(
-                      category
-                    )}"
-                    ${
-                      (
-                        existingItem
-                          ?.category ||
-                        "Other"
-                      ) === category
-                        ? "selected"
-                        : ""
-                    }
-                  >
-                    ${escapeHtml(
-                      category
-                    )}
-                  </option>
-                `
+                c =>
+                  `
+                    <option
+                      value="${escapeHtml(
+                        c
+                      )}"
+                      ${
+                        (
+                          existingItem?.category ||
+                          "Other"
+                        ) ===
+                        c
+                          ? "selected"
+                          : ""
+                      }
+                    >
+                      ${escapeHtml(
+                        c
+                      )}
+                    </option>
+                  `
               )
               .join("")}
 
@@ -1126,18 +1397,20 @@ export function showSkillModal(
 
         <div class="field">
 
-          <label>
+          <label
+            for="skillHours"
+          >
             Estimated time / session
           </label>
 
           <input
             class="input"
             id="skillHours"
-            placeholder="e.g. 1 hour"
             value="${escapeHtml(
               existingItem?.hours ||
               "1 hour"
             )}"
+            placeholder="e.g. 1 hour"
           >
 
         </div>
@@ -1147,15 +1420,17 @@ export function showSkillModal(
 
       <div class="field">
 
-        <label>
-          Description *
+        <label
+          for="skillDescription"
+        >
+          Skill offer description *
         </label>
 
         <textarea
           class="textarea"
           id="skillDescription"
           rows="4"
-          placeholder="Describe what you can teach or help with, and what learners can expect…"
+          placeholder="Describe what you can teach or help with…"
         >${escapeHtml(
           existingItem?.description ||
           ""
@@ -1170,14 +1445,13 @@ export function showSkillModal(
         type="button"
       >
         ${
-          isEdit
+          editing
             ? "Save Changes"
             : "Publish offer ⏱️"
         }
       </button>
     `
   );
-
 
   document
     .getElementById(
@@ -1186,13 +1460,12 @@ export function showSkillModal(
     ?.addEventListener(
       "click",
       async () => {
-
         const titleInput =
           document.getElementById(
             "skillTitle"
           );
 
-        const descriptionInput =
+        const descInput =
           document.getElementById(
             "skillDescription"
           );
@@ -1207,77 +1480,81 @@ export function showSkillModal(
             "skillCategory"
           );
 
-        const saveButton =
+        const button =
           document.getElementById(
             "saveSkillBtn"
           );
 
-
         const title =
-          titleInput
-            ?.value
-            .trim() || "";
+          titleInput?.value.trim() ||
+          "";
 
         const description =
-          descriptionInput
-            ?.value
-            .trim() || "";
+          descInput?.value.trim() ||
+          "";
 
         const hours =
-          hoursInput
-            ?.value
-            .trim() ||
+          hoursInput?.value.trim() ||
           "1 hour";
 
         const category =
-          categoryInput
-            ?.value ||
+          categoryInput?.value ||
           "Other";
-
 
         if (!title) {
           toast(
             "Please enter a skill title."
           );
-
-          titleInput?.focus();
-
           return;
         }
-
 
         if (!description) {
           toast(
             "Please enter a description."
           );
-
-          descriptionInput?.focus();
-
           return;
         }
 
-
-        try {
-
-          saveButton.disabled =
+        if (button) {
+          button.disabled =
             true;
 
-          saveButton.textContent =
-            isEdit
+          button.textContent =
+            editing
               ? "Saving…"
               : "Publishing…";
+        }
 
+        try {
+          const providerNow =
+            providerProfile();
 
-          const username =
-            state.profile
-              ?.displayName ||
-            state.profile
-              ?.username ||
-            "User";
+          const data = {
+            title,
 
+            description,
 
-          if (isEdit) {
+            hours,
 
+            category,
+
+            providerName:
+              providerNow.providerName,
+
+            providerBio:
+              providerNow.providerBio,
+
+            providerLocation:
+              providerNow.providerLocation,
+
+            username:
+              providerNow.providerName,
+
+            updatedAt:
+              serverTimestamp()
+          };
+
+          if (editing) {
             if (
               existingItem.uid !==
               state.user.uid
@@ -1287,68 +1564,90 @@ export function showSkillModal(
               );
             }
 
-
             await updateDoc(
               doc(
                 db,
                 "skills",
                 existingItem.id
               ),
-              {
-                title,
-                description,
-                hours,
-                category,
-                updatedAt:
-                  serverTimestamp()
-              }
+              data
             );
 
+            state.skills =
+              (
+                state.skills ||
+                []
+              ).map(
+                s =>
+                  s.id ===
+                  existingItem.id
+                    ? {
+                        ...s,
+                        ...data,
+                        updatedAt:
+                          new Date()
+                      }
+                    : s
+              );
 
             closeModal();
 
             toast(
               "Skill offer updated successfully ✨"
             );
-
           } else {
+            const ref =
+              await addDoc(
+                collection(
+                  db,
+                  "skills"
+                ),
+                {
+                  uid:
+                    state.user.uid,
 
-            await addDoc(
-              collection(
-                db,
-                "skills"
-              ),
+                  ...data,
+
+                  type:
+                    "offer",
+
+                  createdAt:
+                    serverTimestamp()
+                }
+              );
+
+            state.skills = [
               {
+                id:
+                  ref.id,
+
                 uid:
                   state.user.uid,
-                username,
-                title,
-                description,
-                hours,
-                category,
+
+                ...data,
+
                 type:
                   "offer",
-                createdAt:
-                  serverTimestamp(),
-                updatedAt:
-                  serverTimestamp()
-              }
-            );
 
+                createdAt:
+                  new Date()
+              },
+
+              ...(
+                state.skills ||
+                []
+              )
+            ];
 
             closeModal();
 
             toast(
               "Skill offer published ⏱️"
             );
-
           }
 
-
           renderApp?.();
-
         } catch (error) {
-
           console.error(
             "[TimeTrust] Skill save error:",
             error
@@ -1358,29 +1657,37 @@ export function showSkillModal(
             friendly(error)
           );
 
-          saveButton.disabled =
-            false;
+          if (button) {
+            button.disabled =
+              false;
 
-          saveButton.textContent =
-            isEdit
-              ? "Save Changes"
-              : "Publish offer ⏱️";
-
+            button.textContent =
+              editing
+                ? "Save Changes"
+                : "Publish offer ⏱️";
+          }
         }
-
       }
     );
 }
-
 
 export function showSkillDetails(
   item,
   renderApp
 ) {
-  const isOwner =
-    item.uid ===
+  const skill =
+    normalizeSkill(
+      item
+    );
+
+  const owner =
+    skill.uid ===
     state.user?.uid;
 
+  const providerName =
+    skill.providerName ||
+    skill.username ||
+    "User";
 
   showModal(
     "Skill Offer Details",
@@ -1397,7 +1704,7 @@ export function showSkillDetails(
         <div
           style="
             display:flex;
-            align-items:center;
+            align-items:flex-start;
             gap:10px;
           "
         >
@@ -1408,7 +1715,7 @@ export function showSkillDetails(
           >
             ${escapeHtml(
               initials(
-                item.username
+                providerName
               )
             )}
           </div>
@@ -1418,27 +1725,56 @@ export function showSkillDetails(
 
             <strong
               style="
-                font-size:16px;
+                font-size:20px;
+                font-weight:900;
                 display:block;
               "
             >
               ${escapeHtml(
-                item.title
+                providerName
+              )}
+            </strong>
+
+            <strong
+              style="
+                font-size:16px;
+                display:block;
+                margin-top:3px;
+              "
+            >
+              ${escapeHtml(
+                skill.title
               )}
             </strong>
 
             <span class="small">
-              Offered by
               @${escapeHtml(
-                item.username
+                providerName
               )}
-              ·
-              ${escapeHtml(
-                formatDate(
-                  item.createdAt
-                )
-              )}
+
+              ${
+                skill.providerLocation
+                  ? ` · ${escapeHtml(
+                      skill.providerLocation
+                    )}`
+                  : ""
+              }
             </span>
+
+            ${
+              skill.providerBio
+                ? `
+                  <p
+                    class="small"
+                    style="margin:5px 0 0;"
+                  >
+                    ${escapeHtml(
+                      skill.providerBio
+                    )}
+                  </p>
+                `
+                : ""
+            }
 
           </div>
 
@@ -1453,30 +1789,17 @@ export function showSkillDetails(
           "
         >
 
-          <span
-            class="badge"
-            style="
-              background:var(--surface2);
-            "
-          >
+          <span class="badge">
             📂
             ${escapeHtml(
-              item.category ||
-              "Other"
+              skill.category
             )}
           </span>
 
-
-          <span
-            class="badge"
-            style="
-              background:var(--surface2);
-            "
-          >
-            ⏱️ Session:
+          <span class="badge">
+            ⏱️
             ${escapeHtml(
-              item.hours ||
-              "1 hour"
+              skill.hours
             )}
           </span>
 
@@ -1493,150 +1816,75 @@ export function showSkillDetails(
           "
         >
 
-          <span
-            class="small"
-            style="
-              font-weight:600;
-              display:block;
-              margin-bottom:4px;
-            "
-          >
+          <strong class="small">
             About this skill offer
-          </span>
+          </strong>
 
           <p
             style="
               white-space:pre-wrap;
               word-break:break-word;
-              margin:0;
-              font-size:14px;
+              margin:5px 0 0;
             "
           >
             ${escapeHtml(
-              item.description
+              skill.description
             )}
           </p>
 
         </div>
 
 
-        <div style="margin-top:8px;">
+        ${
+          owner
+            ? `
+              <div
+                style="
+                  display:flex;
+                  gap:8px;
+                "
+              >
 
-          ${
-            isOwner
-
-              ? hasTimeTrustAccount()
-
-                ? `
-                  <div
-                    style="
-                      display:flex;
-                      gap:8px;
-                    "
-                  >
-
-                    <button
-                      class="btn btn-secondary"
-                      id="editSkillDetail"
-                      style="flex:1;"
-                    >
-                      Edit offer
-                    </button>
-
-
-                    <button
-                      class="btn btn-danger"
-                      id="deleteSkillDetail"
-                      style="flex:1;"
-                    >
-                      Delete offer
-                    </button>
-
-                  </div>
-                `
-
-                : `
-                  <div
-                    class="notice"
-                    style="margin-bottom:10px;"
-                  >
-
-                    <strong>
-                      Activate TimeTrust to manage this offer.
-                    </strong>
-
-                    <p
-                      class="small"
-                      style="margin:6px 0 0;"
-                    >
-                      Your existing skill remains readable,
-                      but publishing, editing, and deleting
-                      require an active TimeTrust account.
-                    </p>
-
-                  </div>
-
-
-                  <button
-                    class="btn btn-primary btn-block"
-                    id="activateSkillAccountBtn"
-                    type="button"
-                  >
-                    ⏱️ Activate from Profile
-                  </button>
-                `
-
-              : `
                 <button
-                  class="btn btn-primary btn-block"
-                  id="messageProviderBtn"
+                  class="btn btn-ghost"
+                  id="editSkillDetail"
+                  style="flex:1"
                   type="button"
                 >
-                  Message Provider
-                  @${escapeHtml(
-                    item.username
-                  )}
-                  💬
+                  Edit offer
                 </button>
-              `
-          }
 
-        </div>
+                <button
+                  class="btn btn-danger"
+                  id="deleteSkillDetail"
+                  style="flex:1"
+                  type="button"
+                >
+                  Delete offer
+                </button>
+
+              </div>
+            `
+            : `
+              <button
+                class="btn btn-primary btn-block"
+                id="messageProviderBtn"
+                type="button"
+              >
+                Message
+                ${escapeHtml(
+                  providerName
+                )}
+                💬
+              </button>
+            `
+        }
 
       </div>
     `
   );
 
-
-  if (
-    isOwner &&
-    !hasTimeTrustAccount()
-  ) {
-
-    document
-      .getElementById(
-        "activateSkillAccountBtn"
-      )
-      ?.addEventListener(
-        "click",
-        () => {
-
-          closeModal();
-
-          state.page =
-            "profile";
-
-          renderApp?.();
-
-        }
-      );
-
-    return;
-  }
-
-
-  if (isOwner) {
-
+  if (owner) {
     document
       .getElementById(
         "editSkillDetail"
@@ -1644,18 +1892,15 @@ export function showSkillDetails(
       ?.addEventListener(
         "click",
         () => {
-
           closeModal();
 
           showSkillModal(
             "offer",
             renderApp,
-            item
+            skill
           );
-
         }
       );
-
 
     document
       .getElementById(
@@ -1665,14 +1910,13 @@ export function showSkillDetails(
         "click",
         () =>
           showDeleteSkillConfirmation(
-            item,
+            skill,
             renderApp
           )
       );
 
     return;
   }
-
 
   document
     .getElementById(
@@ -1681,118 +1925,87 @@ export function showSkillDetails(
     ?.addEventListener(
       "click",
       async () => {
-
         const button =
           document.getElementById(
             "messageProviderBtn"
           );
 
-        if (!button) {
+        if (
+          !skill.uid ||
+          !state.user?.uid
+        ) {
+          toast(
+            "Missing user information."
+          );
           return;
         }
 
+        if (
+          skill.uid ===
+          state.user.uid
+        ) {
+          toast(
+            "You cannot contact yourself."
+          );
+          return;
+        }
 
-        try {
-
+        if (button) {
           button.disabled =
             true;
 
           button.textContent =
-            `Opening chat with ${item.username}…`;
+            "Opening chat…";
+        }
 
-
-          const targetUid =
-            item.uid;
-
-
-          if (
-            !targetUid ||
-            !state.user?.uid
-          ) {
-            throw new Error(
-              "Missing user information."
-            );
-          }
-
-
-          if (
-            targetUid ===
-            state.user.uid
-          ) {
-
-            toast(
-              "You cannot contact yourself."
-            );
-
-            button.disabled =
-              false;
-
-            button.textContent =
-              `Message Provider @${item.username} 💬`;
-
-            return;
-          }
-
-
-          const profileSnapshot =
+        try {
+          const profileSnap =
             await getDoc(
               doc(
                 db,
                 "users",
-                targetUid
+                skill.uid
               )
             );
 
+          const profile =
+            profileSnap.exists()
+              ? {
+                  id:
+                    profileSnap.id,
 
-          let profile = {
-            uid:
-              targetUid,
-            username:
-              item.username ||
-              "User",
-            displayName:
-              item.username ||
-              "User"
-          };
+                  ...profileSnap.data(),
 
+                  uid:
+                    skill.uid
+                }
+              : {
+                  uid:
+                    skill.uid,
 
-          if (
-            profileSnapshot.exists()
-          ) {
+                  username:
+                    providerName,
 
-            const data =
-              profileSnapshot.data();
-
-            profile = {
-              id:
-                profileSnapshot.id,
-              ...data,
-              uid:
-                data.uid ||
-                targetUid
-            };
-
-          }
-
+                  displayName:
+                    providerName
+                };
 
           await createConversation(
             profile,
             renderApp
           );
 
+          closeModal();
 
           state.page =
             "chat";
 
           renderApp?.();
 
-
           toast(
-            `Interest sent to @${item.username} ⏱️`
+            `Interest sent to @${providerName} ⏱️`
           );
-
         } catch (error) {
-
           console.error(
             "[TimeTrust] Connect provider error:",
             error
@@ -1802,18 +2015,17 @@ export function showSkillDetails(
             "Could not open this conversation. Please try again."
           );
 
-          button.disabled =
-            false;
+          if (button) {
+            button.disabled =
+              false;
 
-          button.textContent =
-            `Message Provider @${item.username} 💬`;
-
+            button.textContent =
+              `Message ${providerName} 💬`;
+          }
         }
-
       }
     );
 }
-
 
 function showDeleteSkillConfirmation(
   item,
@@ -1826,62 +2038,45 @@ function showDeleteSkillConfirmation(
     return;
   }
 
-
-  if (!hasTimeTrustAccount()) {
-    showTimeTrustAccountRequired(
-      renderApp
-    );
-    return;
-  }
-
-
   if (
     item.uid !==
     state.user.uid
   ) {
     toast(
-      "You can only manage your own skill offers."
+      "You can only delete your own skill offer."
     );
     return;
   }
 
-
   showModal(
-    "Delete this skill offer?",
-
+    "Delete skill offer?",
     `
       <p class="small">
-        Are you sure you want to delete
-        <strong>
-          ${escapeHtml(
-            item.title
-          )}
-        </strong>?
         This action cannot be undone.
       </p>
-
 
       <div
         style="
           display:flex;
-          gap:10px;
-          margin-top:16px;
+          gap:8px;
+          margin-top:14px;
         "
       >
 
         <button
           class="btn btn-ghost"
-          id="cancelDelSkill"
-          style="flex:1;"
+          id="cancelDeleteSkill"
+          style="flex:1"
+          type="button"
         >
           Cancel
         </button>
 
-
         <button
           class="btn btn-danger"
-          id="confirmDelSkill"
-          style="flex:1;"
+          id="confirmDeleteSkill"
+          style="flex:1"
+          type="button"
         >
           Delete
         </button>
@@ -1890,49 +2085,36 @@ function showDeleteSkillConfirmation(
     `
   );
 
-
   document
     .getElementById(
-      "cancelDelSkill"
+      "cancelDeleteSkill"
     )
     ?.addEventListener(
       "click",
-      () => {
-
-        closeModal();
-
-        showSkillDetails(
-          item,
-          renderApp
-        );
-
-      }
+      closeModal
     );
-
 
   document
     .getElementById(
-      "confirmDelSkill"
+      "confirmDeleteSkill"
     )
     ?.addEventListener(
       "click",
       async () => {
-
         const button =
           document.getElementById(
-            "confirmDelSkill"
+            "confirmDeleteSkill"
           );
 
-
-        try {
-
+        if (button) {
           button.disabled =
             true;
 
           button.textContent =
             "Deleting…";
+        }
 
-
+        try {
           await deleteDoc(
             doc(
               db,
@@ -1941,38 +2123,39 @@ function showDeleteSkillConfirmation(
             )
           );
 
+          state.skills =
+            (
+              state.skills ||
+              []
+            ).filter(
+              s =>
+                s.id !==
+                item.id
+            );
 
           closeModal();
 
           toast(
-            "Skill offer deleted successfully."
+            "Skill offer deleted."
           );
 
           renderApp?.();
-
         } catch (error) {
-
-          console.error(
-            "[TimeTrust] Delete skill error:",
-            error
-          );
-
           toast(
             friendly(error)
           );
 
-          button.disabled =
-            false;
+          if (button) {
+            button.disabled =
+              false;
 
-          button.textContent =
-            "Delete";
-
+            button.textContent =
+              "Delete";
+          }
         }
-
       }
     );
 }
-
 
 export function attachTimeTrustEvents(
   renderApp
@@ -1990,7 +2173,6 @@ export function attachTimeTrustEvents(
         )
     );
 
-
   document
     .getElementById(
       "emptyOfferBtn"
@@ -2004,84 +2186,65 @@ export function attachTimeTrustEvents(
         )
     );
 
-
   document
     .querySelectorAll(
       "[data-time-tab]"
     )
     .forEach(
-      button => {
-
+      button =>
         button.addEventListener(
           "click",
           () => {
-
             state.timeTab =
               button.dataset.timeTab;
 
-            renderApp();
+            state.search =
+              "";
 
+            renderApp?.();
           }
-        );
-
-      }
+        )
     );
-
 
   document
     .querySelectorAll(
       "[data-time-cat]"
     )
     .forEach(
-      button => {
-
+      button =>
         button.addEventListener(
           "click",
           () => {
-
             state.timeCategory =
               button.dataset.timeCat;
 
-            renderApp();
-
+            renderApp?.();
           }
-        );
-
-      }
+        )
     );
 
-
-  const searchInput =
+  const search =
     document.getElementById(
       "timeSearch"
     );
 
+  search?.addEventListener(
+    "input",
+    event => {
+      state.search =
+        event.target.value ||
+        "";
 
-  if (searchInput) {
+      renderApp?.();
 
-    searchInput.addEventListener(
-      "input",
-      event => {
+      setTimeout(
+        () => {
+          const input =
+            document.getElementById(
+              "timeSearch"
+            );
 
-        state.search =
-          event.target.value;
-
-        renderApp();
-
-
-        setTimeout(
-          () => {
-
-            const input =
-              document.getElementById(
-                "timeSearch"
-              );
-
-            if (!input) {
-              return;
-            }
-
-
+          if (input) {
             input.focus();
 
             input.selectionStart =
@@ -2089,73 +2252,53 @@ export function attachTimeTrustEvents(
 
             input.selectionEnd =
               input.value.length;
+          }
+        },
+        0
+      );
+    }
+  );
 
-          },
-          0
-        );
-
-      }
-    );
-
-  }
-
-
-  const sortSelect =
-    document.getElementById(
+  document
+    .getElementById(
       "timeSortSelect"
-    );
-
-
-  if (sortSelect) {
-
-    sortSelect.addEventListener(
+    )
+    ?.addEventListener(
       "change",
       event => {
-
         state.timeSort =
           event.target.value;
 
-        renderApp();
-
+        renderApp?.();
       }
     );
-
-  }
-
 
   document
     .querySelectorAll(
       "[data-view-skill]"
     )
     .forEach(
-      card => {
-
+      card =>
         card.addEventListener(
           "click",
           () => {
-
-            const item =
-              (state.skills || [])
-                .find(
-                  skill =>
-                    skill.id ===
-                    card.dataset
-                      .viewSkill
-                );
-
-
-            if (item) {
-
-              showSkillDetails(
-                item,
-                renderApp
+            const raw =
+              (
+                state.skills ||
+                []
+              ).find(
+                skill =>
+                  skill.id ===
+                  card.dataset.viewSkill
               );
 
+            if (raw) {
+              showSkillDetails(
+                raw,
+                renderApp
+              );
             }
-
           }
-        );
-
-      }
+        )
     );
 }
