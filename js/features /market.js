@@ -60,7 +60,83 @@ const conditions = [
 
 
 /* =========================================================
-   HELPERS
+   MARVEL MARKET LISTING EXPIRY
+   ========================================================= */
+
+const listingExpiryOptions = [
+  { hours: 720, label: "30 days" },
+  { hours: 12, label: "12 hours" },
+  { hours: 34, label: "34 hours" },
+  { hours: 168, label: "1 week" },
+  { hours: 336, label: "2 weeks" }
+];
+
+
+function listingTimestamp(value) {
+  if (value?.toMillis) {
+    return value.toMillis();
+  }
+
+  if (value?.toDate) {
+    return value.toDate().getTime();
+  }
+
+  if (!value) {
+    return 0;
+  }
+
+  const time = new Date(value).getTime();
+
+  return Number.isFinite(time) ? time : 0;
+}
+
+
+function isListingExpired(listing) {
+  if (!listing?.expiresAt) {
+    return false;
+  }
+
+  const expiresAt = listingTimestamp(listing.expiresAt);
+
+  return expiresAt > 0 && expiresAt <= Date.now();
+}
+
+
+function formatListingExpiry(listing) {
+  if (!listing?.expiresAt) {
+    return "No expiry";
+  }
+
+  const expiresAt = listingTimestamp(listing.expiresAt);
+
+  if (!expiresAt) {
+    return "Expiry unavailable";
+  }
+
+  const remaining = expiresAt - Date.now();
+
+  if (remaining <= 0) {
+    return "Expired";
+  }
+
+  const totalHours = Math.ceil(
+    remaining / (60 * 60 * 1000)
+  );
+
+  if (totalHours < 24) {
+    return `Expires in ${totalHours}h`;
+  }
+
+  const totalDays = Math.ceil(
+    totalHours / 24
+  );
+
+  return `Expires in ${totalDays}d`;
+}
+
+
+/* =========================================================
+   MARKET STATE
    ========================================================= */
 
 function getUid() {
@@ -76,69 +152,24 @@ function getMyListings() {
   }
 
   return (state.listings || []).filter(
-    listing => listing?.uid === uid
+    listing => listing.uid === uid
   );
 }
 
 
-function listingTime(listing) {
-  if (listing?.createdAt?.toMillis) {
-    return listing.createdAt.toMillis();
-  }
-
-  if (listing?.createdAt?.toDate) {
-    return listing.createdAt.toDate().getTime();
-  }
-
-  if (listing?.createdAt) {
-    const time = new Date(
-      listing.createdAt
-    ).getTime();
-
-    return Number.isFinite(time)
-      ? time
-      : 0;
-  }
-
-  return 0;
-}
-
-
-function getShopName(listing, profile = null) {
-  return (
-    profile?.marketAccount?.storeName ||
-    profile?.displayName ||
-    profile?.username ||
-    listing?.username ||
-    "Market Seller"
-  );
-}
-
-
-function getShopDescription(profile, listing = null) {
-  return (
-    profile?.marketAccount?.bio ||
-    profile?.marketAccount?.description ||
-    listing?.shopDescription ||
-    "Community marketplace shop."
-  );
-}
-
-
-function getShopLocation(profile, listing = null) {
-  return (
-    profile?.marketAccount?.location ||
-    profile?.country ||
-    listing?.location ||
-    listing?.country ||
-    "Location not specified"
-  );
-}
-
-
-/* =========================================================
-   MARKET ACCOUNT
-   ========================================================= */
+/*
+ * A user is considered a Market Account holder when:
+ *
+ * 1. Their profile explicitly contains an active
+ *    Market Account.
+ *
+ * OR
+ *
+ * 2. They already own listings.
+ *
+ * The second condition preserves existing sellers
+ * from before the Market Account system existed.
+ */
 
 export function hasMarketAccount() {
   const uid = getUid();
@@ -153,9 +184,6 @@ export function hasMarketAccount() {
     return true;
   }
 
-  /*
-   * Keep older sellers working.
-   */
   return getMyListings().length > 0;
 }
 
@@ -163,6 +191,16 @@ export function hasMarketAccount() {
 /* =========================================================
    EXISTING SELLER MIGRATION
    ========================================================= */
+
+/*
+ * This is intentionally additive.
+ *
+ * Existing listings are NEVER modified.
+ *
+ * If an existing seller is detected from listings already
+ * loaded into state, only the user's profile receives the
+ * Market Account flag.
+ */
 
 async function migrateExistingSeller() {
   const uid = getUid();
@@ -177,9 +215,10 @@ async function migrateExistingSeller() {
     return;
   }
 
-  const listings = getMyListings();
+  const existingListings =
+    getMyListings();
 
-  if (!listings.length) {
+  if (!existingListings.length) {
     return;
   }
 
@@ -198,12 +237,15 @@ async function migrateExistingSeller() {
 
     migratedFromListing: true,
 
-    createdAt: serverTimestamp(),
+    createdAt:
+      serverTimestamp(),
 
-    updatedAt: serverTimestamp()
+    updatedAt:
+      serverTimestamp()
   };
 
   try {
+
     await updateDoc(
       doc(
         db,
@@ -221,12 +263,16 @@ async function migrateExistingSeller() {
       marketAccount: {
         ...account,
 
-        createdAt: new Date(),
+        createdAt:
+          new Date(),
 
-        updatedAt: new Date()
+        updatedAt:
+          new Date()
       }
     };
+
   } catch (error) {
+
     console.warn(
       "[Market] Existing seller migration skipped:",
       error
@@ -236,13 +282,15 @@ async function migrateExistingSeller() {
 
 
 /* =========================================================
-   MARKET ACCOUNT MODAL
+   MARVEL MARKET ACCOUNT MODAL
    ========================================================= */
 
 export function showMarketAccountModal(
   renderApp
 ) {
+
   if (!state.user) {
+
     toast(
       "Please sign in first."
     );
@@ -250,23 +298,29 @@ export function showMarketAccountModal(
     return;
   }
 
+
   const account =
     state.profile?.marketAccount || {};
 
+
   const existingSeller =
     getMyListings().length > 0;
+
 
   const accountExists =
     account.active === true ||
     existingSeller;
 
+
   showModal(
+
     accountExists
-      ? "Manage Marketplace Account"
-      : "Create Marketplace Account",
+      ? "Manage Marvel Market Account"
+      : "Create Marvel Market Account",
 
     `
       <div class="field">
+
         <label>
           Seller / Store name *
         </label>
@@ -281,14 +335,16 @@ export function showMarketAccountModal(
             state.profile?.username ||
             ""
           )}"
-          placeholder="Your shop name"
+          placeholder="Your seller or store name"
         >
+
       </div>
 
 
       <div class="field">
+
         <label>
-          Shop description
+          Seller description
         </label>
 
         <textarea
@@ -296,18 +352,18 @@ export function showMarketAccountModal(
           id="marketSellerBio"
           maxlength="300"
           rows="4"
-          placeholder="Tell buyers what your shop sells..."
+          placeholder="Tell buyers what you sell..."
         >${escapeHtml(
-          account.bio ||
-          account.description ||
-          ""
+          account.bio || ""
         )}</textarea>
+
       </div>
 
 
       <div class="field">
+
         <label>
-          Shop location
+          Seller location
         </label>
 
         <input
@@ -321,50 +377,53 @@ export function showMarketAccountModal(
           )}"
           placeholder="e.g. Kano, Nigeria"
         >
+
       </div>
 
 
       <div
         class="card"
         style="
-          background:var(--surface2);
-          padding:12px;
-          margin:12px 0;
-          box-shadow:none;
+          background: var(--surface2);
+          padding: 12px;
+          margin: 12px 0;
+          box-shadow: none;
         "
       >
+
         <div
           style="
-            font-size:22px;
-            margin-bottom:5px;
+            font-size: 22px;
+            margin-bottom: 5px;
           "
         >
           🛍️
         </div>
 
         <strong>
-          Your Marketplace Shop
+          Your Marvel Market Account
         </strong>
 
         <p
           class="small"
-          style="margin:5px 0 0;"
+          style="margin: 5px 0 0;"
         >
-          Your shop is where your products and
-          services are displayed to buyers.
+          Your account lets you create and manage
+          Marvel Market listings. Everyone can still
+          browse products.
         </p>
+
       </div>
 
 
       <button
         class="btn btn-primary btn-block"
         id="saveMarketAccount"
-        type="button"
       >
         ${
           accountExists
-            ? "Save Marketplace Account"
-            : "Create Marketplace Account 🛍️"
+            ? "Save Marvel Market Account"
+            : "Create Marvel Market Account 🛍️"
         }
       </button>
     `
@@ -378,6 +437,7 @@ export function showMarketAccountModal(
     ?.addEventListener(
       "click",
       async () => {
+
         const nameInput =
           document.getElementById(
             "marketStoreName"
@@ -393,6 +453,7 @@ export function showMarketAccountModal(
             "marketSellerLocation"
           );
 
+
         const storeName =
           nameInput?.value.trim() || "";
 
@@ -402,9 +463,11 @@ export function showMarketAccountModal(
         const location =
           locationInput?.value.trim() || "";
 
+
         if (!storeName) {
+
           toast(
-            "Enter your shop name."
+            "Enter your seller or store name."
           );
 
           nameInput?.focus();
@@ -412,20 +475,33 @@ export function showMarketAccountModal(
           return;
         }
 
+
         const button =
           document.getElementById(
             "saveMarketAccount"
           );
 
+
         if (!button) {
           return;
         }
 
+
         button.disabled = true;
-        button.textContent = "Saving...";
+
+        button.textContent =
+          "Saving...";
+
 
         try {
+
+          const oldCreatedAt =
+            account.createdAt ||
+            new Date();
+
+
           const marketAccount = {
+
             active: true,
 
             storeName,
@@ -435,12 +511,13 @@ export function showMarketAccountModal(
             location,
 
             createdAt:
-              account.createdAt ||
-              new Date(),
+              oldCreatedAt,
 
             updatedAt:
               serverTimestamp()
+
           };
+
 
           await updateDoc(
             doc(
@@ -453,24 +530,32 @@ export function showMarketAccountModal(
             }
           );
 
+
           state.profile = {
+
             ...state.profile,
 
             marketAccount: {
+
               ...marketAccount,
 
               updatedAt:
                 new Date()
+
             }
+
           };
+
 
           closeModal();
 
+
           toast(
             accountExists
-              ? "Marketplace Shop updated ✨"
-              : "Marketplace Shop created 🛍️"
+              ? "Marvel Market Account updated ✨"
+              : "Marvel Market Account created 🛍️"
           );
+
 
           if (
             typeof renderApp ===
@@ -478,23 +563,30 @@ export function showMarketAccountModal(
           ) {
             renderApp();
           }
+
         } catch (error) {
+
           console.error(
             "[Market] Account save failed:",
             error
           );
 
+
           toast(
             friendly(error)
           );
 
-          button.disabled = false;
+
+          button.disabled =
+            false;
+
 
           button.textContent =
             accountExists
-              ? "Save Marketplace Account"
-              : "Create Marketplace Account 🛍️";
+              ? "Save Marvel Market Account"
+              : "Create Marvel Market Account 🛍️";
         }
+
       }
     );
 }
@@ -512,7 +604,10 @@ function isBrowseMode() {
 function enterBrowseMode(
   renderApp
 ) {
-  state.marketBrowseMode = true;
+
+  state.marketBrowseMode =
+    true;
+
 
   if (
     typeof renderApp ===
@@ -526,9 +621,13 @@ function enterBrowseMode(
 function exitBrowseMode(
   renderApp
 ) {
-  state.marketBrowseMode = false;
+
+  state.marketBrowseMode =
+    false;
+
 
   state.search = "";
+
 
   if (
     typeof renderApp ===
@@ -540,99 +639,40 @@ function exitBrowseMode(
 
 
 /* =========================================================
-   GROUP LISTINGS INTO SHOPS
-   ========================================================= */
-
-function buildShopGroups(
-  listings
-) {
-  const map = new Map();
-
-  listings.forEach(
-    listing => {
-      if (!listing) {
-        return;
-      }
-
-      const shopId =
-        listing.uid ||
-        `legacy:${listing.username || listing.id}`;
-
-      if (!map.has(shopId)) {
-        map.set(
-          shopId,
-          {
-            id: shopId,
-
-            uid:
-              listing.uid ||
-              null,
-
-            name:
-              listing.username ||
-              "Community Shop",
-
-            listings: [],
-
-            latest: listing
-          }
-        );
-      }
-
-      const shop =
-        map.get(shopId);
-
-      shop.listings.push(
-        listing
-      );
-
-      if (
-        listingTime(listing) >
-        listingTime(shop.latest)
-      ) {
-        shop.latest = listing;
-      }
-    }
-  );
-
-  return Array.from(
-    map.values()
-  );
-}
-
-
-/* =========================================================
-   MARKET RENDER
+   MARVEL MARKET RENDER
    ========================================================= */
 
 export function renderMarket(
   renderApp
 ) {
+
   migrateExistingSeller();
+
 
   const seller =
     hasMarketAccount();
 
+
   const browse =
     isBrowseMode();
 
-  const showMarketplaceTools =
-    seller ||
-    browse;
+
+  const showMarvelMarketTools =
+    seller || browse;
+
 
   const queryText =
-    showMarketplaceTools
-      ? (
-          state.search ||
-          ""
-        )
+    showMarvelMarketTools
+      ? (state.search || "")
           .toLowerCase()
           .trim()
       : "";
 
+
   const selectedCategory =
     state.marketCategory ||
     "All";
+
 
   const marketTab =
     seller
@@ -642,28 +682,17 @@ export function renderMarket(
         )
       : "browse";
 
+
   const sortBy =
     state.marketSort ||
     "newest";
 
 
-  /*
-   * First filter individual products.
-   * Then group the matching products by shop.
-   */
-  let matchingListings =
+  let filtered =
     (state.listings || [])
       .filter(
         listing => {
-          if (!listing) {
-            return false;
-          }
 
-          /*
-           * Sold products remain inside the shop,
-           * but are not shown on the public market
-           * shop cards.
-           */
           if (
             listing.status ===
             "sold"
@@ -671,67 +700,135 @@ export function renderMarket(
             return false;
           }
 
+
           if (
-            seller &&
-            marketTab === "mine" &&
-            listing.uid !== getUid()
+            isListingExpired(
+              listing
+            )
           ) {
             return false;
           }
 
-          const haystack =
-            `${listing.title || ""} ${
-              listing.description || ""
-            } ${
-              listing.username || ""
-            } ${
-              listing.category || ""
-            } ${
-              listing.location || ""
-            } ${
-              listing.country || ""
-            }`.toLowerCase();
 
           const matchesSearch =
             !queryText ||
-            haystack.includes(
-              queryText
-            );
+            (
+              `${listing.title || ""} ${
+                listing.description || ""
+              } ${
+                listing.username || ""
+              } ${
+                listing.category || ""
+              } ${
+                listing.location || ""
+              } ${
+                listing.country || ""
+              }`
+            )
+              .toLowerCase()
+              .includes(
+                queryText
+              );
+
 
           const matchesCategory =
-            selectedCategory === "All" ||
+            selectedCategory ===
+              "All" ||
             (
               listing.category ||
               "Other"
             ) === selectedCategory;
 
+
           return (
             matchesSearch &&
             matchesCategory
           );
+
         }
       );
 
 
-  matchingListings.sort(
+  if (
+    seller &&
+    marketTab === "mine"
+  ) {
+
+    filtered =
+      getMyListings()
+        .filter(
+          listing => {
+
+            const matchesSearch =
+              !queryText ||
+              (
+                `${listing.title || ""} ${
+                  listing.description || ""
+                } ${
+                  listing.username || ""
+                } ${
+                  listing.category || ""
+                }`
+              )
+                .toLowerCase()
+                .includes(
+                  queryText
+                );
+
+
+            const matchesCategory =
+              selectedCategory ===
+                "All" ||
+              (
+                listing.category ||
+                "Other"
+              ) === selectedCategory;
+
+
+            return (
+              matchesSearch &&
+              matchesCategory
+            );
+
+          }
+        );
+  }
+
+
+  filtered.sort(
     (a, b) => {
+
       const timeA =
-        listingTime(a);
+        a.createdAt?.toMillis
+          ? a.createdAt.toMillis()
+          : (
+              a.createdAt
+                ? new Date(
+                    a.createdAt
+                  ).getTime()
+                : 0
+            );
+
 
       const timeB =
-        listingTime(b);
+        b.createdAt?.toMillis
+          ? b.createdAt.toMillis()
+          : (
+              b.createdAt
+                ? new Date(
+                    b.createdAt
+                  ).getTime()
+                : 0
+            );
 
-      return sortBy === "oldest"
+
+      return sortBy ===
+        "oldest"
         ? timeA - timeB
         : timeB - timeA;
+
     }
   );
-
-
-  const shops =
-    buildShopGroups(
-      matchingListings
-    );
 
 
   const myListingsCount =
@@ -739,32 +836,37 @@ export function renderMarket(
 
 
   return `
+
     <div class="page market-page">
 
       <section class="hero">
+
         <h1>
           Marvel Market 🛍️
         </h1>
 
         <p>
-          Discover shops, products and services
+          Discover products and services
           from the Marvel Chat community.
         </p>
+
       </section>
 
 
       ${
         seller
           ? `
+
             <div
               class="card"
               style="
-                margin-bottom:12px;
-                padding:12px 14px;
-                box-shadow:none;
-                background:var(--surface2);
+                margin-bottom: 12px;
+                padding: 12px 14px;
+                box-shadow: none;
+                background: var(--surface2);
               "
             >
+
               <div
                 style="
                   display:flex;
@@ -774,13 +876,11 @@ export function renderMarket(
                   flex-wrap:wrap;
                 "
               >
+
                 <div>
-                  <strong
-                    style="
-                      font-size:17px;
-                      font-weight:900;
-                    "
-                  >
+
+                  <strong>
+
                     🛍️ ${escapeHtml(
                       state.profile
                         ?.marketAccount
@@ -789,12 +889,15 @@ export function renderMarket(
                         ?.displayName ||
                       "Market Seller"
                     )}
+
                   </strong>
 
                   <div class="small">
-                    Marketplace Shop active
+                    Marvel Market Account active
                   </div>
+
                 </div>
+
 
                 <button
                   class="btn btn-ghost"
@@ -802,18 +905,22 @@ export function renderMarket(
                   type="button"
                   style="font-size:13px;"
                 >
-                  Manage Shop
+                  Manage
                 </button>
+
               </div>
+
             </div>
+
           `
           : ""
       }
 
 
       ${
-        !showMarketplaceTools
+        !showMarvelMarketTools
           ? `
+
             <div
               class="card"
               style="
@@ -822,6 +929,7 @@ export function renderMarket(
                 margin-bottom:14px;
               "
             >
+
               <div
                 style="
                   font-size:44px;
@@ -832,7 +940,9 @@ export function renderMarket(
               </div>
 
               <h3
-                style="margin:0 0 6px;"
+                style="
+                  margin:0 0 6px;
+                "
               >
                 Explore Marvel Market
               </h3>
@@ -844,8 +954,8 @@ export function renderMarket(
                   margin:0 auto 18px;
                 "
               >
-                Browse shops, products and
-                services from community members.
+                Browse products and services
+                from community members.
               </p>
 
               <button
@@ -855,31 +965,36 @@ export function renderMarket(
               >
                 Browse Market
               </button>
+
             </div>
+
           `
           : ""
       }
 
 
       ${
-        showMarketplaceTools
+        showMarvelMarketTools
           ? `
+
             <div
               class="search"
               style="margin-bottom:12px;"
             >
+
               <input
                 class="input"
                 id="marketSearch"
                 value="${escapeHtml(
                   state.search || ""
                 )}"
-                placeholder="Search shops and products..."
+                placeholder="Search products..."
               >
 
               ${
                 seller
                   ? `
+
                     <button
                       class="btn btn-primary"
                       id="sellBtn"
@@ -887,19 +1002,23 @@ export function renderMarket(
                     >
                       + Sell
                     </button>
+
                   `
                   : ""
               }
+
             </div>
 
 
             ${
               seller
                 ? `
+
                   <div
                     class="segmented"
                     style="margin-bottom:12px;"
                   >
+
                     <button
                       class="btn ${
                         marketTab === "browse"
@@ -923,23 +1042,64 @@ export function renderMarket(
                       type="button"
                       style="flex:1;"
                     >
-                      My Shop (${myListingsCount})
+                      My Listings
+                      (${myListingsCount})
                     </button>
+
                   </div>
+
                 `
                 : ""
             }
 
 
             <div
-              class="category-row"
               style="
-                margin-bottom:12px;
                 display:flex;
-                gap:6px;
+                gap:8px;
+                align-items:center;
+                margin-bottom:14px;
                 flex-wrap:wrap;
               "
             >
+
+              <select
+                class="select"
+                id="marketSortSelect"
+                style="
+                  width:auto;
+                  padding:6px 12px;
+                  font-size:13px;
+                "
+              >
+
+                <option
+                  value="newest"
+                  ${
+                    sortBy ===
+                    "newest"
+                      ? "selected"
+                      : ""
+                  }
+                >
+                  Newest
+                </option>
+
+                <option
+                  value="oldest"
+                  ${
+                    sortBy ===
+                    "oldest"
+                      ? "selected"
+                      : ""
+                  }
+                >
+                  Oldest
+                </option>
+
+              </select>
+
+
               <div
                 style="
                   display:flex;
@@ -956,13 +1116,16 @@ export function renderMarket(
                   scrollbar-width:none;
                 "
               >
+
                 ${
                   marketCategories
                     .map(
                       category => `
+
                         <button
                           class="btn ${
-                            selectedCategory === category
+                            selectedCategory ===
+                            category
                               ? "btn-primary"
                               : "btn-ghost"
                           }"
@@ -982,57 +1145,21 @@ export function renderMarket(
                             category
                           )}
                         </button>
+
                       `
                     )
                     .join("")
                 }
+
               </div>
-            </div>
 
-
-            <div
-              style="
-                display:flex;
-                justify-content:flex-end;
-                margin-bottom:12px;
-              "
-            >
-              <select
-                class="select"
-                id="marketSortSelect"
-                style="
-                  max-width:170px;
-                  width:100%;
-                "
-              >
-                <option
-                  value="newest"
-                  ${
-                    sortBy === "newest"
-                      ? "selected"
-                      : ""
-                  }
-                >
-                  Newest shops
-                </option>
-
-                <option
-                  value="oldest"
-                  ${
-                    sortBy === "oldest"
-                      ? "selected"
-                      : ""
-                  }
-                >
-                  Oldest shops
-                </option>
-              </select>
             </div>
 
 
             ${
               !seller && browse
                 ? `
+
                   <button
                     class="btn btn-ghost"
                     id="closeBrowseMarketBtn"
@@ -1044,9 +1171,11 @@ export function renderMarket(
                   >
                     ← Back
                   </button>
+
                 `
                 : ""
             }
+
           `
           : ""
       }
@@ -1055,257 +1184,300 @@ export function renderMarket(
       <div id="marketItems">
 
         ${
-          showMarketplaceTools &&
-          shops.length
+          filtered.length
             ? `
+
               <div class="list">
 
                 ${
-                  shops
+                  filtered
                     .map(
-                      shop => {
-                        const latest =
-                          shop.latest ||
-                          shop.listings[0];
+                      listing => `
 
-                        const shopName =
-                          shop.uid === getUid()
-                            ? (
-                                state.profile
-                                  ?.marketAccount
-                                  ?.storeName ||
-                                shop.name
-                              )
-                            : shop.name;
+                        <div
+                          class="list-item"
+                          data-view-listing="${escapeHtml(
+                            listing.id
+                          )}"
+                          style="cursor:pointer;"
+                        >
 
-                        const productCount =
-                          shop.listings.length;
-
-                        const categories =
-                          Array.from(
-                            new Set(
-                              shop.listings
-                                .map(
-                                  item =>
-                                    item.category
-                                )
-                                .filter(
-                                  Boolean
-                                )
-                            )
-                          );
-
-                        return `
                           <div
-                            class="list-item"
-                            data-view-shop="${escapeHtml(
-                              shop.uid || ""
-                            )}"
-                            data-view-listing="${escapeHtml(
-                              latest?.id || ""
-                            )}"
+                            class="profile-row"
                             style="
-                              cursor:pointer;
-                              width:100%;
+                              align-items:flex-start;
+                              justify-content:space-between;
                             "
                           >
 
                             <div
-                              class="profile-row"
                               style="
+                                display:flex;
+                                gap:10px;
                                 align-items:flex-start;
-                                justify-content:space-between;
+                                flex:1;
+                                min-width:0;
                               "
                             >
 
                               <div
+                                class="avatar"
                                 style="
-                                  display:flex;
-                                  gap:10px;
-                                  align-items:flex-start;
+                                  font-size:16px;
+                                "
+                              >
+                                🛍️
+                              </div>
+
+
+                              <div
+                                class="profile-meta"
+                                style="
                                   flex:1;
                                   min-width:0;
                                 "
                               >
 
                                 <div
-                                  class="avatar"
-                                  style="font-size:16px;"
-                                >
-                                  🛍️
-                                </div>
-
-
-                                <div
-                                  class="profile-meta"
                                   style="
-                                    flex:1;
-                                    min-width:0;
+                                    display:flex;
+                                    align-items:center;
+                                    gap:6px;
+                                    flex-wrap:wrap;
                                   "
                                 >
 
-                                  <strong
-                                    style="
-                                      display:block;
-                                      font-size:19px;
-                                      font-weight:900;
-                                      overflow-wrap:anywhere;
-                                    "
-                                  >
+                                  <strong>
                                     ${escapeHtml(
-                                      shopName
+                                      listing.title ||
+                                      "Untitled"
                                     )}
                                   </strong>
 
-
                                   <span
-                                    class="small"
-                                    style="
-                                      display:block;
-                                      margin-top:3px;
-                                    "
-                                  >
-                                    ${productCount}
-                                    ${
-                                      productCount === 1
-                                        ? "product"
-                                        : "products"
-                                    }
-
-                                    ${
-                                      categories.length
-                                        ? ` · ${escapeHtml(
-                                            categories
-                                              .slice(
-                                                0,
-                                                3
-                                              )
-                                              .join(
-                                                " · "
-                                              )
-                                          )}`
-                                        : ""
-                                    }
-                                  </span>
-
-
-                                  <p
-                                    class="small"
-                                    style="
-                                      margin:6px 0;
-                                      color:
-                                        var(--text-secondary);
-                                      display:
-                                        -webkit-box;
-                                      -webkit-line-clamp:2;
-                                      -webkit-box-orient:
-                                        vertical;
-                                      overflow:hidden;
-                                    "
+                                    class="badge"
                                   >
                                     ${escapeHtml(
-                                      latest
-                                        ?.description ||
-                                      "Open this shop to see all products and services."
+                                      listing.category ||
+                                      "Other"
                                     )}
-                                  </p>
-
-
-                                  <span class="small">
-                                    ${
-                                      latest?.location
-                                        ? `📍 ${escapeHtml(
-                                            latest.location
-                                          )}`
-                                        : latest?.country
-                                          ? `📍 ${escapeHtml(
-                                              latest.country
-                                            )}`
-                                          : ""
-                                    }
                                   </span>
 
                                 </div>
+
+
+                                <span
+                                  class="small"
+                                >
+                                  ${escapeHtml(
+                                    listing.username ||
+                                    "Seller"
+                                  )}
+
+                                  ·
+
+                                  ${escapeHtml(
+                                    listing.condition ||
+                                    "Used"
+                                  )}
+
+                                  ·
+
+                                  ${
+                                    listing.location
+                                      ? escapeHtml(
+                                          listing.location
+                                        ) + ", "
+                                      : ""
+                                  }
+
+                                  ${escapeHtml(
+                                    listing.country ||
+                                    "Community"
+                                  )}
+
+                                  ·
+
+                                  ${escapeHtml(
+                                    formatDate(
+                                      listing.createdAt
+                                    )
+                                  )}
+
+                                </span>
+
+
+                                <p
+                                  class="small"
+                                  style="
+                                    margin:6px 0;
+                                    color:
+                                      var(--text-secondary);
+                                    display:
+                                      -webkit-box;
+                                    -webkit-line-clamp:2;
+                                    -webkit-box-orient:
+                                      vertical;
+                                    overflow:hidden;
+                                  "
+                                >
+                                  ${escapeHtml(
+                                    listing.description ||
+                                    ""
+                                  )}
+                                </p>
+
+
+                                <span
+                                  class="badge"
+                                  style="
+                                    background:
+                                      var(--surface2);
+                                    color:
+                                      var(--text-secondary);
+                                  "
+                                >
+                                  ${escapeHtml(
+                                    formatListingExpiry(
+                                      listing
+                                    )
+                                  )}
+                                </span>
+
+
+                                ${
+                                  listing.status ===
+                                  "sold"
+                                    ? `
+
+                                      <span
+                                        class="badge"
+                                        style="
+                                          background:
+                                            var(--danger);
+                                          color:#fff;
+                                        "
+                                      >
+                                        Sold
+                                      </span>
+
+                                    `
+                                    : ""
+                                }
 
                               </div>
 
                             </div>
 
+
+                            <strong
+                              style="
+                                color:var(--primary);
+                                font-size:16px;
+                                white-space:nowrap;
+                                margin-left:8px;
+                              "
+                            >
+                              ₦${Number(
+                                listing.price ||
+                                0
+                              ).toLocaleString()}
+                            </strong>
+
                           </div>
-                        `;
-                      }
+
+                        </div>
+
+                      `
                     )
                     .join("")
                 }
 
               </div>
+
             `
-            : showMarketplaceTools
-              ? `
+            : `
+
+              <div
+                class="card empty"
+                style="
+                  padding:40px 20px;
+                  text-align:center;
+                "
+              >
+
                 <div
-                  class="card empty"
                   style="
-                    padding:40px 20px;
-                    text-align:center;
+                    font-size:40px;
+                    margin-bottom:8px;
                   "
                 >
+                  🛍️
+                </div>
 
-                  <div
-                    style="
-                      font-size:40px;
-                      margin-bottom:8px;
-                    "
-                  >
-                    🛍️
-                  </div>
 
-                  <h3>
-                    ${
-                      seller &&
-                      marketTab === "mine"
-                        ? "Your shop has no products yet"
-                        : "No shops found"
-                    }
-                  </h3>
-
-                  <p
-                    class="small"
-                    style="
-                      margin-bottom:16px;
-                      color:var(--text-secondary);
-                    "
-                  >
-                    ${
-                      seller &&
-                      marketTab === "mine"
-                        ? "Create your first marketplace listing."
-                        : "Try another search or category."
-                    }
-                  </p>
+                <h3>
 
                   ${
                     seller &&
-                    marketTab === "mine"
-                      ? `
-                        <button
-                          class="btn btn-primary"
-                          id="emptySellBtn"
-                          type="button"
-                        >
-                          Sell something
-                        </button>
-                      `
-                      : ""
+                    marketTab ===
+                    "mine"
+                      ? "No listings yet"
+                      : "No products found"
                   }
 
-                </div>
-              `
-              : ""
+                </h3>
+
+
+                <p
+                  class="small"
+                  style="
+                    margin-bottom:16px;
+                    color:
+                      var(--text-secondary);
+                  "
+                >
+
+                  ${
+                    seller &&
+                    marketTab ===
+                    "mine"
+
+                      ? "Create your first Marvel Market listing."
+
+                      : "Try another search or category."
+                  }
+
+                </p>
+
+
+                ${
+                  seller &&
+                  marketTab ===
+                  "mine"
+                    ? `
+
+                      <button
+                        class="btn btn-primary"
+                        id="emptySellBtn"
+                        type="button"
+                      >
+                        Sell something
+                      </button>
+
+                    `
+                    : ""
+                }
+
+              </div>
+
+            `
         }
 
       </div>
 
     </div>
+
   `;
 }
 
@@ -1318,13 +1490,21 @@ export function showSellModal(
   renderApp,
   existingListing = null
 ) {
+
   const editing =
     Boolean(existingListing);
 
+
+  /*
+   * Never allow editing another user's listing.
+   */
+
   if (
     editing &&
-    existingListing.uid !== getUid()
+    existingListing.uid !==
+      getUid()
   ) {
+
     toast(
       "You can only edit your own listings."
     );
@@ -1332,24 +1512,35 @@ export function showSellModal(
     return;
   }
 
+
+  /*
+   * Creating a listing requires
+   * a Marvel Market Account.
+   */
+
   if (
     !editing &&
     !hasMarketAccount()
   ) {
+
     toast(
-      "Create a Marketplace Shop before selling."
+      "Create a Marvel Market Account before selling."
     );
+
 
     showMarketAccountModal(
       renderApp
     );
 
+
     return;
   }
+
 
   const account =
     state.profile?.marketAccount ||
     {};
+
 
   const defaultCountry =
     state.profile?.country ||
@@ -1357,21 +1548,22 @@ export function showSellModal(
 
 
   showModal(
+
     editing
-      ? "Edit Product"
-      : "Add Product to Your Shop",
+      ? "Edit Marvel Market Listing"
+      : "Create Marvel Market Listing",
 
     `
+
       <div class="field">
 
         <label>
-          Product / Service name *
+          Title *
         </label>
 
         <input
           class="input"
           id="listingTitle"
-          maxlength="100"
           value="${escapeHtml(
             existingListing?.title ||
             ""
@@ -1392,7 +1584,6 @@ export function showSellModal(
           class="textarea"
           id="listingDescription"
           rows="4"
-          maxlength="1000"
           placeholder="Describe your product clearly..."
         >${escapeHtml(
           existingListing?.description ||
@@ -1436,14 +1627,17 @@ export function showSellModal(
             class="select"
             id="listingCategory"
           >
+
             ${
               marketCategories
                 .filter(
                   category =>
-                    category !== "All"
+                    category !==
+                    "All"
                 )
                 .map(
                   category => `
+
                     <option
                       value="${escapeHtml(
                         category
@@ -1460,10 +1654,12 @@ export function showSellModal(
                         category
                       )}
                     </option>
+
                   `
                 )
                 .join("")
             }
+
           </select>
 
         </div>
@@ -1483,10 +1679,12 @@ export function showSellModal(
             class="select"
             id="listingCondition"
           >
+
             ${
               conditions
                 .map(
                   condition => `
+
                     <option
                       value="${escapeHtml(
                         condition
@@ -1503,10 +1701,12 @@ export function showSellModal(
                         condition
                       )}
                     </option>
+
                   `
                 )
                 .join("")
             }
+
           </select>
 
         </div>
@@ -1536,72 +1736,92 @@ export function showSellModal(
       <div class="field">
 
         <label>
-          Location / City
+          Listing duration *
         </label>
 
-        <input
-          class="input"
-          id="listingLocation"
-          value="${escapeHtml(
-            existingListing?.location ||
-            account.location ||
-            ""
-          )}"
-          placeholder="e.g. Kano, Nigeria"
+        <select
+          class="select"
+          id="listingExpiryHours"
         >
 
-      </div>
+          ${
+            listingExpiryOptions
+              .map(
+                option => `
 
+                  <option
+                    value="${option.hours}"
+                    ${
+                      Number(
+                        existingListing
+                          ?.expiryDurationHours
+                      ) ===
+                      option.hours ||
+                      (
+                        !existingListing
+                          ?.expiryDurationHours &&
+                        option.hours ===
+                          720
+                      )
+                        ? "selected"
+                        : ""
+                    }
+                  >
+                    ${escapeHtml(
+                      option.label
+                    )}
+                  </option>
 
-      <div
-        class="card"
-        style="
-          background:var(--surface2);
-          box-shadow:none;
-          padding:12px;
-          margin-bottom:12px;
-        "
-      >
-        <strong>
-          Shop
-        </strong>
+                `
+              )
+              .join("")
+          }
 
-        <div
-          class="small"
-          style="margin-top:4px;"
-        >
-          ${escapeHtml(
-            account.storeName ||
-            state.profile?.displayName ||
-            state.profile?.username ||
-            "Your Shop"
-          )}
-        </div>
+        </select>
+
+        <p class="small">
+          Your Marvel Market listing will automatically
+          expire after the selected duration.
+        </p>
+
       </div>
 
 
       <button
         class="btn btn-primary btn-block"
-        id="publishListing"
+        id="saveListingBtn"
         type="button"
       >
         ${
           editing
-            ? "Save Changes"
-            : "Add Product to Shop 🛍️"
+            ? "Save Marvel Market Listing"
+            : "Publish Marvel Market Listing"
         }
       </button>
+
     `
   );
 
 
   document
     .getElementById(
-      "publishListing"
+      "saveListingBtn"
     )
     ?.addEventListener(
       "click",
       async () => {
+
+        const button =
+          document.getElementById(
+            "saveListingBtn"
+          );
+
+
+        if (!button) {
+          return;
+        }
+
+
         const titleInput =
           document.getElementById(
             "listingTitle"
@@ -1632,9 +1852,9 @@ export function showSellModal(
             "listingCountry"
           );
 
-        const locationInput =
+        const expiryInput =
           document.getElementById(
-            "listingLocation"
+            "listingExpiryHours"
           );
 
 
@@ -1653,24 +1873,26 @@ export function showSellModal(
 
         const category =
           categoryInput?.value ||
-          "";
+          "Other";
 
         const condition =
           conditionInput?.value ||
-          "";
+          "Used";
 
         const country =
           countryInput?.value.trim() ||
-          "";
+          defaultCountry;
 
-        const location =
-          locationInput?.value.trim() ||
-          "";
+        const expiryDurationHours =
+          Number(
+            expiryInput?.value
+          );
 
 
         if (!title) {
+
           toast(
-            "Enter a product or service name."
+            "Enter a title."
           );
 
           titleInput?.focus();
@@ -1680,22 +1902,9 @@ export function showSellModal(
 
 
         if (!description) {
+
           toast(
             "Enter a description."
-          );
-
-          descriptionInput?.focus();
-
-          return;
-        }
-
-
-        if (
-          description.length >
-          1000
-        ) {
-          toast(
-            "Description must be 1000 characters or less."
           );
 
           descriptionInput?.focus();
@@ -1708,6 +1917,7 @@ export function showSellModal(
           !Number.isFinite(price) ||
           price < 0
         ) {
+
           toast(
             "Enter a valid price."
           );
@@ -1718,63 +1928,24 @@ export function showSellModal(
         }
 
 
-        if (!category) {
-          toast(
-            "Select a category."
-          );
-
-          return;
-        }
-
-
-        if (!condition) {
-          toast(
-            "Select the condition."
-          );
-
-          return;
-        }
-
-
-        if (!country) {
-          toast(
-            "Enter a country."
-          );
-
-          countryInput?.focus();
-
-          return;
-        }
-
-
         if (
-          !editing &&
-          !hasMarketAccount()
+          !listingExpiryOptions.some(
+            option =>
+              option.hours ===
+              expiryDurationHours
+          )
         ) {
-          closeModal();
-
-          showMarketAccountModal(
-            renderApp
-          );
 
           toast(
-            "A Marketplace Shop is required to sell."
+            "Choose a valid listing duration."
           );
 
           return;
         }
 
 
-        const button =
-          document.getElementById(
-            "publishListing"
-          );
-
-        if (!button) {
-          return;
-        }
-
-        button.disabled = true;
+        button.disabled =
+          true;
 
         button.textContent =
           editing
@@ -1783,7 +1954,24 @@ export function showSellModal(
 
 
         try {
+
+          const now =
+            Date.now();
+
+          const expiresAt =
+            new Date(
+              now +
+              (
+                expiryDurationHours *
+                60 *
+                60 *
+                1000
+              )
+            );
+
+
           if (editing) {
+
             await updateDoc(
               doc(
                 db,
@@ -1792,834 +1980,212 @@ export function showSellModal(
               ),
               {
                 title,
-
                 description,
-
                 price,
-
                 category,
-
                 condition,
-
                 country,
-
-                location,
-
+                expiryDurationHours,
+                expiresAt,
                 updatedAt:
                   serverTimestamp()
               }
             );
 
-            toast(
-              "Product updated ✨"
-            );
-          } else {
-            const sellerName =
-              state.profile
-                ?.marketAccount
-                ?.storeName ||
-              state.profile
-                ?.displayName ||
-              state.profile
-                ?.username ||
-              "User";
 
+            const index =
+              (
+                state.listings ||
+                []
+              ).findIndex(
+                listing =>
+                  listing.id ===
+                  existingListing.id
+              );
+
+
+            if (index >= 0) {
+
+              state.listings[index] = {
+                ...state.listings[index],
+
+                title,
+                description,
+                price,
+                category,
+                condition,
+                country,
+                expiryDurationHours,
+                expiresAt,
+                updatedAt:
+                  new Date()
+              };
+            }
+
+
+            closeModal();
+
+
+            toast(
+              "Marvel Market listing updated ✨"
+            );
+
+
+            renderApp?.();
+
+            return;
+          }
+
+
+          if (
+            !hasMarketAccount()
+          ) {
+
+            closeModal();
+
+            toast(
+              "A Marvel Market Account is required to sell."
+            );
+
+            showMarketAccountModal(
+              renderApp
+            );
+
+            return;
+          }
+
+
+          const listing = {
+
+            uid:
+              state.user.uid,
+
+            username:
+              state.profile?.username ||
+              state.profile?.displayName ||
+              "Seller",
+
+            title,
+
+            description,
+
+            price,
+
+            category,
+
+            condition,
+
+            country,
+
+            location:
+              state.profile?.marketAccount
+                ?.location ||
+              state.profile?.country ||
+              "",
+
+            status:
+              "available",
+
+            expiryDurationHours,
+
+            expiresAt,
+
+            createdAt:
+              serverTimestamp(),
+
+            updatedAt:
+              serverTimestamp()
+
+          };
+
+
+          const created =
             await addDoc(
               collection(
                 db,
                 "listings"
               ),
-              {
-                uid:
-                  state.user.uid,
-
-                username:
-                  sellerName,
-
-                title,
-
-                description,
-
-                price,
-
-                category,
-
-                condition,
-
-                country,
-
-                location,
-
-                status:
-                  "active",
-
-                createdAt:
-                  serverTimestamp(),
-
-                updatedAt:
-                  serverTimestamp()
-              }
+              listing
             );
 
-            toast(
-              "Product added to your shop 🛍️"
-            );
-          }
+
+          state.listings = [
+            ...(state.listings || []),
+
+            {
+              ...listing,
+
+              id:
+                created.id,
+
+              createdAt:
+                new Date(),
+
+              updatedAt:
+                new Date(),
+
+              expiresAt
+            }
+          ];
 
 
           closeModal();
 
-          if (
-            typeof renderApp ===
-            "function"
-          ) {
-            renderApp();
-          }
+
+          toast(
+            "Marvel Market listing published 🛍️"
+          );
+
+
+          renderApp?.();
 
         } catch (error) {
+
           console.error(
-            "[Market] Listing save error:",
+            "[Market] Listing save failed:",
             error
           );
+
 
           toast(
             friendly(error)
           );
+
 
           button.disabled =
             false;
 
           button.textContent =
             editing
-              ? "Save Changes"
-              : "Add Product to Shop 🛍️";
+              ? "Save Marvel Market Listing"
+              : "Publish Marvel Market Listing";
         }
+
       }
     );
 }
 
 
 /* =========================================================
-   SHOP DETAILS
+   LISTING DETAILS
    ========================================================= */
 
-export async function showListingDetails(
+async function showListingDetails(
   listingId,
   renderApp
 ) {
+
   const listing =
     (state.listings || [])
       .find(
         item =>
-          item?.id ===
+          item.id ===
           listingId
       );
 
+
   if (!listing) {
-    toast(
-      "Listing not found."
-    );
 
-    return;
-  }
-
-  /*
-   * The old exported function remains available.
-   * It now opens the complete shop belonging to
-   * the selected product.
-   */
-  if (listing.uid) {
-    await showShopDetails(
-      listing.uid,
-      renderApp,
-      listing
-    );
-
-    return;
-  }
-
-  await showSingleListingDetails(
-    listing,
-    renderApp
-  );
-}
-
-
-/* =========================================================
-   SHOW COMPLETE SHOP
-   ========================================================= */
-
-async function showShopDetails(
-  sellerUid,
-  renderApp,
-  selectedListing = null
-) {
-  if (!sellerUid) {
-    await showSingleListingDetails(
-      selectedListing,
-      renderApp
-    );
-
-    return;
-  }
-
-
-  try {
-    /*
-     * Read the current seller profile so the shop
-     * banner always reflects the current account.
-     */
-    const userSnapshot =
-      await getDocs(
-        query(
-          collection(
-            db,
-            "users"
-          ),
-          where(
-            "uid",
-            "==",
-            sellerUid
-          ),
-          limit(1)
-        )
-      );
-
-
-    let sellerProfile = {
-      uid:
-        sellerUid,
-
-      displayName:
-        selectedListing?.username ||
-        "Market Seller",
-
-      username:
-        selectedListing?.username ||
-        "Seller",
-
-      marketAccount: {}
-    };
-
-
-    if (
-      !userSnapshot.empty
-    ) {
-      sellerProfile = {
-        id:
-          userSnapshot
-            .docs[0]
-            .id,
-
-        uid:
-          userSnapshot
-            .docs[0]
-            .id,
-
-        ...userSnapshot
-          .docs[0]
-          .data()
-      };
-
-      sellerProfile.uid =
-        sellerProfile.uid ||
-        sellerUid;
-    }
-
-
-    /*
-     * Read every listing belonging to this shop.
-     *
-     * This prevents the shop from depending only
-     * on the currently loaded feed.
-     */
-    const listingSnapshot =
-      await getDocs(
-        query(
-          collection(
-            db,
-            "listings"
-          ),
-          where(
-            "uid",
-            "==",
-            sellerUid
-          )
-        )
-      );
-
-
-    let shopListings =
-      listingSnapshot.docs
-        .map(
-          snapshot => ({
-            id:
-              snapshot.id,
-
-            ...snapshot.data()
-          })
-        );
-
-
-    if (!shopListings.length) {
-      shopListings =
-        (state.listings || [])
-          .filter(
-            listing =>
-              listing.uid ===
-              sellerUid
-          );
-    }
-
-
-    shopListings.sort(
-      (a, b) =>
-        listingTime(b) -
-        listingTime(a)
-    );
-
-
-    const storeName =
-      getShopName(
-        selectedListing,
-        sellerProfile
-      );
-
-
-    const shopDescription =
-      getShopDescription(
-        sellerProfile,
-        selectedListing
-      );
-
-
-    const shopLocation =
-      getShopLocation(
-        sellerProfile,
-        selectedListing
-      );
-
-
-    const isOwner =
-      sellerUid ===
-      getUid();
-
-
-    const activeListings =
-      shopListings.filter(
-        listing =>
-          listing.status !==
-          "sold"
-      );
-
-
-    showModal(
-      storeName,
-
-      `
-        <div
-          style="
-            display:flex;
-            flex-direction:column;
-            gap:14px;
-          "
-        >
-
-          <!-- SHOP BANNER -->
-
-          <div
-            class="card"
-            style="
-              margin:0;
-              background:var(--surface2);
-              box-shadow:none;
-            "
-          >
-
-            <div
-              style="
-                display:flex;
-                align-items:flex-start;
-                gap:12px;
-              "
-            >
-
-              <div class="avatar avatar-lg">
-                🛍️
-              </div>
-
-
-              <div
-                class="profile-meta"
-                style="
-                  min-width:0;
-                  flex:1;
-                "
-              >
-
-                <strong
-                  style="
-                    display:block;
-                    font-size:23px;
-                    font-weight:900;
-                    overflow-wrap:anywhere;
-                  "
-                >
-                  ${escapeHtml(
-                    storeName
-                  )}
-                </strong>
-
-
-                <p
-                  class="small"
-                  style="
-                    margin:5px 0 0;
-                  "
-                >
-                  ${escapeHtml(
-                    shopDescription
-                  )}
-                </p>
-
-
-                <span class="small">
-                  📍 ${escapeHtml(
-                    shopLocation
-                  )}
-                </span>
-
-
-                <span class="small">
-                  ${shopListings.length}
-                  ${
-                    shopListings.length === 1
-                      ? "product"
-                      : "products"
-                  }
-                </span>
-
-              </div>
-
-            </div>
-
-          </div>
-
-
-          <!-- SHOP PRODUCTS -->
-
-          <div
-            class="section-title"
-            style="margin:0;"
-          >
-            <h2 style="margin:0;">
-              Products from
-              ${escapeHtml(
-                storeName
-              )}
-            </h2>
-          </div>
-
-
-          <div
-            style="
-              display:flex;
-              flex-direction:column;
-              gap:10px;
-            "
-          >
-
-            ${
-              shopListings.length
-                ? shopListings
-                    .map(
-                      listing => `
-                        <button
-                          class="list-item"
-                          data-shop-product="${escapeHtml(
-                            listing.id
-                          )}"
-                          type="button"
-                          style="
-                            width:100%;
-                            text-align:left;
-                            cursor:pointer;
-                            background:var(--surface);
-                          "
-                        >
-
-                          <div
-                            style="
-                              display:flex;
-                              justify-content:space-between;
-                              align-items:flex-start;
-                              gap:10px;
-                              width:100%;
-                            "
-                          >
-
-                            <div
-                              style="
-                                min-width:0;
-                                flex:1;
-                              "
-                            >
-
-                              <strong
-                                style="
-                                  display:block;
-                                  font-size:17px;
-                                  font-weight:900;
-                                  overflow-wrap:anywhere;
-                                "
-                              >
-                                ${escapeHtml(
-                                  listing.title ||
-                                  "Untitled product"
-                                )}
-                              </strong>
-
-
-                              <span class="small">
-                                ${escapeHtml(
-                                  listing.category ||
-                                  "Other"
-                                )}
-
-                                ·
-
-                                ${escapeHtml(
-                                  formatDate(
-                                    listing.createdAt
-                                  )
-                                )}
-
-                                ·
-
-                                ${
-                                  listing.status ===
-                                  "sold"
-                                    ? "Sold"
-                                    : "Available"
-                                }
-                              </span>
-
-
-                              <p
-                                class="small"
-                                style="
-                                  margin:5px 0 0;
-                                  color:var(
-                                    --text-secondary
-                                  );
-                                "
-                              >
-                                ${escapeHtml(
-                                  listing.description ||
-                                  ""
-                                )}
-                              </p>
-
-                            </div>
-
-
-                            <strong
-                              style="
-                                color:var(--primary);
-                                font-size:17px;
-                                white-space:nowrap;
-                                flex-shrink:0;
-                                min-width:max-content;
-                                overflow:visible;
-                                display:inline-block;
-                                font-variant-numeric:tabular-nums;
-                              "
-                            >
-                              ₦${Number(
-                                listing.price ||
-                                0
-                              ).toLocaleString(
-                                "en-NG"
-                              )}
-                            </strong>
-
-                          </div>
-
-                        </button>
-                      `
-                    )
-                    .join("")
-                : `
-                    <div
-                      class="empty"
-                      style="
-                        text-align:center;
-                        padding:20px;
-                      "
-                    >
-                      <h3>
-                        No products yet
-                      </h3>
-
-                      <p class="small">
-                        This shop has not published
-                        a product yet.
-                      </p>
-                    </div>
-                  `
-            }
-
-          </div>
-
-
-          ${
-            isOwner
-              ? `
-                <div class="notice">
-                  This is your shop.
-                  Open a product to edit,
-                  mark it sold, or delete it.
-                </div>
-              `
-              : `
-                <button
-                  class="btn btn-primary btn-block"
-                  id="messageSellerBtn"
-                  type="button"
-                  ${
-                    activeListings.length
-                      ? ""
-                      : "disabled"
-                  }
-                >
-                  💬 Contact Seller / Buy
-                </button>
-              `
-          }
-
-        </div>
-      `
-    );
-
-
-    /*
-     * Product inside shop.
-     */
-    document
-      .querySelectorAll(
-        "[data-shop-product]"
-      )
-      .forEach(
-        item => {
-          item.addEventListener(
-            "click",
-            () => {
-              const productId =
-                item.dataset
-                  .shopProduct;
-
-              const product =
-                shopListings.find(
-                  listing =>
-                    listing.id ===
-                    productId
-                );
-
-              closeModal();
-
-              if (product) {
-                showSingleListingDetails(
-                  product,
-                  renderApp,
-                  sellerProfile
-                );
-              }
-            }
-          );
-        }
-      );
-
-
-    /*
-     * Buyer → existing chat or new chat.
-     *
-     * createConversation() already checks whether
-     * a conversation exists and opens it when found.
-     */
-    if (!isOwner) {
-      document
-        .getElementById(
-          "messageSellerBtn"
-        )
-        ?.addEventListener(
-          "click",
-          async () => {
-            const button =
-              document.getElementById(
-                "messageSellerBtn"
-              );
-
-            if (!button) {
-              return;
-            }
-
-            button.disabled =
-              true;
-
-            button.textContent =
-              "Opening chat...";
-
-
-            try {
-              const contactListing =
-                selectedListing ||
-                activeListings[0] ||
-                shopListings[0];
-
-
-              if (!contactListing) {
-                throw new Error(
-                  "This shop has no product."
-                );
-              }
-
-
-              await sendMarketplaceInterest(
-                sellerUid,
-                contactListing
-              );
-
-
-              closeModal();
-
-
-              await createConversation(
-                sellerProfile,
-                renderApp
-              );
-
-
-              toast(
-                "Interest sent to the seller 🛍️"
-              );
-
-            } catch (error) {
-              console.error(
-                "[Market] Contact seller failed:",
-                error
-              );
-
-              toast(
-                friendly(error)
-              );
-
-              button.disabled =
-                false;
-
-              button.textContent =
-                "💬 Contact Seller / Buy";
-            }
-          }
-        );
-    }
-
-  } catch (error) {
-    console.error(
-      "[Market] Shop details failed:",
-      error
-    );
-
-    if (selectedListing) {
-      await showSingleListingDetails(
-        selectedListing,
-        renderApp
-      );
-
-      return;
-    }
-
-    toast(
-      friendly(error)
-    );
-  }
-}
-
-
-/* =========================================================
-   MARKETPLACE INTEREST NOTIFICATION
-   ========================================================= */
-
-async function sendMarketplaceInterest(
-  sellerUid,
-  listing
-) {
-  if (!sellerUid || !listing) {
-    throw new Error(
-      "Seller or listing not found."
-    );
-  }
-
-  if (
-    sellerUid ===
-    getUid()
-  ) {
-    throw new Error(
-      "This is your listing."
-    );
-  }
-
-
-  await addDoc(
-    collection(
-      db,
-      "users",
-      sellerUid,
-      "notifications"
-    ),
-    {
-      actorUid:
-        getUid(),
-
-      actorName:
-        state.profile
-          ?.displayName ||
-        state.profile
-          ?.username ||
-        "A community member",
-
-      text:
-        `is interested in your marketplace listing "${listing.title || "Product"}" 🛍️`,
-
-      type:
-        "marketplace_interest",
-
-      listingId:
-        listing.id,
-
-      listingTitle:
-        listing.title ||
-        "Product",
-
-      read:
-        false,
-
-      createdAt:
-        serverTimestamp()
-    }
-  );
-}
-
-
-/* =========================================================
-   SINGLE PRODUCT DETAILS
-   ========================================================= */
-
-async function showSingleListingDetails(
-  listing,
-  renderApp,
-  sellerProfile = null
-) {
-  if (!listing) {
     toast(
       "Listing not found."
     );
@@ -2628,174 +2194,46 @@ async function showSingleListingDetails(
   }
 
 
-  const isOwner =
+  const mine =
     listing.uid ===
     getUid();
 
 
-  const postedDate =
-    formatDate(
-      listing.createdAt
-    );
-
-
-  const updatedDate =
-    listing.updatedAt
-      ? formatDate(
-          listing.updatedAt
-        )
-      : null;
-
-
-  const sellerName =
-    getShopName(
-      listing,
-      sellerProfile
-    );
-
-
-  const sellerBio =
-    getShopDescription(
-      sellerProfile,
-      listing
-    );
-
-
-  const sellerLocation =
-    getShopLocation(
-      sellerProfile,
+  const expired =
+    isListingExpired(
       listing
     );
 
 
   showModal(
-    listing.title ||
-      "Product Details",
+
+    "Marvel Market",
 
     `
-      <div
-        style="
-          display:flex;
-          flex-direction:column;
-          gap:14px;
-        "
-      >
 
-        <!-- SHOP HEADER -->
-
-        <div
-          class="card"
-          style="
-            margin:0;
-            background:var(--surface2);
-            box-shadow:none;
-          "
-        >
-
-          <strong
-            style="
-              display:block;
-              font-size:21px;
-              font-weight:900;
-            "
-          >
-            🛍️ ${escapeHtml(
-              sellerName
-            )}
-          </strong>
-
-
-          ${
-            sellerBio
-              ? `
-                <p
-                  class="small"
-                  style="
-                    margin:4px 0 0;
-                  "
-                >
-                  ${escapeHtml(
-                    sellerBio
-                  )}
-                </p>
-              `
-              : ""
-          }
-
-
-          <span class="small">
-            📍 ${escapeHtml(
-              sellerLocation
-            )}
-          </span>
-
-        </div>
-
-
-        <!-- PRICE -->
+      <div class="card">
 
         <div
           style="
             display:flex;
             justify-content:space-between;
-            align-items:flex-start;
             gap:12px;
-            flex-wrap:wrap;
+            align-items:flex-start;
           "
         >
 
           <div>
 
-            <div
+            <h3
               style="
-                font-size:28px;
-                font-weight:900;
-                color:var(--primary);
-                white-space:nowrap;
-                min-width:max-content;
-                display:inline-block;
-                overflow:visible;
-                font-variant-numeric:tabular-nums;
+                margin:0 0 6px;
               "
             >
-              ₦${Number(
-                listing.price ||
-                0
-              ).toLocaleString(
-                "en-NG"
-              )}
-            </div>
-
-
-            <div class="small">
               ${escapeHtml(
-                postedDate
+                listing.title ||
+                "Untitled"
               )}
-
-              ${
-                updatedDate &&
-                updatedDate !==
-                  postedDate
-                  ? `
-                    · Updated
-                    ${escapeHtml(
-                      updatedDate
-                    )}
-                  `
-                  : ""
-              }
-            </div>
-
-          </div>
-
-
-          <div
-            style="
-              display:flex;
-              gap:6px;
-              flex-wrap:wrap;
-            "
-          >
+            </h3>
 
             <span class="badge">
               ${escapeHtml(
@@ -2804,210 +2242,164 @@ async function showSingleListingDetails(
               )}
             </span>
 
-
-            <span
-              class="badge"
-              style="
-                background:var(--surface2);
-                color:var(--text);
-              "
-            >
-              ${escapeHtml(
-                listing.condition ||
-                "Good"
-              )}
-            </span>
-
-
-            ${
-              listing.status ===
-              "sold"
-                ? `
-                  <span
-                    class="badge"
-                    style="
-                      background:var(--danger);
-                      color:#fff;
-                    "
-                  >
-                    Sold
-                  </span>
-                `
-                : ""
-            }
-
           </div>
 
-        </div>
-
-
-        <!-- DESCRIPTION -->
-
-        <div
-          class="card"
-          style="
-            background:var(--surface2);
-            padding:16px;
-            margin:0;
-            box-shadow:none;
-          "
-        >
 
           <strong
             style="
-              display:block;
-              margin-bottom:6px;
-              font-size:13px;
-              text-transform:uppercase;
-              color:var(--muted);
+              color:var(--primary);
+              font-size:20px;
+              white-space:nowrap;
             "
           >
-            Description
+            ₦${Number(
+              listing.price ||
+              0
+            ).toLocaleString()}
           </strong>
-
-
-          <p
-            style="
-              white-space:pre-wrap;
-              word-break:break-word;
-              margin:0;
-              font-size:14px;
-              line-height:1.5;
-            "
-          >
-            ${escapeHtml(
-              listing.description ||
-              ""
-            )}
-          </p>
 
         </div>
 
 
-        <!-- LOCATION -->
+        <p
+          style="
+            margin:14px 0;
+            white-space:pre-wrap;
+          "
+        >
+          ${escapeHtml(
+            listing.description ||
+            ""
+          )}
+        </p>
+
 
         <div
           class="small"
           style="
-            background:var(--surface2);
-            padding:14px;
-            border-radius:16px;
-            display:flex;
-            flex-direction:column;
+            display:grid;
             gap:5px;
           "
         >
 
-          <div>
-            📍 Location:
+          <span>
+            Seller:
+            ${escapeHtml(
+              listing.username ||
+              "Seller"
+            )}
+          </span>
 
-            <strong>
-              ${escapeHtml(
-                listing.location ||
-                sellerLocation ||
-                "Not specified"
-              )}
+          <span>
+            Condition:
+            ${escapeHtml(
+              listing.condition ||
+              "Used"
+            )}
+          </span>
 
-              ${
-                listing.country
-                  ? `, ${escapeHtml(
-                      listing.country
-                    )}`
-                  : ""
-              }
-            </strong>
-          </div>
+          <span>
+            Location:
+            ${
+              listing.location
+                ? escapeHtml(
+                    listing.location
+                  ) + ", "
+                : ""
+            }
+            ${escapeHtml(
+              listing.country ||
+              "Community"
+            )}
+          </span>
 
-
-          <div>
-            📋 Status:
-
-            <strong>
-              ${
-                listing.status ===
-                "sold"
-                  ? "Sold"
-                  : "Active"
-              }
-            </strong>
-          </div>
+          <span>
+            ${escapeHtml(
+              formatListingExpiry(
+                listing
+              )
+            )}
+          </span>
 
         </div>
 
+      </div>
+
+
+      ${
+        expired
+          ? `
+
+            <div
+              class="notice"
+              style="
+                margin-top:12px;
+              "
+            >
+              This Marvel Market listing has expired.
+            </div>
+
+          `
+          : ""
+      }
+
+
+      <div
+        style="
+          display:flex;
+          gap:8px;
+          flex-wrap:wrap;
+          margin-top:14px;
+        "
+      >
 
         ${
-          isOwner
+          mine
             ? `
-              <div
-                class="grid grid3"
-                style="gap:8px;"
+
+              <button
+                class="btn btn-primary"
+                id="editListingBtn"
+                type="button"
               >
-
-                <button
-                  class="btn btn-secondary"
-                  id="editListingBtn"
-                  type="button"
-                >
-                  ✏️ Edit
-                </button>
+                Edit Listing
+              </button>
 
 
-                <button
-                  class="btn ${
-                    listing.status ===
-                    "sold"
-                      ? "btn-secondary"
-                      : "btn-ghost"
-                  }"
-                  id="toggleSoldBtn"
-                  type="button"
-                >
-                  ${
-                    listing.status ===
-                    "sold"
-                      ? "Reactivate"
-                      : "Mark as Sold"
-                  }
-                </button>
+              <button
+                class="btn btn-danger"
+                id="deleteListingBtn"
+                type="button"
+              >
+                Delete Listing
+              </button>
 
-
-                <button
-                  class="btn btn-danger"
-                  id="deleteListingBtn"
-                  type="button"
-                >
-                  🗑️ Delete
-                </button>
-
-              </div>
             `
             : `
+
               <button
-                class="btn btn-primary btn-block"
+                class="btn btn-primary"
                 id="messageSellerBtn"
                 type="button"
                 ${
-                  listing.status ===
-                  "sold"
+                  expired
                     ? "disabled"
                     : ""
                 }
               >
-                💬 Contact Seller / Buy
+                💬 Contact Seller
               </button>
+
             `
         }
 
       </div>
+
     `
   );
 
 
-  /* =======================================================
-     OWNER
-     ======================================================= */
-
-  if (isOwner) {
+  if (mine) {
 
     document
       .getElementById(
@@ -3016,86 +2408,14 @@ async function showSingleListingDetails(
       ?.addEventListener(
         "click",
         () => {
+
           closeModal();
 
           showSellModal(
             renderApp,
             listing
           );
-        }
-      );
 
-
-    document
-      .getElementById(
-        "toggleSoldBtn"
-      )
-      ?.addEventListener(
-        "click",
-        async () => {
-          const button =
-            document.getElementById(
-              "toggleSoldBtn"
-            );
-
-          if (!button) {
-            return;
-          }
-
-          button.disabled =
-            true;
-
-          try {
-            const newStatus =
-              listing.status ===
-              "sold"
-                ? "active"
-                : "sold";
-
-            await updateDoc(
-              doc(
-                db,
-                "listings",
-                listing.id
-              ),
-              {
-                status:
-                  newStatus,
-
-                updatedAt:
-                  serverTimestamp()
-              }
-            );
-
-            closeModal();
-
-            toast(
-              newStatus ===
-              "sold"
-                ? "Product marked as sold 🏷️"
-                : "Product reactivated 🚀"
-            );
-
-            if (
-              typeof renderApp ===
-              "function"
-            ) {
-              renderApp();
-            }
-
-          } catch (error) {
-            console.error(
-              "[Market] Status update failed:",
-              error
-            );
-
-            toast(
-              friendly(error)
-            );
-
-            button.disabled =
-              false;
-          }
         }
       );
 
@@ -3106,185 +2426,151 @@ async function showSingleListingDetails(
       )
       ?.addEventListener(
         "click",
-        () => {
+        async () => {
 
-          showModal(
-            "Delete Product?",
-
-            `
-              <p class="small">
-                Delete
-                <strong>
-                  "${escapeHtml(
-                    listing.title ||
-                    "Untitled product"
-                  )}"
-                </strong>
-                permanently?
-              </p>
-
-
-              <div
-                style="
-                  display:flex;
-                  gap:8px;
-                  margin-top:15px;
-                "
-              >
-
-                <button
-                  class="btn btn-ghost"
-                  style="flex:1;"
-                  id="cancelDeleteListing"
-                  type="button"
-                >
-                  Cancel
-                </button>
-
-
-                <button
-                  class="btn btn-danger"
-                  style="flex:1;"
-                  id="confirmDeleteListing"
-                  type="button"
-                >
-                  Delete
-                </button>
-
-              </div>
-            `
-          );
-
-
-          document
-            .getElementById(
-              "cancelDeleteListing"
-            )
-            ?.addEventListener(
-              "click",
-              () => {
-                showSingleListingDetails(
-                  listing,
-                  renderApp,
-                  sellerProfile
-                );
-              }
+          const confirmed =
+            window.confirm(
+              "Delete this Marvel Market listing?"
             );
 
 
-          document
-            .getElementById(
-              "confirmDeleteListing"
-            )
-            ?.addEventListener(
-              "click",
-              async () => {
-                const button =
-                  document.getElementById(
-                    "confirmDeleteListing"
-                  );
+          if (!confirmed) {
+            return;
+          }
 
-                if (!button) {
-                  return;
-                }
 
-                button.disabled =
-                  true;
-
-                button.textContent =
-                  "Deleting...";
-
-                try {
-                  await deleteDoc(
-                    doc(
-                      db,
-                      "listings",
-                      listing.id
-                    )
-                  );
-
-                  closeModal();
-
-                  toast(
-                    "Product deleted."
-                  );
-
-                  if (
-                    typeof renderApp ===
-                    "function"
-                  ) {
-                    renderApp();
-                  }
-
-                } catch (error) {
-                  console.error(
-                    "[Market] Delete failed:",
-                    error
-                  );
-
-                  toast(
-                    friendly(error)
-                  );
-
-                  button.disabled =
-                    false;
-
-                  button.textContent =
-                    "Delete";
-                }
-              }
+          const button =
+            document.getElementById(
+              "deleteListingBtn"
             );
+
+
+          if (button) {
+
+            button.disabled =
+              true;
+
+            button.textContent =
+              "Deleting...";
+          }
+
+
+          try {
+
+            await deleteDoc(
+              doc(
+                db,
+                "listings",
+                listing.id
+              )
+            );
+
+
+            state.listings =
+              (
+                state.listings ||
+                []
+              ).filter(
+                item =>
+                  item.id !==
+                  listing.id
+              );
+
+
+            closeModal();
+
+
+            toast(
+              "Marvel Market listing deleted."
+            );
+
+
+            renderApp?.();
+
+          } catch (error) {
+
+            console.error(
+              "[Market] Listing delete failed:",
+              error
+            );
+
+
+            toast(
+              friendly(error)
+            );
+
+
+            if (button) {
+
+              button.disabled =
+                false;
+
+              button.textContent =
+                "Delete Listing";
+            }
+
+          }
+
         }
       );
 
-    return;
-  }
+  } else {
 
+    document
+      .getElementById(
+        "messageSellerBtn"
+      )
+      ?.addEventListener(
+        "click",
+        async () => {
 
-  /* =======================================================
-     BUYER
-     ======================================================= */
-
-  document
-    .getElementById(
-      "messageSellerBtn"
-    )
-    ?.addEventListener(
-      "click",
-      async () => {
-        const button =
-          document.getElementById(
-            "messageSellerBtn"
-          );
-
-        if (!button) {
-          return;
-        }
-
-        button.disabled =
-          true;
-
-        button.textContent =
-          "Opening chat...";
-
-
-        try {
-          if (!listing.uid) {
-            throw new Error(
-              "Seller account not found."
+          const button =
+            document.getElementById(
+              "messageSellerBtn"
             );
+
+
+          if (!button) {
+            return;
           }
 
-          await sendMarketplaceInterest(
-            listing.uid,
-            listing
-          );
 
-          let contactProfile =
-            sellerProfile;
+          button.disabled =
+            true;
 
 
-          if (!contactProfile) {
+          button.textContent =
+            "Opening chat...";
+
+
+          try {
+
+            const sellerUid =
+              listing.uid;
+
+
+            if (
+              sellerUid ===
+              getUid()
+            ) {
+
+              toast(
+                "This is your listing."
+              );
+
+
+              button.disabled =
+                false;
+
+
+              button.textContent =
+                "💬 Contact Seller";
+
+
+              return;
+            }
+
+
             const userSnapshot =
               await getDocs(
                 query(
@@ -3292,19 +2578,22 @@ async function showSingleListingDetails(
                     db,
                     "users"
                   ),
+
                   where(
                     "uid",
                     "==",
-                    listing.uid
+                    sellerUid
                   ),
+
                   limit(1)
                 )
               );
 
 
-            contactProfile = {
+            let sellerProfile = {
+
               uid:
-                listing.uid,
+                sellerUid,
 
               username:
                 listing.username ||
@@ -3313,13 +2602,16 @@ async function showSingleListingDetails(
               displayName:
                 listing.username ||
                 "Seller"
+
             };
 
 
             if (
               !userSnapshot.empty
             ) {
-              contactProfile = {
+
+              sellerProfile = {
+
                 id:
                   userSnapshot
                     .docs[0]
@@ -3333,82 +2625,132 @@ async function showSingleListingDetails(
                 ...userSnapshot
                   .docs[0]
                   .data()
+
               };
 
-              contactProfile.uid =
-                contactProfile.uid ||
-                listing.uid;
+              sellerProfile.uid =
+                sellerProfile.uid ||
+                sellerProfile.id;
+
             }
+
+
+            /*
+             * Marvel Market interest notification.
+             *
+             * The Firestore type remains
+             * "marketplace_interest" because it is an
+             * internal database identifier used by the
+             * existing security rules.
+             */
+
+            await addDoc(
+              collection(
+                db,
+                "users",
+                sellerUid,
+                "notifications"
+              ),
+              {
+
+                actorUid:
+                  getUid(),
+
+                actorName:
+                  state.profile
+                    ?.displayName ||
+                  state.profile
+                    ?.username ||
+                  "A community member",
+
+                text:
+                  `is interested in your Marvel Market listing "${listing.title}" 🛍️`,
+
+                type:
+                  "marketplace_interest",
+
+                listingId:
+                  listing.id,
+
+                listingTitle:
+                  listing.title,
+
+                read:
+                  false,
+
+                createdAt:
+                  serverTimestamp()
+
+              }
+            );
+
+
+            closeModal();
+
+
+            await createConversation(
+              sellerProfile,
+              renderApp
+            );
+
+
+            toast(
+              "Interest sent to the seller 🛍️"
+            );
+
+          } catch (error) {
+
+            console.error(
+              "[Market] Contact seller failed:",
+              error
+            );
+
+
+            toast(
+              "Could not contact seller."
+            );
+
+
+            button.disabled =
+              false;
+
+
+            button.textContent =
+              "💬 Contact Seller";
           }
 
-
-          closeModal();
-
-
-          /*
-           * Existing conversation:
-           * createConversation() opens it.
-           *
-           * No existing conversation:
-           * createConversation() creates one.
-           */
-          await createConversation(
-            contactProfile,
-            renderApp
-          );
-
-
-          toast(
-            "Interest sent to the seller 🛍️"
-          );
-
-        } catch (error) {
-          console.error(
-            "[Market] Contact seller failed:",
-            error
-          );
-
-          toast(
-            friendly(error)
-          );
-
-          button.disabled =
-            false;
-
-          button.textContent =
-            "💬 Contact Seller / Buy";
         }
-      }
-    );
+      );
+  }
 }
 
 
 /* =========================================================
-   SEARCH FILTER
+   MARVEL MARKET EVENTS
    ========================================================= */
 
 function filterMarketListingsDom() {
+
   const root =
     document.getElementById(
       "marketItems"
     );
 
+
   if (!root) {
     return;
   }
 
+
   const queryText =
-    (
-      state.search ||
-      ""
-    )
+    (state.search || "")
       .toLowerCase()
       .trim();
 
 
   const cards =
     root.querySelectorAll(
-      "[data-view-shop]"
+      "[data-view-listing]"
     );
 
 
@@ -3422,11 +2764,14 @@ function filterMarketListingsDom() {
 
   cards.forEach(
     card => {
+
       const haystack =
         (
           card.textContent ||
           ""
-        ).toLowerCase();
+        )
+          .toLowerCase();
+
 
       const show =
         !queryText ||
@@ -3434,14 +2779,15 @@ function filterMarketListingsDom() {
           queryText
         );
 
+
       card.style.display =
-        show
-          ? ""
-          : "none";
+        show ? "" : "none";
+
 
       if (show) {
         visible += 1;
       }
+
     }
   );
 
@@ -3456,7 +2802,9 @@ function filterMarketListingsDom() {
     visible === 0 &&
     queryText
   ) {
+
     if (!hint) {
+
       hint =
         document.createElement(
           "div"
@@ -3475,42 +2823,28 @@ function filterMarketListingsDom() {
         "center";
 
       hint.innerHTML =
-        `
-          <h3>
-            No shops found
-          </h3>
-
-          <p class="small">
-            Try another shop or product search.
-          </p>
-        `;
+        "<h3>No products found</h3><p class=\"small\">Try another search or category.</p>";
 
       root.appendChild(
         hint
       );
     }
 
+
     hint.style.display =
       "";
 
   } else if (hint) {
+
     hint.style.display =
       "none";
   }
 }
 
 
-/* =========================================================
-   MARKET EVENTS
-   ========================================================= */
-
 export function attachMarketEvents(
   renderApp
 ) {
-
-  /* -------------------------------------------------------
-     Browse Market
-     ------------------------------------------------------- */
 
   document
     .getElementById(
@@ -3519,16 +2853,14 @@ export function attachMarketEvents(
     ?.addEventListener(
       "click",
       () => {
+
         enterBrowseMode(
           renderApp
         );
+
       }
     );
 
-
-  /* -------------------------------------------------------
-     Back
-     ------------------------------------------------------- */
 
   document
     .getElementById(
@@ -3537,16 +2869,14 @@ export function attachMarketEvents(
     ?.addEventListener(
       "click",
       () => {
+
         exitBrowseMode(
           renderApp
         );
+
       }
     );
 
-
-  /* -------------------------------------------------------
-     Sell
-     ------------------------------------------------------- */
 
   document
     .getElementById(
@@ -3555,16 +2885,14 @@ export function attachMarketEvents(
     ?.addEventListener(
       "click",
       () => {
+
         showSellModal(
           renderApp
         );
+
       }
     );
 
-
-  /* -------------------------------------------------------
-     Empty My Shop
-     ------------------------------------------------------- */
 
   document
     .getElementById(
@@ -3573,16 +2901,14 @@ export function attachMarketEvents(
     ?.addEventListener(
       "click",
       () => {
+
         showSellModal(
           renderApp
         );
+
       }
     );
 
-
-  /* -------------------------------------------------------
-     Manage Shop
-     ------------------------------------------------------- */
 
   document
     .getElementById(
@@ -3591,16 +2917,14 @@ export function attachMarketEvents(
     ?.addEventListener(
       "click",
       () => {
+
         showMarketAccountModal(
           renderApp
         );
+
       }
     );
 
-
-  /* -------------------------------------------------------
-     Browse Tab
-     ------------------------------------------------------- */
 
   document
     .getElementById(
@@ -3609,17 +2933,15 @@ export function attachMarketEvents(
     ?.addEventListener(
       "click",
       () => {
+
         state.marketTab =
           "browse";
 
         renderApp();
+
       }
     );
 
-
-  /* -------------------------------------------------------
-     My Shop Tab
-     ------------------------------------------------------- */
 
   document
     .getElementById(
@@ -3628,17 +2950,15 @@ export function attachMarketEvents(
     ?.addEventListener(
       "click",
       () => {
+
         state.marketTab =
           "mine";
 
         renderApp();
+
       }
     );
 
-
-  /* -------------------------------------------------------
-     Search
-     ------------------------------------------------------- */
 
   const searchInput =
     document.getElementById(
@@ -3647,25 +2967,20 @@ export function attachMarketEvents(
 
 
   if (searchInput) {
+
     searchInput.addEventListener(
       "input",
       event => {
+
         state.search =
           event.target.value;
 
-        /*
-         * Do not re-render while typing.
-         * This keeps the keyboard focused.
-         */
         filterMarketListingsDom();
+
       }
     );
   }
 
-
-  /* -------------------------------------------------------
-     Sort
-     ------------------------------------------------------- */
 
   document
     .getElementById(
@@ -3674,17 +2989,16 @@ export function attachMarketEvents(
     ?.addEventListener(
       "change",
       event => {
+
         state.marketSort =
           event.target.value;
 
+
         renderApp();
+
       }
     );
 
-
-  /* -------------------------------------------------------
-     Categories
-     ------------------------------------------------------- */
 
   document
     .querySelectorAll(
@@ -3692,69 +3006,45 @@ export function attachMarketEvents(
     )
     .forEach(
       button => {
+
         button.addEventListener(
           "click",
           () => {
+
             state.marketCategory =
               button.dataset
                 .marketCategory;
 
+
             renderApp();
+
           }
         );
+
       }
     );
 
 
-  /* -------------------------------------------------------
-     SHOP CARDS
-     ------------------------------------------------------- */
-
   document
     .querySelectorAll(
-      "[data-view-shop]"
+      "[data-view-listing]"
     )
     .forEach(
       item => {
+
         item.addEventListener(
           "click",
           () => {
-            const sellerUid =
+
+            showListingDetails(
               item.dataset
-                .viewShop;
+                .viewListing,
+              renderApp
+            );
 
-            const listingId =
-              item.dataset
-                .viewListing;
-
-            const listing =
-              (state.listings || [])
-                .find(
-                  current =>
-                    current.id ===
-                    listingId
-                );
-
-
-            if (sellerUid) {
-              showShopDetails(
-                sellerUid,
-                renderApp,
-                listing || null
-              );
-
-              return;
-            }
-
-
-            if (listing) {
-              showListingDetails(
-                listing.id,
-                renderApp
-              );
-            }
           }
         );
+
       }
     );
 }
