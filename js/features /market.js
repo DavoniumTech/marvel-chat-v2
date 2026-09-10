@@ -64,6 +64,44 @@ listing?.username||
 "Market Seller";
 }
 
+function getSellerName(listing,profile=null){
+return profile?.displayName||
+profile?.username||
+listing?.sellerName||
+listing?.sellerUsername||
+listing?.username||
+"Market Seller";
+}
+
+function formatNaira(value){
+const number=Number(value);
+if(!Number.isFinite(number))return"Price not set";
+return`₦${number.toLocaleString("en-NG")}`;
+}
+
+function getValidPrices(listings){
+return listings
+.map(listing=>Number(listing?.price))
+.filter(price=>Number.isFinite(price)&&price>=0);
+}
+
+function getShopPriceLabel(listings){
+const prices=getValidPrices(listings);
+if(!prices.length)return"Price not set";
+const lowest=Math.min(...prices);
+if(listings.length===1)return formatNaira(lowest);
+return`Starting at ${formatNaira(lowest)}`;
+}
+
+function getShopPriceRange(listings){
+const prices=getValidPrices(listings);
+if(!prices.length)return"Price not set";
+const lowest=Math.min(...prices);
+const highest=Math.max(...prices);
+if(lowest===highest)return formatNaira(lowest);
+return`${formatNaira(lowest)} – ${formatNaira(highest)}`;
+}
+
 function getShopDescription(profile,listing=null){
 return profile?.marketAccount?.bio||
 profile?.marketAccount?.description||
@@ -358,20 +396,21 @@ const sortBy=state.marketSort||"newest";
 let matchingListings=(state.listings||[]).filter(listing=>{
 if(!listing)return false;
 
+const isMineTab=seller&&marketTab==="mine";
+
+if(isMineTab){
+if(listing.uid!==getUid())return false;
+}else{
 if(listing.status==="sold")return false;
-
 if(isListingExpired(listing))return false;
-
-if(
-seller&&
-marketTab==="mine"&&
-listing.uid!==getUid()
-)return false;
+}
 
 const haystack=`
 ${listing.title||""}
 ${listing.description||""}
 ${listing.username||""}
+${listing.sellerName||""}
+${listing.sellerUsername||""}
 ${listing.category||""}
 ${listing.location||""}
 ${listing.country||""}
@@ -388,6 +427,16 @@ return matchesSearch&&matchesCategory;
 });
 
 matchingListings.sort((a,b)=>{
+if(sortBy==="price-low"||sortBy==="price-high"){
+const priceA=Number(a?.price);
+const priceB=Number(b?.price);
+const safeA=Number.isFinite(priceA)?priceA:Number.POSITIVE_INFINITY;
+const safeB=Number.isFinite(priceB)?priceB:Number.POSITIVE_INFINITY;
+return sortBy==="price-low"
+?safeA-safeB
+:safeB-safeA;
+}
+
 const timeA=listingTime(a);
 const timeB=listingTime(b);
 return sortBy==="oldest"
@@ -561,7 +610,7 @@ align-items:center;
 class="input"
 id="marketSearch"
 value="${escapeHtml(state.search||"")}"
-placeholder="Search shops and products..."
+placeholder="Search shops, products, categories..."
 autocomplete="off"
 >
 
@@ -687,7 +736,9 @@ margin-bottom:12px;
 <div class="small">
 ${
 matchingListings.length
-?`${matchingListings.length} available ${matchingListings.length===1?"listing":"listings"}`
+?marketTab==="mine"
+?`${matchingListings.length} ${matchingListings.length===1?"product":"products"} in your shop`
+:`${matchingListings.length} available ${matchingListings.length===1?"listing":"listings"}`
 :""
 }
 </div>
@@ -706,6 +757,14 @@ Newest shops
 
 <option value="oldest"${sortBy==="oldest"?" selected":""}>
 Oldest shops
+</option>
+
+<option value="price-low"${sortBy==="price-low"?" selected":""}>
+Lowest price first
+</option>
+
+<option value="price-high"${sortBy==="price-high"?" selected":""}>
+Highest price first
 </option>
 </select>
 
@@ -746,8 +805,18 @@ shop.uid===getUid()
 ?(state.profile?.marketAccount?.storeName||shop.name)
 :shop.name;
 
-const productCount=shop.listings.length;
+const sellerName=
+shop.uid===getUid()
+?getSellerName(latest,state.profile)
+:(latest?.sellerName||latest?.sellerUsername||"Seller");
 
+const productCount=shop.listings.length;
+const availableShopListings=shop.listings.filter(
+listing=>listing.status!=="sold"&&!isListingExpired(listing)
+);
+const priceListings=availableShopListings.length
+?availableShopListings
+:shop.listings;
 const categories=Array.from(
 new Set(
 shop.listings
@@ -756,10 +825,8 @@ shop.listings
 )
 );
 
-const latestPrice=
-Number.isFinite(Number(latest?.price))
-?Number(latest?.price)
-:null;
+const shopPriceLabel=getShopPriceLabel(priceListings);
+const shopPriceRange=getShopPriceRange(priceListings);
 
 return`
 <div
@@ -829,20 +896,43 @@ display:block;
 margin-top:3px;
 "
 >
-${productCount}
-${productCount===1?"product":"products"}
-${
-categories.length
-?` · ${escapeHtml(categories.slice(0,3).join(" · "))}`
-:""
+Seller: ${escapeHtml(sellerName)}
+</span>
+
+<span
+class="small"
+style="
+display:block;
+margin-top:3px;
+"
+>
+${productCount} ${productCount===1?"product":"products"}
+${availableShopListings.length
+?` · ${availableShopListings.length} available`
+:""}
+</span>
+
+<span
+class="small"
+style="
+display:block;
+margin-top:3px;
+"
+>
+${categories.length
+?`Category: ${escapeHtml(categories.slice(0,3).join(" · "))}`
+:"Category: Other"
 }
 </span>
 
 </div>
 
-${
-latestPrice!==null
-?`
+<div
+style="
+text-align:right;
+flex-shrink:0;
+"
+>
 <strong
 style="
 color:var(--primary);
@@ -851,11 +941,15 @@ white-space:nowrap;
 font-variant-numeric:tabular-nums;
 "
 >
-From ₦${latestPrice.toLocaleString("en-NG")}
+${escapeHtml(shopPriceLabel)}
 </strong>
-`
-:""
-}
+<div
+class="small"
+style="margin-top:3px;text-align:right;"
+>
+${productCount>1?`Range: ${escapeHtml(shopPriceRange)}`:""}
+</div>
+</div>
 
 </div>
 
@@ -871,7 +965,9 @@ overflow:hidden;
 "
 >
 ${escapeHtml(
-latest?.description||
+shop.uid===getUid()
+?getShopDescription(state.profile,latest)
+:latest?.shopDescription||latest?.description||
 "Open this shop to see all products and services."
 )}
 </p>
@@ -1356,6 +1452,8 @@ title,
 description,
 price,
 category,
+sellerName:state.profile?.displayName||state.profile?.username||existingListing?.sellerName||existingListing?.username||"Market Seller",
+sellerUsername:state.profile?.username||existingListing?.sellerUsername||"",
 condition,
 country,
 location,
@@ -1384,6 +1482,8 @@ collection(db,"listings"),
 {
 uid:state.user.uid,
 username:sellerName,
+sellerName:state.profile?.displayName||state.profile?.username||sellerName,
+sellerUsername:state.profile?.username||"",
 title,
 description,
 price,
@@ -1560,7 +1660,20 @@ listing.status!=="sold"&&
 isListingExpired(listing)
 ).length;
 
+const soldCount=shopListings.filter(
+listing=>listing.status==="sold"
+).length;
+
 const availableCount=activeListings.length;
+const shopCategories=Array.from(
+new Set(
+activeListings
+.map(listing=>listing.category)
+.filter(Boolean)
+)
+);
+const shopPriceRange=getShopPriceRange(activeListings.length?activeListings:shopListings);
+const shopSellerName=getSellerName(selectedListing,sellerProfile);
 
 showModal(
 storeName,
@@ -1625,6 +1738,10 @@ ${escapeHtml(shopDescription)}
 </p>
 
 <span class="small">
+Seller: <strong>${escapeHtml(shopSellerName)}</strong>
+</span>
+
+<span class="small">
 📍 ${escapeHtml(shopLocation)}
 </span>
 
@@ -1638,8 +1755,7 @@ margin-top:9px;
 >
 
 <span class="badge">
-${availableCount}
-${availableCount===1?"available":"available"}
+${availableCount} ${availableCount===1?"available product":"available products"}
 </span>
 
 ${
@@ -1664,6 +1780,43 @@ color:var(--text);
 
 </div>
 
+</div>
+
+<div
+class="card"
+style="
+margin:0;
+background:var(--surface2);
+box-shadow:none;
+padding:14px;
+border-radius:18px;
+"
+>
+<div
+style="
+display:grid;
+grid-template-columns:repeat(2,minmax(0,1fr));
+gap:9px 14px;
+"
+>
+<div>
+<div class="small">Products</div>
+<strong>${shopListings.length}</strong>
+</div>
+<div>
+<div class="small">Available now</div>
+<strong>${availableCount}</strong>
+</div>
+<div>
+<div class="small">Price range</div>
+<strong>${escapeHtml(shopPriceRange)}</strong>
+</div>
+<div>
+<div class="small">Categories</div>
+<strong>${escapeHtml(shopCategories.length?shopCategories.slice(0,3).join(" · "):"Other")}</strong>
+</div>
+</div>
+${isOwner&&soldCount?`<div class="small" style="margin-top:8px;">${soldCount} sold product${soldCount===1?"":"s"} in shop history.</div>`:""}
 </div>
 
 <div
@@ -1818,7 +1971,19 @@ margin-top:4px;
 >
 ${escapeHtml(listing.category||"Other")}
 ·
-${escapeHtml(formatDate(listing.createdAt))}
+${escapeHtml(listing.condition||"Condition not specified")}
+·
+${escapeHtml(listing.location||listing.country||"Location not specified")}
+</span>
+
+<span
+class="small"
+style="
+display:block;
+margin-top:3px;
+"
+>
+Posted ${escapeHtml(formatDate(listing.createdAt))}
 ·
 ${escapeHtml(formatListingExpiry(listing))}
 </span>
@@ -1865,7 +2030,7 @@ flex-shrink:0;
 font-variant-numeric:tabular-nums;
 "
 >
-₦${Number(listing.price||0).toLocaleString("en-NG")}
+${formatNaira(listing.price)}
 </strong>
 
 </div>
@@ -2322,7 +2487,7 @@ white-space:nowrap;
 font-variant-numeric:tabular-nums;
 "
 >
-₦${Number(listing.price||0).toLocaleString("en-NG")}
+${formatNaira(listing.price)}
 </div>
 
 <div class="small">
@@ -2611,8 +2776,14 @@ try{
 
 const newStatus=
 listing.status==="sold"
-?"active"
+?isListingExpired(listing)
+?"sold"
+:"active"
 :"sold";
+
+if(listing.status==="sold"&&isListingExpired(listing)){
+throw new Error("Renew this listing before reactivating it.");
+}
 
 await updateDoc(
 doc(db,"listings",listing.id),
