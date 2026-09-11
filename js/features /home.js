@@ -1045,7 +1045,7 @@ function renderQuickActions() {
         </span>
 
         <strong>
-          Offer a skill
+          Discover a skill
         </strong>
 
         <span class="small">
@@ -1063,7 +1063,7 @@ function renderQuickActions() {
         </span>
 
         <strong>
-          Sell something
+          Explore Marvel Market 
         </strong>
 
         <span class="small">
