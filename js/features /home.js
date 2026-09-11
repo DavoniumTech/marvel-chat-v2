@@ -47,6 +47,7 @@ let savedPostIds = new Set();
 let savedPostsLoadedForUid = null;
 let savedPostsLoadPromise = null;
 let homeSearchTerm = "";
+let homeFeedFilter = "all";
 let homeClickHandler = null;
 let homeNavigationHandler = null;
 let homeModalEscapeHandler = null;
@@ -187,6 +188,93 @@ function currentUserName() {
     state.profile?.username ||
     "User"
   );
+}
+
+function currentUserGreeting() {
+  const hour = new Date().getHours();
+
+  if (hour >= 5 && hour < 12) return "Good morning";
+  if (hour >= 12 && hour < 17) return "Good afternoon";
+  if (hour >= 17 && hour < 21) return "Good evening";
+  return "Good night";
+}
+
+function safeMediaUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  try {
+    const url = new URL(raw, window.location.href);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return "";
+    return url.href;
+  } catch {
+    return "";
+  }
+}
+
+function getPostMedia(post) {
+  const media = post?.media || post?.attachment || null;
+  if (!media) return null;
+
+  if (typeof media === "string") {
+    const url = safeMediaUrl(media);
+    return url ? { type: "image", url } : null;
+  }
+
+  if (Array.isArray(media)) {
+    const first = media.find(item => item?.url || item?.secure_url);
+    if (!first) return null;
+    const url = safeMediaUrl(first.url || first.secure_url);
+    return url ? { type: first.type || "image", url } : null;
+  }
+
+  const url = safeMediaUrl(media.url || media.secure_url);
+  return url ? { type: media.type || "image", url } : null;
+}
+
+function renderPostMedia(post) {
+  const media = getPostMedia(post);
+  if (!media) return "";
+
+  if (media.type === "image" || media.type === "photo") {
+    return `
+      <div
+        class="post-media"
+        data-media-slot="image"
+        style="
+          margin-top:13px;
+          overflow:hidden;
+          border-radius:16px;
+          border:1px solid var(--border);
+          background:var(--surface);
+        "
+      >
+        <img
+          src="${escapeHtml(media.url)}"
+          alt="Post media"
+          loading="lazy"
+          style="
+            display:block;
+            width:100%;
+            max-height:520px;
+            object-fit:cover;
+          "
+        >
+      </div>
+    `;
+  }
+
+  return `
+    <a
+      class="btn secondary"
+      href="${escapeHtml(media.url)}"
+      target="_blank"
+      rel="noopener noreferrer"
+      style="display:inline-flex;margin-top:12px;"
+    >
+      Open attachment ↗
+    </a>
+  `;
 }
 
 function getExpiryDate(value) {
@@ -710,52 +798,24 @@ function refreshPostCard(id) {
 }
 
 function renderPostCard(post) {
-  const id =
-    postId(post.id);
-
-  const owner =
-    String(post.uid) ===
-    String(uid());
-
-  const liked =
-    isLiked(post);
-
-  const saved =
-    isSaved(post);
-
-  const date =
-    getPostDate(post);
-
-  const text =
-    escapeHtml(
-      getPostText(post)
-    ).replace(
-      /\n/g,
-      "<br>"
-    );
-
-  const name =
-    escapeHtml(
-      getPostAuthor(post)
-    );
-
-  const initialsText =
-    escapeHtml(
-      initials(
-        getPostAuthor(post)
-      )
-    );
-
-  const expiry =
-    expiryLabel(post);
+  const id = postId(post.id);
+  const owner = String(post.uid) === String(uid());
+  const liked = isLiked(post);
+  const saved = isSaved(post);
+  const date = getPostDate(post);
+  const text = escapeHtml(getPostText(post)).replace(/\n/g, "<br>");
+  const name = escapeHtml(getPostAuthor(post));
+  const initialsText = escapeHtml(initials(getPostAuthor(post)));
+  const expiry = expiryLabel(post);
+  const edited = !!post?.editedAt;
 
   return `
     <article
       class="card post-card"
       data-post-card="${escapeHtml(id)}"
-      style="
-        margin-bottom:12px;
-      "
+      data-post-owner="${owner ? "true" : "false"}"
+      data-post-saved="${saved ? "true" : "false"}"
+      style="margin-bottom:14px;overflow:hidden;"
     >
       <div
         style="
@@ -773,18 +833,11 @@ function renderPostCard(post) {
             min-width:0;
           "
         >
-          <div
-            class="avatar"
-            aria-hidden="true"
-          >
+          <div class="avatar" aria-hidden="true">
             ${initialsText}
           </div>
 
-          <div
-            style="
-              min-width:0;
-            "
-          >
+          <div style="min-width:0;">
             <strong
               style="
                 display:block;
@@ -796,27 +849,27 @@ function renderPostCard(post) {
               ${name}
             </strong>
 
-            <div class="small">
-              ${escapeHtml(
-                date
-                  ? formatDate(date)
-                  : ""
-              )}
-
-              ${
-                expiry
-                  ? ` · ${escapeHtml(expiry)}`
-                  : ""
-              }
+            <div
+              class="small"
+              style="
+                display:flex;
+                gap:5px;
+                align-items:center;
+                flex-wrap:wrap;
+              "
+            >
+              <span>
+                ${escapeHtml(date ? formatDate(date) : "")}
+              </span>
+              ${edited ? `<span aria-label="Edited">· edited</span>` : ""}
+              ${expiry ? `<span>· ${escapeHtml(expiry)}</span>` : ""}
             </div>
           </div>
         </div>
 
         <div
           class="dropdown-container"
-          style="
-            position:relative;
-          "
+          style="position:relative;flex:0 0 auto;"
         >
           <button
             type="button"
@@ -824,6 +877,7 @@ function renderPostCard(post) {
             data-home-action="menu"
             data-id="${escapeHtml(id)}"
             aria-label="Post menu"
+            title="Post options"
           >
             ⋯
           </button>
@@ -836,7 +890,7 @@ function renderPostCard(post) {
               right:0;
               top:42px;
               z-index:30;
-              min-width:150px;
+              min-width:170px;
             "
           >
             ${
@@ -848,7 +902,7 @@ function renderPostCard(post) {
                     data-home-action="edit"
                     data-id="${escapeHtml(id)}"
                   >
-                    ✏️ Edit
+                    ✏️ Edit post
                   </button>
 
                   <button
@@ -857,17 +911,26 @@ function renderPostCard(post) {
                     data-home-action="delete"
                     data-id="${escapeHtml(id)}"
                   >
-                    🗑️ Delete
+                    🗑️ Delete post
                   </button>
                 `
                 : `
                   <button
                     type="button"
                     class="dropdown-item"
+                    data-home-action="save"
+                    data-id="${escapeHtml(id)}"
+                  >
+                    ${saved ? "🔖 Remove saved" : "🔖 Save post"}
+                  </button>
+
+                  <button
+                    type="button"
+                    class="dropdown-item"
                     data-home-action="share"
                     data-id="${escapeHtml(id)}"
                   >
-                    ↗️ Share
+                    ↗️ Share post
                   </button>
                 `
             }
@@ -877,30 +940,47 @@ function renderPostCard(post) {
 
       <div
         class="post-content"
-        style="
-          margin-top:12px;
-          line-height:1.6;
-          overflow-wrap:anywhere;
-        "
+        style="margin-top:13px;line-height:1.65;overflow-wrap:anywhere;"
       >
         ${text}
+      </div>
+
+      ${renderPostMedia(post)}
+
+      <div
+        class="post-engagement"
+        style="
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          gap:8px;
+          flex-wrap:wrap;
+          margin-top:13px;
+          padding-top:10px;
+          color:var(--muted);
+          font-size:12px;
+        "
+      >
+        <span>
+          ${postLikes(post)}
+          ${postLikes(post) === 1 ? "like" : "likes"}
+        </span>
+
+        <span>
+          ${postComments(post)}
+          ${postComments(post) === 1 ? "comment" : "comments"}
+        </span>
       </div>
 
       <div
         class="post-actions"
         style="
           display:grid;
-          grid-template-columns:
-            repeat(
-              4,
-              minmax(0,1fr)
-            );
+          grid-template-columns:repeat(4,minmax(0,1fr));
           gap:6px;
-          margin-top:13px;
-          padding-top:11px;
-          border-top:
-            1px solid
-            var(--border);
+          margin-top:8px;
+          padding-top:9px;
+          border-top:1px solid var(--border);
         "
       >
         <button
@@ -908,11 +988,7 @@ function renderPostCard(post) {
           class="btn secondary"
           data-home-action="like"
           data-id="${escapeHtml(id)}"
-          ${
-            pendingLikeIds.has(id)
-              ? "disabled"
-              : ""
-          }
+          ${pendingLikeIds.has(id) ? "disabled" : ""}
           style="
             min-width:0;
             padding:8px 3px;
@@ -923,6 +999,7 @@ function renderPostCard(post) {
           "
         >
           ${liked ? "❤️" : "🤍"}
+          ${liked ? "Liked" : "Like"} ·
           ${postLikes(post)}
         </button>
 
@@ -940,8 +1017,7 @@ function renderPostCard(post) {
             text-overflow:ellipsis;
           "
         >
-          💬
-          ${postComments(post)}
+          💬 Comment · ${postComments(post)}
         </button>
 
         <button
@@ -949,11 +1025,7 @@ function renderPostCard(post) {
           class="btn secondary"
           data-home-action="save"
           data-id="${escapeHtml(id)}"
-          ${
-            pendingSaveIds.has(id)
-              ? "disabled"
-              : ""
-          }
+          ${pendingSaveIds.has(id) ? "disabled" : ""}
           style="
             min-width:0;
             padding:8px 3px;
@@ -963,11 +1035,7 @@ function renderPostCard(post) {
             text-overflow:ellipsis;
           "
         >
-          ${
-            saved
-              ? "🔖 Saved"
-              : "🔖 Save"
-          }
+          ${saved ? "🔖 Saved" : "🔖 Save"}
         </button>
 
         <button
@@ -1075,15 +1143,19 @@ function renderQuickActions() {
 }
 
 function renderSearchCard() {
+  const filters = [
+    ["all", "All"],
+    ["mine", "My posts"],
+    ["saved", "Saved"]
+  ];
+
   return `
     <section
       class="card home-search-card"
       style="
-        margin-bottom:12px;
-        padding:12px;
-        border:
-          1px solid
-          rgba(124,58,237,.20);
+        margin-bottom:14px;
+        padding:13px;
+        border:1px solid rgba(124,58,237,.20);
         background:
           linear-gradient(
             135deg,
@@ -1094,9 +1166,17 @@ function renderSearchCard() {
     >
       <div
         style="
-          position:relative;
+          display:flex;
+          align-items:center;
+          gap:8px;
+          margin-bottom:9px;
         "
       >
+        <span aria-hidden="true" style="font-size:18px;">🔎</span>
+        <strong>Find something in your feed</strong>
+      </div>
+
+      <div style="position:relative;">
         <input
           id="communityFeedSearch"
           class="input"
@@ -1121,16 +1201,11 @@ function renderSearchCard() {
           aria-label="Clear search"
           title="Clear search"
           style="
-            display:${
-              homeSearchTerm
-                ? "inline-flex"
-                : "none"
-            };
+            display:${homeSearchTerm ? "inline-flex" : "none"};
             position:absolute;
             right:6px;
             top:50%;
-            transform:
-              translateY(-50%);
+            transform:translateY(-50%);
             width:34px;
             height:34px;
           "
@@ -1140,90 +1215,75 @@ function renderSearchCard() {
       </div>
 
       <div
+        class="home-filter-row"
+        style="
+          display:flex;
+          gap:7px;
+          overflow:auto;
+          padding:9px 0 2px;
+          scrollbar-width:none;
+        "
+        role="tablist"
+        aria-label="Feed filters"
+      >
+        ${filters.map(
+          ([value, label]) => `
+            <button
+              type="button"
+              class="btn ${
+                homeFeedFilter === value
+                  ? "btn-primary"
+                  : "secondary"
+              }"
+              data-feed-filter="${value}"
+              role="tab"
+              aria-selected="${
+                homeFeedFilter === value
+                  ? "true"
+                  : "false"
+              }"
+              style="
+                flex:0 0 auto;
+                padding:7px 11px;
+                font-size:12px;
+                border-radius:999px;
+              "
+            >
+              ${label}
+            </button>
+          `
+        ).join("")}
+      </div>
+
+      <div
         id="communitySearchStatus"
         class="small"
         aria-live="polite"
-        style="
-          margin:6px 2px 0;
-          min-height:15px;
-        "
+        style="margin:6px 2px 0;min-height:15px;"
       ></div>
     </section>
   `;
 }
 
-function renderYouTubeLiveCard() {
-  return `
-    <section
-      class="card home-youtube-card"
-      style="
-        margin-bottom:16px;
-        padding:13px 15px;
-        border:
-          1px solid
-          rgba(168,85,247,.20);
-        background:
-          linear-gradient(
-            135deg,
-            rgba(168,85,247,.10),
-            rgba(244,63,94,.055)
-          );
-      "
-    >
-      <div
-        style="
-          display:flex;
-          align-items:center;
-          justify-content:space-between;
-          gap:12px;
-        "
-      >
-        <div
-          style="
-            min-width:0;
-          "
-        >
-          <strong
-            style="
-              display:block;
-              font-size:16px;
-            "
-          >
-            🔴 YouTube Live
-          </strong>
-
-          <div
-            class="small"
-            style="
-              margin-top:3px;
-              line-height:1.4;
-            "
-          >
-            Find live Marvel-related streams
-            and community content.
-          </div>
-        </div>
-
-        <button
-          type="button"
-          class="btn secondary"
-          id="youtubeLiveSearchBtn"
-          style="
-            flex:0 0 auto;
-            min-height:40px;
-            padding:8px 11px;
-            border-radius:12px;
-            font-size:12px;
-          "
-        >
-          Find Live Streams
-        </button>
-      </div>
-    </section>
-  `;
-}
-
 function renderPosts() {
+  if (!Array.isArray(state.posts)) {
+    return `
+      <section
+        class="card"
+        aria-live="polite"
+        style="text-align:center;padding:34px 18px;"
+      >
+        <div style="font-size:34px;">⏳</div>
+        <h3 style="margin:8px 0 5px;">
+          Loading your community
+        </h3>
+        <p class="small" style="margin:0;">
+          Getting the latest posts ready for you…
+        </p>
+      </section>
+    `;
+  }
+
   const posts =
     getPosts()
       .filter(
@@ -1294,10 +1354,8 @@ export function renderHome() {
   stopDiscoveryCountdown();
   closeHomeModal();
 
-  const me =
-    state.profile?.displayName ||
-    state.profile?.username ||
-    "there";
+  const me = currentUserName();
+  const greeting = currentUserGreeting();
 
   return `
     <div
@@ -1390,19 +1448,30 @@ export function renderHome() {
           opacity:.6;
         }
 
+        #homePage .home-filter-row{
+          -ms-overflow-style:none;
+        }
+
+        #homePage .home-filter-row::-webkit-scrollbar{
+          display:none;
+        }
+
         @media(max-width:520px){
           #homePage .home-hero{
             padding:21px 17px;
             border-radius:20px;
           }
 
-          #homePage .home-youtube-card>div{
-            align-items:flex-start!important;
+          #homePage .home-composer-row{
+            align-items:stretch!important;
           }
 
-          #homePage .home-youtube-card button{
-            font-size:11px!important;
-            padding:8px 9px!important;
+          #homePage .home-composer-row .avatar{
+            display:none;
+          }
+
+          #homePage .home-composer-row #openComposerButton{
+            padding:9px 10px!important;
           }
 
           #homePage .post-actions{
@@ -1414,6 +1483,10 @@ export function renderHome() {
             padding-left:2px!important;
             padding-right:2px!important;
           }
+
+          #homePage .post-engagement{
+            font-size:11px!important;
+          }
         }
       </style>
 
@@ -1422,13 +1495,13 @@ export function renderHome() {
         aria-label="Marvel Chat welcome"
       >
         <h1>
-          Hey ${escapeHtml(me)} 👋
+          ${escapeHtml(greeting)}, ${escapeHtml(me)} 👋
         </h1>
 
         <p>
-          Welcome to your futuristic community.
-          Connect, chat, trade skills and discover
-          what people around you are building.
+          Your community is moving. Share ideas, meet people,
+          trade skills, explore the Market and keep the
+          conversation going — all in one place.
         </p>
       </section>
 
@@ -1439,6 +1512,73 @@ export function renderHome() {
       }
 
       ${renderQuickActions()}
+
+      <section
+        class="card home-composer-preview"
+        style="margin-bottom:18px;padding:12px;"
+        aria-label="Create a post"
+      >
+        <div
+          class="home-composer-row"
+          style="
+            display:flex;
+            align-items:center;
+            gap:10px;
+          "
+        >
+          <div class="avatar" aria-hidden="true">
+            ${escapeHtml(initials(me))}
+          </div>
+
+          <button
+            type="button"
+            class="input"
+            id="openComposerPreview"
+            style="
+              flex:1;
+              text-align:left;
+              min-height:44px;
+              border-radius:14px;
+              cursor:pointer;
+            "
+          >
+            What’s on your mind, ${escapeHtml(me)}?
+          </button>
+
+          <button
+            type="button"
+            class="btn btn-primary"
+            id="openComposerButton"
+            style="
+              flex:0 0 auto;
+              padding:9px 12px;
+            "
+          >
+            + Post
+          </button>
+        </div>
+
+        <div
+          style="
+            display:flex;
+            align-items:center;
+            gap:8px;
+            flex-wrap:wrap;
+            margin-top:9px;
+          "
+        >
+          <span class="small">
+            ✍️ Text post
+          </span>
+
+          <span
+            class="small"
+            data-media-slot="future"
+          >
+            📷 Photo & media ready for the next media update
+          </span>
+        </div>
+      </section>
 
       <div
         class="home-section-head"
@@ -1465,7 +1605,6 @@ export function renderHome() {
 
       ${renderSearchCard()}
 
-      ${renderYouTubeLiveCard()}
 
       ${renderPosts()}
     </div>
@@ -1817,26 +1956,29 @@ export async function sharePost(
     getPostText(post);
 
   try {
-    if (
-      navigator.share
-    ) {
-      await navigator.share(
-        {
-          title:
-            "Marvel Chat post",
-          text
-        }
-      );
-    } else if (
-      navigator.clipboard
-        ?.writeText
-    ) {
+    const shareUrl = (() => {
+      try {
+        const url = new URL(window.location.href);
+        url.hash = `post-${postId(id)}`;
+        return url.href;
+      } catch {
+        return window.location.href;
+      }
+    })();
+
+    if (navigator.share) {
+      await navigator.share({
+        title: "Marvel Chat post",
+        text,
+        url: shareUrl
+      });
+    } else if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(
-        text
+        `${text}\n\n${shareUrl}`
       );
 
       toast(
-        "Post text copied."
+        "Post link copied."
       );
     } else {
       toast(
@@ -2094,6 +2236,29 @@ function showCreatePost() {
           maxlength="1000"
           placeholder="What's happening in your Marvel universe?"
         ></textarea>
+
+        <div
+          data-media-slot="future"
+          style="
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            gap:10px;
+            flex-wrap:wrap;
+            margin-top:10px;
+            padding:10px 12px;
+            border:1px dashed var(--border);
+            border-radius:14px;
+          "
+        >
+          <span class="small">
+            📷 Add photo or media
+          </span>
+
+          <span class="small">
+            Coming with Cloudinary media upload
+          </span>
+        </div>
 
         <div
           style="
@@ -2481,7 +2646,9 @@ export function showEditPost(
                 ? {
                     ...item,
                     text:
-                      text
+                      text,
+                    editedAt:
+                      new Date()
                   }
                 : item
           );
@@ -2946,17 +3113,22 @@ export async function showComments(
           }
         );
 
-        await updateDoc(
-          doc(
-            db,
-            "posts",
-            postId(id)
-          ),
-          {
-            comments:
-              increment(1)
-          }
-        );
+        if (
+          String(post.uid) !==
+          String(uid())
+        ) {
+          await updateDoc(
+            doc(
+              db,
+              "posts",
+              postId(id)
+            ),
+            {
+              comments:
+                increment(1)
+            }
+          );
+        }
 
         state.posts =
           getPosts().map(
@@ -3057,17 +3229,26 @@ async function deleteComment(
       )
     );
 
-    await updateDoc(
-      doc(
-        db,
-        "posts",
-        postId(postIdValue)
-      ),
-      {
-        comments:
-          increment(-1)
-      }
-    );
+    const post =
+      getPost(postIdValue);
+
+    if (
+      post &&
+      String(post.uid) !==
+      String(uid())
+    ) {
+      await updateDoc(
+        doc(
+          db,
+          "posts",
+          postId(postIdValue)
+        ),
+        {
+          comments:
+            increment(-1)
+        }
+      );
+    }
 
     state.posts =
       getPosts().map(
@@ -3107,34 +3288,16 @@ async function deleteComment(
   }
 }
 
-function openYouTubeLiveSearch() {
-  const input =
-    document.getElementById(
-      "communityFeedSearch"
-    );
-
-  const queryText =
-    input?.value.trim() ||
-    "Marvel Chat";
-
-  const url =
-    "https://www.youtube.com/results?search_query=" +
-    encodeURIComponent(
-      queryText +
-      " live"
-    ) +
-    "&sp=EgJAAQ%253D%253D";
-
-  try {
-    window.open(
-      url,
-      "_blank",
-      "noopener,noreferrer"
-    );
-  } catch {
-    window.location.href =
-      url;
+function postMatchesFilter(post) {
+  if (homeFeedFilter === "mine") {
+    return String(post?.uid || "") === String(uid() || "");
   }
+
+  if (homeFeedFilter === "saved") {
+    return isSaved(post);
+  }
+
+  return true;
 }
 
 function filterRenderedPosts(
@@ -3157,54 +3320,70 @@ function filterRenderedPosts(
   let visible =
     0;
 
-  cards.forEach(
-    card => {
-      const matches =
-        !homeSearchTerm ||
-        card.textContent
-          .toLowerCase()
-          .includes(
-            homeSearchTerm
-          );
+  cards.forEach(card => {
+    const post = getPost(
+      card.dataset.postCard
+    );
 
-      card.style.display =
-        matches
-          ? ""
-          : "none";
+    const textMatches =
+      !homeSearchTerm ||
+      card.textContent
+        .toLowerCase()
+        .includes(homeSearchTerm);
 
-      if (matches) {
-        visible++;
-      }
+    const filterMatches =
+      !!post &&
+      postMatchesFilter(post);
+
+    const matches =
+      textMatches &&
+      filterMatches;
+
+    card.style.display =
+      matches
+        ? ""
+        : "none";
+
+    if (matches) {
+      visible++;
     }
-  );
+  });
 
   const status =
     document.getElementById(
       "communitySearchStatus"
     );
 
-  if (status) {
-    if (!homeSearchTerm) {
+  if (
+    status &&
+    !Array.isArray(state.posts)
+  ) {
+    status.textContent =
+      "Loading the latest posts…";
+  }
+
+  if (status && Array.isArray(state.posts)) {
+    const filterLabel =
+      homeFeedFilter === "mine"
+        ? "my posts"
+        : homeFeedFilter === "saved"
+          ? "saved posts"
+          : "recent posts";
+
+    if (visible === 0) {
       status.textContent =
-        cards.length
-          ? `Showing ${cards.length} recent post${
-              cards.length === 1
-                ? ""
-                : "s"
-            }.`
-          : "";
-    } else if (
-      visible === 0
-    ) {
-      status.textContent =
-        "No matching posts in the recent feed.";
+        homeSearchTerm
+          ? "No matching posts in the loaded feed."
+          : homeFeedFilter === "saved"
+            ? "You have no saved posts in this feed yet."
+            : homeFeedFilter === "mine"
+              ? "You have no posts in the loaded feed yet."
+              : "No posts are available right now.";
     } else {
       status.textContent =
-        `${visible} matching post${
-          visible === 1
-            ? ""
-            : "s"
-        }.`;
+        homeSearchTerm
+          ? `${visible} matching ${filterLabel}.`
+          : `Showing ${visible} ${filterLabel}.`;
     }
   }
 
@@ -3422,9 +3601,55 @@ export function attachHomeEvents(
         return;
       }
 
+      const feedFilter =
+        event.target.closest(
+          "[data-feed-filter]"
+        );
+
+      if (feedFilter) {
+        homeFeedFilter =
+          feedFilter.dataset.feedFilter ||
+          "all";
+
+        document
+          .querySelectorAll(
+            "#homePage [data-feed-filter]"
+          )
+          .forEach(
+            button => {
+              const active =
+                button.dataset.feedFilter ===
+                homeFeedFilter;
+
+              button.classList.toggle(
+                "btn-primary",
+                active
+              );
+
+              button.classList.toggle(
+                "secondary",
+                !active
+              );
+
+              button.setAttribute(
+                "aria-selected",
+                active
+                  ? "true"
+                  : "false"
+              );
+            }
+          );
+
+        filterRenderedPosts(
+          homeSearchTerm
+        );
+
+        return;
+      }
+
       if (
         event.target.closest(
-          "#createPostBtn,#emptyCreatePost"
+          "#openComposerPreview,#openComposerButton,#createPostBtn,#emptyCreatePost"
         )
       ) {
         showCreatePost();
@@ -3455,16 +3680,6 @@ export function attachHomeEvents(
           ""
         );
 
-        return;
-      }
-
-      if (
-        event.target.closest(
-          "#youtubeLiveSearchBtn"
-        )
-      ) {
-        markHomeActivity();
-        openYouTubeLiveSearch();
         return;
       }
 
