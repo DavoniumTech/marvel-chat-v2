@@ -698,10 +698,10 @@ export function renderTimeTrust(
         </h1>
 
         <p>
-          Discover skilled community
+          Explore skilled community
           members, offer your own
-          expertise, and exchange
-          useful knowledge.
+          expertise, and discover 
+          useful knowledge from expert peers.
         </p>
 
       </section>
