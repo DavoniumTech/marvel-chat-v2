@@ -32,79 +32,46 @@ import {
   closeModal
 } from "../components/modal.js";
 
-import {
-  toast
-} from "../components/toast.js";
+import { toast } from "../components/toast.js";
 
-const DISCOVERY_STORAGE_KEY =
-  "marvel_discovery_seen_v2";
+const DISCOVERY_STORAGE_KEY = "marvel_discovery_seen_v2";
+const DISCOVERY_LAST_ACTIVE_KEY = "marvel_home_last_active_v1";
+const DISCOVERY_MIN_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const DISCOVERY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const DISCOVERY_MAX_IMPRESSIONS = 3;
+const DISCOVERY_DURATION_SECONDS = 40;
 
-const DISCOVERY_LAST_ACTIVE_KEY =
-  "marvel_home_last_active_v1";
+let discoveryTimer = null;
+let discoveryStartedAt = 0;
+let savedPostIds = new Set();
+let savedPostsLoadedForUid = null;
+let savedPostsLoadPromise = null;
+let savedPostsLoadingUid = null;
+let homeDocumentClickHandler = null;
 
-const DISCOVERY_MIN_INTERVAL_MS =
-  24 * 60 * 60 * 1000;
-
-const DISCOVERY_WINDOW_MS =
-  7 * 24 * 60 * 60 * 1000;
-
-const DISCOVERY_MAX_IMPRESSIONS =
-  3;
-
-const DISCOVERY_DURATION_SECONDS =
-  40;
-
-let discoveryTimer =
-  null;
-
-let discoveryStartedAt =
-  0;
-
-let savedPostIds =
-  new Set();
-
-let savedPostsLoadedForUid =
-  null;
-
-let savedPostsLoadPromise =
-  null;
-
-let savedPostsLoadingUid =
-  null;
-
-const pendingLikeIds =
-  new Set();
-
-const pendingSaveIds =
-  new Set();
-
-let homeDocumentClickHandler =
-  null;
+const pendingLikeIds = new Set();
+const pendingSaveIds = new Set();
 
 const POST_EXPIRY_OPTIONS = [
   {
     value: "12h",
     label: "12 hours",
-    milliseconds:
-      12 * 60 * 60 * 1000
+    milliseconds: 12 * 60 * 60 * 1000
   },
   {
     value: "1d",
     label: "1 day",
-    milliseconds:
-      24 * 60 * 60 * 1000
+    milliseconds: 24 * 60 * 60 * 1000
   },
   {
     value: "7d",
     label: "1 week",
-    milliseconds:
-      7 * 24 * 60 * 60 * 1000
+    milliseconds: 7 * 24 * 60 * 60 * 1000
   },
   {
     value: "30d",
     label: "30 days",
-    milliseconds:
-      30 * 24 * 60 * 60 * 1000
+    milliseconds: 30 * 24 * 60 * 60 * 1000
   }
 ];
 
@@ -113,9 +80,7 @@ function cssEscape(value) {
     typeof CSS !== "undefined" &&
     typeof CSS.escape === "function"
   ) {
-    return CSS.escape(
-      String(value)
-    );
+    return CSS.escape(String(value));
   }
 
   return String(value).replace(
@@ -132,20 +97,84 @@ function getCurrentUserName() {
   );
 }
 
-function getPostExpiryDate(value) {
-  const option =
-    POST_EXPIRY_OPTIONS.find(
-      item =>
-        item.value === value
-    );
+function getPosts() {
+  return Array.isArray(state.posts)
+    ? state.posts
+    : [];
+}
 
-  if (!option) {
-    return null;
-  }
+function getPostById(id) {
+  return getPosts().find(
+    post =>
+      String(post.id) ===
+      String(id)
+  );
+}
 
-  return new Date(
-    Date.now() +
-      option.milliseconds
+function getPostAuthorName(post) {
+  return (
+    post?.displayName ||
+    post?.authorName ||
+    post?.username ||
+    "Marvel User"
+  );
+}
+
+function getPostText(post) {
+  return (
+    post?.text ||
+    post?.content ||
+    ""
+  );
+}
+
+function getPostDate(post) {
+  return (
+    post?.createdAt ||
+    post?.timestamp ||
+    post?.updatedAt ||
+    null
+  );
+}
+
+function getPostLikes(post) {
+  const value =
+    Number(post?.likes);
+
+  return Number.isFinite(value)
+    ? value
+    : 0;
+}
+
+function getPostComments(post) {
+  const value =
+    Number(post?.comments);
+
+  return Number.isFinite(value)
+    ? value
+    : 0;
+}
+
+function getLikedBy(post) {
+  return Array.isArray(
+    post?.likedBy
+  )
+    ? post.likedBy
+    : [];
+}
+
+function isPostLiked(post) {
+  return (
+    !!state.user?.uid &&
+    getLikedBy(post).includes(
+      state.user.uid
+    )
+  );
+}
+
+function isPostSaved(post) {
+  return savedPostIds.has(
+    String(post?.id)
   );
 }
 
@@ -208,13 +237,10 @@ function isPostExpired(post) {
       post.expiresAt
     );
 
-  if (!expiry) {
-    return false;
-  }
-
   return (
+    !!expiry &&
     expiry.getTime() <=
-    Date.now()
+      Date.now()
   );
 }
 
@@ -270,6 +296,21 @@ function formatExpiryLabel(post) {
   return "Ending soon";
 }
 
+function getPostExpiryDate(value) {
+  const option =
+    POST_EXPIRY_OPTIONS.find(
+      item =>
+        item.value === value
+    );
+
+  return option
+    ? new Date(
+        Date.now() +
+        option.milliseconds
+      )
+    : null;
+}
+
 function markHomeActivity() {
   try {
     localStorage.setItem(
@@ -304,7 +345,7 @@ function getDiscoveryHistory() {
       DISCOVERY_WINDOW_MS;
 
     return parsed
-      .map(value => Number(value))
+      .map(Number)
       .filter(
         value =>
           Number.isFinite(value) &&
@@ -342,12 +383,14 @@ function recordDiscoveryImpression() {
   const history =
     getDiscoveryHistory();
 
+  const last =
+    history[
+      history.length - 1
+    ];
+
   if (
-    history.length &&
-    now -
-      history[
-        history.length - 1
-      ] <
+    last &&
+    now - last <
       DISCOVERY_MIN_INTERVAL_MS
   ) {
     return;
@@ -388,10 +431,20 @@ export function isDiscoveryDismissed() {
   return !shouldShowDiscovery();
 }
 
+function stopDiscoveryCountdown() {
+  if (discoveryTimer) {
+    clearInterval(
+      discoveryTimer
+    );
+
+    discoveryTimer =
+      null;
+  }
+}
+
 export function dismissDiscovery() {
   markHomeActivity();
   recordDiscoveryImpression();
-
   stopDiscoveryCountdown();
 
   document
@@ -433,17 +486,6 @@ function openDiscoveryDestination(
   }
 }
 
-function stopDiscoveryCountdown() {
-  if (discoveryTimer) {
-    clearInterval(
-      discoveryTimer
-    );
-
-    discoveryTimer =
-      null;
-  }
-}
-
 function startDiscoveryCountdown() {
   const banner =
     document.getElementById(
@@ -466,7 +508,6 @@ function startDiscoveryCountdown() {
     !counter
   ) {
     stopDiscoveryCountdown();
-
     return;
   }
 
@@ -488,18 +529,17 @@ function startDiscoveryCountdown() {
       )
     ) {
       stopDiscoveryCountdown();
-
       return;
     }
-
-    const elapsed =
-      Date.now() -
-      discoveryStartedAt;
 
     const remainingMilliseconds =
       Math.max(
         0,
-        duration - elapsed
+        duration -
+          (
+            Date.now() -
+            discoveryStartedAt
+          )
       );
 
     const remainingSeconds =
@@ -508,16 +548,15 @@ function startDiscoveryCountdown() {
           1000
       );
 
-    const progress =
-      remainingMilliseconds /
-      duration;
-
     const percentage =
       Math.max(
         0,
         Math.min(
           100,
-          progress * 100
+          (
+            remainingMilliseconds /
+            duration
+          ) * 100
         )
       );
 
@@ -534,7 +573,6 @@ function startDiscoveryCountdown() {
       0
     ) {
       stopDiscoveryCountdown();
-
       dismissDiscovery();
     }
   };
@@ -574,8 +612,16 @@ function renderDiscoveryBanner() {
           pointer-events:none;
           opacity:.08;
           background:
-            radial-gradient(circle at 15% 20%, currentColor 0, transparent 35%),
-            radial-gradient(circle at 85% 80%, currentColor 0, transparent 40%);
+            radial-gradient(
+              circle at 15% 20%,
+              currentColor 0,
+              transparent 35%
+            ),
+            radial-gradient(
+              circle at 85% 80%,
+              currentColor 0,
+              transparent 40%
+            );
         "
       ></div>
 
@@ -630,7 +676,7 @@ function renderDiscoveryBanner() {
           <h2
             style="
               margin:0 0 10px;
-              font-size:clamp(28px, 6vw, 42px);
+              font-size:clamp(28px,6vw,42px);
               line-height:1.05;
             "
           >
@@ -646,8 +692,7 @@ function renderDiscoveryBanner() {
               font-size:15px;
             "
           >
-            Discover people, conversations, skills, TimeTrust
-            and the Market — all from one Marvel Chat universe.
+            Discover people, conversations, skills, TimeTrust and the Market — all from one Marvel Chat universe.
           </p>
 
           <div
@@ -731,110 +776,22 @@ function renderDiscoveryBanner() {
   `;
 }
 
-function getPosts() {
-  return Array.isArray(state.posts)
-    ? state.posts
-    : [];
-}
-
-function getPostById(id) {
-  return getPosts().find(
-    post =>
-      String(post.id) ===
-      String(id)
-  );
-}
-
-function getPostAuthorName(post) {
-  return (
-    post?.displayName ||
-    post?.authorName ||
-    post?.username ||
-    "Marvel User"
-  );
-}
-
-function getPostAuthorInitials(post) {
-  return initials(
-    getPostAuthorName(post)
-  );
-}
-
-function getPostText(post) {
-  return (
-    post?.text ||
-    post?.content ||
-    ""
-  );
-}
-
-function getPostDate(post) {
-  return (
-    post?.createdAt ||
-    post?.timestamp ||
-    post?.updatedAt ||
-    null
-  );
-}
-
-function getPostLikes(post) {
-  const value =
-    Number(post?.likes);
-
-  return Number.isFinite(value)
-    ? value
-    : 0;
-}
-
-function getPostComments(post) {
-  const value =
-    Number(post?.comments);
-
-  return Number.isFinite(value)
-    ? value
-    : 0;
-}
-
-function getLikedBy(post) {
-  return Array.isArray(
-    post?.likedBy
-  )
-    ? post.likedBy
-    : [];
-}
-
-function isPostLiked(post) {
-  if (!state.user?.uid) {
-    return false;
-  }
-
-  return getLikedBy(post).includes(
-    state.user.uid
-  );
-}
-
-function isPostSaved(post) {
-  return savedPostIds.has(
-    String(post?.id)
-  );
-}
-
-function updateLocalPost(id, updater) {
+function updateLocalPost(
+  id,
+  updater
+) {
   if (!Array.isArray(state.posts)) {
     return;
   }
 
   state.posts =
-    state.posts.map(post => {
-      if (
-        String(post.id) !==
+    state.posts.map(
+      post =>
+        String(post.id) ===
         String(id)
-      ) {
-        return post;
-      }
-
-      return updater(post);
-    });
+          ? updater(post)
+          : post
+    );
 }
 
 function refreshPostCard(id) {
@@ -852,28 +809,25 @@ function refreshPostCard(id) {
 
   if (!post) {
     card.remove();
-
     return;
   }
 
-  const replacement =
+  const wrapper =
     document.createElement(
       "div"
     );
 
-  replacement.innerHTML =
+  wrapper.innerHTML =
     renderPostCard(post);
 
-  const newCard =
-    replacement.firstElementChild;
+  const replacement =
+    wrapper.firstElementChild;
 
-  if (!newCard) {
-    return;
+  if (replacement) {
+    card.replaceWith(
+      replacement
+    );
   }
-
-  card.replaceWith(
-    newCard
-  );
 }
 
 async function loadSavedPostIds() {
@@ -954,7 +908,7 @@ function renderPostCard(post) {
     String(post.id);
 
   const owner =
-    state.user?.uid &&
+    !!state.user?.uid &&
     String(post.uid) ===
       String(state.user.uid);
 
@@ -996,7 +950,9 @@ function renderPostCard(post) {
 
   const authorInitials =
     escapeHtml(
-      getPostAuthorInitials(post)
+      initials(
+        getPostAuthorName(post)
+      )
     );
 
   return `
@@ -1177,9 +1133,7 @@ function renderQuickActions() {
   return `
     <section
       class="quick-grid"
-      style="
-        margin-bottom:22px;
-      "
+      style="margin-bottom:22px;"
     >
       <button
         type="button"
@@ -1236,9 +1190,7 @@ function renderCommunityHeader() {
   return `
     <section
       class="card"
-      style="
-        margin-bottom:18px;
-      "
+      style="margin-bottom:18px;"
     >
       <div
         style="
@@ -1306,52 +1258,12 @@ function renderCommunityHeader() {
   `;
 }
 
-function renderYouTubeLiveCard() {
-  return `
-    <section
-      class="card"
-      style="
-        margin-bottom:18px;
-      "
-    >
-      <div
-        style="
-          display:flex;
-          align-items:center;
-          justify-content:space-between;
-          gap:14px;
-          flex-wrap:wrap;
-        "
-      >
-        <div>
-          <strong>
-            🔴 YouTube Live
-          </strong>
-
-          <div class="small">
-            Find live Marvel-related streams and community content.
-          </div>
-        </div>
-
-        <button
-          type="button"
-          class="btn secondary"
-          id="youtubeLiveSearchBtn"
-        >
-          Find Live Streams
-        </button>
-      </div>
-    </section>
-  `;
-}
-
 function renderPosts() {
   const posts =
-    getPosts()
-      .filter(
-        post =>
-          !isPostExpired(post)
-      );
+    getPosts().filter(
+      post =>
+        !isPostExpired(post)
+    );
 
   if (!posts.length) {
     return `
@@ -1408,8 +1320,7 @@ function renderPosts() {
     >
       ${posts
         .map(
-          post =>
-            renderPostCard(post)
+          renderPostCard
         )
         .join("")}
     </section>
@@ -1429,29 +1340,22 @@ export function renderHome() {
       class="page"
       id="homePage"
     >
-      ${
-        discovery
-          ? discovery
-          : ""
-      }
+      ${discovery}
 
       ${renderQuickActions()}
 
       ${renderCommunityHeader()}
-
-      ${renderYouTubeLiveCard()}
 
       ${renderPosts()}
     </main>
   `;
 }
 
-async function toggleLike(id) {
+export async function toggleLike(id) {
   if (!state.user?.uid) {
     toast(
       "Please sign in first."
     );
-
     return;
   }
 
@@ -1462,7 +1366,6 @@ async function toggleLike(id) {
     toast(
       "Post is no longer available."
     );
-
     return;
   }
 
@@ -1470,7 +1373,9 @@ async function toggleLike(id) {
     String(id);
 
   if (
-    pendingLikeIds.has(postId)
+    pendingLikeIds.has(
+      postId
+    )
   ) {
     return;
   }
@@ -1573,12 +1478,11 @@ async function toggleLike(id) {
   }
 }
 
-async function savePost(id) {
+export async function savePost(id) {
   if (!state.user?.uid) {
     toast(
       "Please sign in first."
     );
-
     return;
   }
 
@@ -1589,7 +1493,6 @@ async function savePost(id) {
     toast(
       "Post is no longer available."
     );
-
     return;
   }
 
@@ -1692,7 +1595,7 @@ async function savePost(id) {
   }
 }
 
-async function sharePost(id) {
+export async function sharePost(id) {
   const post =
     getPostById(id);
 
@@ -1700,27 +1603,21 @@ async function sharePost(id) {
     toast(
       "Post is no longer available."
     );
-
     return;
   }
 
   const text =
     getPostText(post);
 
-  const shareData = {
-    title:
-      "Marvel Chat post",
-    text:
-      text
-  };
-
   try {
     if (
       navigator.share
     ) {
-      await navigator.share(
-        shareData
-      );
+      await navigator.share({
+        title:
+          "Marvel Chat post",
+        text
+      });
     } else if (
       navigator.clipboard
         ?.writeText
@@ -1758,13 +1655,9 @@ function showCreatePost() {
   showModal(`
     <div
       class="modal-content"
-      style="
-        max-width:620px;
-      "
+      style="max-width:620px;"
     >
-      <div
-        class="modal-header"
-      >
+      <div class="modal-header">
         <h3>
           Create a post
         </h3>
@@ -1779,14 +1672,10 @@ function showCreatePost() {
         </button>
       </div>
 
-      <div
-        class="modal-body"
-      >
+      <div class="modal-body">
         <div
           class="small"
-          style="
-            margin-bottom:10px;
-          "
+          style="margin-bottom:10px;"
         >
           Posting as ${escapeHtml(
             defaultName
@@ -1811,17 +1700,13 @@ function showCreatePost() {
             flex-wrap:wrap;
           "
         >
-          <label
-            class="small"
-          >
+          <label class="small">
             Post expiry
 
             <select
               id="createPostExpiry"
               class="input"
-              style="
-                margin-top:6px;
-              "
+              style="margin-top:6px;"
             >
               <option value="">
                 No expiry
@@ -1843,17 +1728,13 @@ function showCreatePost() {
             </select>
           </label>
 
-          <span
-            class="small"
-          >
+          <span class="small">
             Maximum 1000 characters
           </span>
         </div>
       </div>
 
-      <div
-        class="modal-footer"
-      >
+      <div class="modal-footer">
         <button
           type="button"
           class="btn secondary"
@@ -1878,12 +1759,11 @@ function showCreatePost() {
       "[data-modal-close]"
     )
     .forEach(
-      button => {
+      button =>
         button.addEventListener(
           "click",
           closeModal
-        );
-      }
+        )
     );
 
   const textInput =
@@ -1910,7 +1790,6 @@ function showCreatePost() {
         toast(
           "Please sign in first."
         );
-
         return;
       }
 
@@ -1924,17 +1803,16 @@ function showCreatePost() {
         toast(
           "Write something before publishing."
         );
-
         return;
       }
 
       if (
-        text.length > 1000
+        text.length >
+        1000
       ) {
         toast(
           "Posts must be 1000 characters or less."
         );
-
         return;
       }
 
@@ -1945,13 +1823,10 @@ function showCreatePost() {
         "Publishing...";
 
       try {
-        const expiryValue =
-          expiryInput?.value ||
-          "";
-
         const expiryDate =
           getPostExpiryDate(
-            expiryValue
+            expiryInput?.value ||
+              ""
           );
 
         const payload = {
@@ -1974,6 +1849,7 @@ function showCreatePost() {
             Timestamp.fromDate(
               expiryDate
             );
+
           payload.expiryDurationHours =
             Math.round(
               (
@@ -2014,7 +1890,7 @@ function showCreatePost() {
   );
 }
 
-function showEditPost(id) {
+export function showEditPost(id) {
   const post =
     getPostById(id);
 
@@ -2022,7 +1898,6 @@ function showEditPost(id) {
     toast(
       "Post is no longer available."
     );
-
     return;
   }
 
@@ -2033,20 +1908,15 @@ function showEditPost(id) {
     toast(
       "You can only edit your own posts."
     );
-
     return;
   }
 
   showModal(`
     <div
       class="modal-content"
-      style="
-        max-width:620px;
-      "
+      style="max-width:620px;"
     >
-      <div
-        class="modal-header"
-      >
+      <div class="modal-header">
         <h3>
           Edit post
         </h3>
@@ -2061,9 +1931,7 @@ function showEditPost(id) {
         </button>
       </div>
 
-      <div
-        class="modal-body"
-      >
+      <div class="modal-body">
         <textarea
           id="editPostText"
           class="input"
@@ -2074,9 +1942,7 @@ function showEditPost(id) {
         )}</textarea>
       </div>
 
-      <div
-        class="modal-footer"
-      >
+      <div class="modal-footer">
         <button
           type="button"
           class="btn secondary"
@@ -2101,12 +1967,11 @@ function showEditPost(id) {
       "[data-modal-close]"
     )
     .forEach(
-      button => {
+      button =>
         button.addEventListener(
           "click",
           closeModal
-        );
-      }
+        )
     );
 
   const input =
@@ -2134,17 +1999,16 @@ function showEditPost(id) {
         toast(
           "Post text cannot be empty."
         );
-
         return;
       }
 
       if (
-        text.length > 1000
+        text.length >
+        1000
       ) {
         toast(
           "Posts must be 1000 characters or less."
         );
-
         return;
       }
 
@@ -2204,7 +2068,7 @@ function showEditPost(id) {
   );
 }
 
-function showDeletePostConfirmation(
+export function showDeletePostConfirmation(
   id
 ) {
   const post =
@@ -2214,7 +2078,6 @@ function showDeletePostConfirmation(
     toast(
       "Post is no longer available."
     );
-
     return;
   }
 
@@ -2225,20 +2088,15 @@ function showDeletePostConfirmation(
     toast(
       "You can only delete your own posts."
     );
-
     return;
   }
 
   showModal(`
     <div
       class="modal-content"
-      style="
-        max-width:500px;
-      "
+      style="max-width:500px;"
     >
-      <div
-        class="modal-header"
-      >
+      <div class="modal-header">
         <h3>
           Delete post?
         </h3>
@@ -2253,9 +2111,7 @@ function showDeletePostConfirmation(
         </button>
       </div>
 
-      <div
-        class="modal-body"
-      >
+      <div class="modal-body">
         <p
           style="
             line-height:1.6;
@@ -2265,9 +2121,7 @@ function showDeletePostConfirmation(
         </p>
       </div>
 
-      <div
-        class="modal-footer"
-      >
+      <div class="modal-footer">
         <button
           type="button"
           class="btn secondary"
@@ -2292,12 +2146,11 @@ function showDeletePostConfirmation(
       "[data-modal-close]"
     )
     .forEach(
-      button => {
+      button =>
         button.addEventListener(
           "click",
           closeModal
-        );
-      }
+        )
     );
 
   document
@@ -2360,7 +2213,7 @@ function showDeletePostConfirmation(
     );
 }
 
-async function showComments(
+export async function showComments(
   id
 ) {
   const post =
@@ -2370,7 +2223,6 @@ async function showComments(
     toast(
       "Post is no longer available."
     );
-
     return;
   }
 
@@ -2409,7 +2261,6 @@ async function showComments(
     toast(
       friendly(error)
     );
-
     return;
   }
 
@@ -2514,13 +2365,9 @@ async function showComments(
   showModal(`
     <div
       class="modal-content"
-      style="
-        max-width:640px;
-      "
+      style="max-width:640px;"
     >
-      <div
-        class="modal-header"
-      >
+      <div class="modal-header">
         <h3>
           Comments
         </h3>
@@ -2535,9 +2382,7 @@ async function showComments(
         </button>
       </div>
 
-      <div
-        class="modal-body"
-      >
+      <div class="modal-body">
         <div
           id="commentsList"
           style="
@@ -2586,12 +2431,11 @@ async function showComments(
       "[data-modal-close]"
     )
     .forEach(
-      button => {
+      button =>
         button.addEventListener(
           "click",
           closeModal
-        );
-      }
+        )
     );
 
   document
@@ -2632,7 +2476,6 @@ async function showComments(
         toast(
           "Please sign in first."
         );
-
         return;
       }
 
@@ -2646,17 +2489,16 @@ async function showComments(
         toast(
           "Write a comment first."
         );
-
         return;
       }
 
       if (
-        text.length > 500
+        text.length >
+        500
       ) {
         toast(
           "Comments must be 500 characters or less."
         );
-
         return;
       }
 
@@ -2719,7 +2561,9 @@ async function showComments(
 
         if (commentsList) {
           const emptyMessage =
-            commentsList.textContent?.trim() ===
+            commentsList
+              .textContent
+              ?.trim() ===
             "No comments yet. Start the conversation.";
 
           const commentHtml = `
@@ -2795,17 +2639,14 @@ async function deleteComment(
   }
 
   try {
-    const commentRef =
+    await deleteDoc(
       doc(
         db,
         "posts",
         String(postId),
         "comments",
         String(commentId)
-      );
-
-    await deleteDoc(
-      commentRef
+      )
     );
 
     await updateDoc(
@@ -2854,96 +2695,9 @@ async function deleteComment(
   }
 }
 
-function openYouTubeLiveSearch() {
-  const url =
-    "https://www.youtube.com/results?search_query=live";
-
-  try {
-    window.open(
-      url,
-      "_blank",
-      "noopener,noreferrer"
-    );
-  } catch {
-    window.location.href =
-      url;
-  }
-}
-
-/*
- * IMPORTANT STARTUP RULE
- *
- * This function is deliberately NOT called by attachHomeEvents().
- *
- * Home must not delete expired Firestore documents while the application
- * is initializing. Expiry is presentation state here. The post is simply
- * hidden from the Home feed when it is expired.
- *
- * Keeping the helper isolated also preserves the possibility of explicit
- * maintenance later without adding Firestore writes to Home startup.
- */
-async function cleanupExpiredPosts() {
-  if (!state.user) {
-    return;
-  }
-
-  const expired =
-    getPosts().filter(
-      post =>
-        post.uid ===
-          state.user.uid &&
-        isPostExpired(post)
-    );
-
-  for (
-    const post of expired
-  ) {
-    try {
-      await deleteDoc(
-        doc(
-          db,
-          "posts",
-          post.id
-        )
-      );
-
-      state.posts =
-        getPosts().filter(
-          item =>
-            item.id !==
-            post.id
-        );
-    } catch (error) {
-      console.warn(
-        "Could not clean up expired post:",
-        error
-      );
-    }
-  }
-}
-
 export function attachHomeEvents(
   renderApp
 ) {
-  /*
-   * =========================================================
-   * HOME STARTUP SAFETY
-   * =========================================================
-   *
-   * The global posts listener is responsible for supplying
-   * state.posts.
-   *
-   * Home therefore does NOT:
-   *
-   *   - fetch the posts collection
-   *   - delete expired posts
-   *   - run Firestore cleanup
-   *   - perform a synchronous saved-post query
-   *
-   * Saved posts are hydrated only after the current render
-   * cycle has completed.
-   */
-
   stopDiscoveryCountdown();
 
   if (state.user?.uid) {
@@ -3235,15 +2989,6 @@ export function attachHomeEvents(
           }
         );
       }
-    );
-
-  document
-    .getElementById(
-      "youtubeLiveSearchBtn"
-    )
-    ?.addEventListener(
-      "click",
-      openYouTubeLiveSearch
     );
 
   document
