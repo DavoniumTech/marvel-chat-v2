@@ -1,5 +1,3 @@
-// 2. js/features /home.js
-
 import {
   state,
   escapeHtml,
@@ -27,169 +25,99 @@ import {
   Timestamp
 } from "../firebase/firestore.js";
 
-import {
-  showModal,
-  closeModal
-} from "../components/modal.js";
+import { toast } from "../components/toast.js";
 
-import {
-  toast
-} from "../components/toast.js";
-
-const DISCOVERY_STORAGE_KEY =
-  "marvel_discovery_seen_v2";
-
-const DISCOVERY_LAST_ACTIVE_KEY =
-  "marvel_home_last_active_v1";
-
-const DISCOVERY_MIN_INTERVAL_MS =
-  24 * 60 * 60 * 1000;
-
-const DISCOVERY_WINDOW_MS =
-  7 * 24 * 60 * 60 * 1000;
-
-const DISCOVERY_MAX_IMPRESSIONS =
-  3;
-
-const DISCOVERY_DURATION_SECONDS =
-  40;
-
-let discoveryTimer =
-  null;
-
-let discoveryStartedAt =
-  0;
-
-let savedPostIds =
-  new Set();
-
-let savedPostsLoadedForUid =
-  null;
-
-let savedPostsLoadPromise =
-  null;
-
-let savedPostsLoadingUid =
-  null;
-
-const pendingLikeIds =
-  new Set();
-
-const pendingSaveIds =
-  new Set();
-
-let homeDocumentClickHandler =
-  null;
+const DISCOVERY_STORAGE_KEY = "marvel_discovery_seen_v2";
+const DISCOVERY_LAST_ACTIVE_KEY = "marvel_home_last_active_v1";
+const DISCOVERY_MIN_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const DISCOVERY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const DISCOVERY_MAX_IMPRESSIONS = 3;
+const DISCOVERY_DURATION_SECONDS = 40;
 
 const POST_EXPIRY_OPTIONS = [
-  {
-    value: "12h",
-    label: "12 hours",
-    milliseconds:
-      12 * 60 * 60 * 1000
-  },
-  {
-    value: "1d",
-    label: "1 day",
-    milliseconds:
-      24 * 60 * 60 * 1000
-  },
-  {
-    value: "7d",
-    label: "1 week",
-    milliseconds:
-      7 * 24 * 60 * 60 * 1000
-  },
-  {
-    value: "30d",
-    label: "30 days",
-    milliseconds:
-      30 * 24 * 60 * 60 * 1000
-  }
+  { value: "12h", label: "12 hours", milliseconds: 12 * 60 * 60 * 1000 },
+  { value: "1d", label: "1 day", milliseconds: 24 * 60 * 60 * 1000 },
+  { value: "7d", label: "1 week", milliseconds: 7 * 24 * 60 * 60 * 1000 },
+  { value: "30d", label: "30 days", milliseconds: 30 * 24 * 60 * 60 * 1000 }
 ];
 
-function cssEscape(value) {
-  if (
-    typeof CSS !== "undefined" &&
-    typeof CSS.escape === "function"
-  ) {
-    return CSS.escape(
-      String(value)
-    );
-  }
+let discoveryTimer = null;
+let discoveryStartedAt = 0;
+let savedPostIds = new Set();
+let savedPostsLoadedForUid = null;
+let savedPostsLoadPromise = null;
+let homeSearchTerm = "";
+let homeClickHandler = null;
+let homeNavigationHandler = null;
+let homeModalEscapeHandler = null;
 
-  return String(value).replace(
-    /[^a-zA-Z0-9_-]/g,
-    "\\$&"
-  );
+const pendingLikeIds = new Set();
+const pendingSaveIds = new Set();
+
+function uid() {
+  return state.user?.uid || null;
 }
 
-function getCurrentUserName() {
+function postId(id) {
+  return String(id ?? "");
+}
+
+function getPosts() {
+  return Array.isArray(state.posts) ? state.posts : [];
+}
+
+function getPost(id) {
+  return getPosts().find(
+    p => postId(p.id) === postId(id)
+  ) || null;
+}
+
+function getPostText(post) {
+  return post?.text || post?.content || "";
+}
+
+function getPostAuthor(post) {
   return (
-    state.profile?.displayName ||
-    state.profile?.username ||
-    "User"
+    post?.displayName ||
+    post?.authorName ||
+    post?.username ||
+    "Marvel User"
   );
 }
 
-function getPostExpiryDate(value) {
-  const option =
-    POST_EXPIRY_OPTIONS.find(
-      item =>
-        item.value === value
-    );
-
-  if (!option) {
-    return null;
-  }
-
-  return new Date(
-    Date.now() +
-      option.milliseconds
+function getPostDate(post) {
+  return (
+    post?.createdAt ||
+    post?.timestamp ||
+    post?.updatedAt ||
+    null
   );
 }
 
-function timestampToDate(value) {
-  if (!value) {
-    return null;
-  }
+function toDate(value) {
+  if (!value) return null;
 
   if (value instanceof Date) {
     return value;
   }
 
-  if (
-    typeof value?.toDate ===
-    "function"
-  ) {
+  if (typeof value?.toDate === "function") {
     return value.toDate();
   }
 
-  if (
-    typeof value ===
-    "number"
-  ) {
+  if (typeof value === "number") {
     return new Date(value);
   }
 
-  if (
-    typeof value ===
-    "string"
-  ) {
-    const parsed =
-      new Date(value);
+  if (typeof value === "string") {
+    const d = new Date(value);
 
-    return Number.isNaN(
-      parsed.getTime()
-    )
+    return Number.isNaN(d.getTime())
       ? null
-      : parsed;
+      : d;
   }
 
-  if (
-    typeof value?.seconds ===
-    "number"
-  ) {
+  if (typeof value?.seconds === "number") {
     return new Date(
       value.seconds * 1000
     );
@@ -199,42 +127,25 @@ function timestampToDate(value) {
 }
 
 function isPostExpired(post) {
-  if (!post?.expiresAt) {
-    return false;
-  }
-
-  const expiry =
-    timestampToDate(
-      post.expiresAt
-    );
-
-  if (!expiry) {
-    return false;
-  }
-
-  return (
-    expiry.getTime() <=
-    Date.now()
+  const d = toDate(
+    post?.expiresAt
   );
+
+  return !!d &&
+    d.getTime() <= Date.now();
 }
 
-function formatExpiryLabel(post) {
-  if (!post?.expiresAt) {
-    return "";
-  }
+function expiryLabel(post) {
+  const d = toDate(
+    post?.expiresAt
+  );
 
-  const expiry =
-    timestampToDate(
-      post.expiresAt
-    );
-
-  if (!expiry) {
+  if (!d) {
     return "";
   }
 
   const remaining =
-    expiry.getTime() -
-    Date.now();
+    d.getTime() - Date.now();
 
   if (remaining <= 0) {
     return "Expired";
@@ -255,19 +166,42 @@ function formatExpiryLabel(post) {
       hours / 24
     );
 
-  if (days > 0) {
+  if (days) {
     return `${days}d remaining`;
   }
 
-  if (hours > 0) {
+  if (hours) {
     return `${hours}h remaining`;
   }
 
-  if (minutes > 0) {
+  if (minutes) {
     return `${minutes}m remaining`;
   }
 
   return "Ending soon";
+}
+
+function currentUserName() {
+  return (
+    state.profile?.displayName ||
+    state.profile?.username ||
+    "User"
+  );
+}
+
+function getExpiryDate(value) {
+  const option =
+    POST_EXPIRY_OPTIONS.find(
+      item =>
+        item.value === value
+    );
+
+  return option
+    ? new Date(
+        Date.now() +
+        option.milliseconds
+      )
+    : null;
 }
 
 function markHomeActivity() {
@@ -276,24 +210,17 @@ function markHomeActivity() {
       DISCOVERY_LAST_ACTIVE_KEY,
       String(Date.now())
     );
-  } catch {
-    /* ignore storage failures */
-  }
+  } catch {}
 }
 
-function getDiscoveryHistory() {
+function discoveryHistory() {
   try {
-    const raw =
-      localStorage.getItem(
-        DISCOVERY_STORAGE_KEY
-      );
-
-    if (!raw) {
-      return [];
-    }
-
     const parsed =
-      JSON.parse(raw);
+      JSON.parse(
+        localStorage.getItem(
+          DISCOVERY_STORAGE_KEY
+        ) || "[]"
+      );
 
     if (!Array.isArray(parsed)) {
       return [];
@@ -304,7 +231,7 @@ function getDiscoveryHistory() {
       DISCOVERY_WINDOW_MS;
 
     return parsed
-      .map(value => Number(value))
+      .map(Number)
       .filter(
         value =>
           Number.isFinite(value) &&
@@ -318,9 +245,7 @@ function getDiscoveryHistory() {
   }
 }
 
-function saveDiscoveryHistory(
-  history
-) {
+function saveDiscoveryHistory(history) {
   try {
     localStorage.setItem(
       DISCOVERY_STORAGE_KEY,
@@ -330,39 +255,12 @@ function saveDiscoveryHistory(
         )
       )
     );
-  } catch {
-    /* ignore storage failures */
-  }
-}
-
-function recordDiscoveryImpression() {
-  const now =
-    Date.now();
-
-  const history =
-    getDiscoveryHistory();
-
-  if (
-    history.length &&
-    now -
-      history[
-        history.length - 1
-      ] <
-      DISCOVERY_MIN_INTERVAL_MS
-  ) {
-    return;
-  }
-
-  history.push(now);
-
-  saveDiscoveryHistory(
-    history
-  );
+  } catch {}
 }
 
 function shouldShowDiscovery() {
   const history =
-    getDiscoveryHistory();
+    discoveryHistory();
 
   if (!history.length) {
     return true;
@@ -384,6 +282,31 @@ function shouldShowDiscovery() {
   );
 }
 
+function recordDiscoveryImpression() {
+  const now =
+    Date.now();
+
+  const history =
+    discoveryHistory();
+
+  if (
+    history.length &&
+    now -
+      history[
+        history.length - 1
+      ] <
+      DISCOVERY_MIN_INTERVAL_MS
+  ) {
+    return;
+  }
+
+  history.push(now);
+
+  saveDiscoveryHistory(
+    history
+  );
+}
+
 export function isDiscoveryDismissed() {
   return !shouldShowDiscovery();
 }
@@ -391,7 +314,6 @@ export function isDiscoveryDismissed() {
 export function dismissDiscovery() {
   markHomeActivity();
   recordDiscoveryImpression();
-
   stopDiscoveryCountdown();
 
   document
@@ -401,47 +323,15 @@ export function dismissDiscovery() {
     ?.remove();
 }
 
-function openDiscoveryDestination(
-  destination,
-  renderApp
-) {
-  dismissDiscovery();
-
-  if (
-    destination ===
-    "market"
-  ) {
-    state.marketBrowseMode =
-      false;
-
-    state.page =
-      "market";
-
-    renderApp();
-
-    return;
-  }
-
-  if (
-    destination ===
-    "timetrust"
-  ) {
-    state.page =
-      "timetrust";
-
-    renderApp();
-  }
-}
-
 function stopDiscoveryCountdown() {
   if (discoveryTimer) {
     clearInterval(
       discoveryTimer
     );
-
-    discoveryTimer =
-      null;
   }
+
+  discoveryTimer =
+    null;
 }
 
 function startDiscoveryCountdown() {
@@ -466,7 +356,6 @@ function startDiscoveryCountdown() {
     !counter
   ) {
     stopDiscoveryCountdown();
-
     return;
   }
 
@@ -481,43 +370,34 @@ function startDiscoveryCountdown() {
     DISCOVERY_DURATION_SECONDS *
     1000;
 
-  const update = () => {
+  const tick = () => {
     if (
       !document.getElementById(
         "discoveryBanner"
       )
     ) {
       stopDiscoveryCountdown();
-
       return;
     }
 
-    const elapsed =
-      Date.now() -
-      discoveryStartedAt;
-
-    const remainingMilliseconds =
+    const remaining =
       Math.max(
         0,
-        duration - elapsed
+        duration -
+          (
+            Date.now() -
+            discoveryStartedAt
+          )
       );
-
-    const remainingSeconds =
-      Math.ceil(
-        remainingMilliseconds /
-          1000
-      );
-
-    const progress =
-      remainingMilliseconds /
-      duration;
 
     const percentage =
       Math.max(
         0,
         Math.min(
           100,
-          progress * 100
+          remaining /
+            duration *
+            100
         )
       );
 
@@ -526,26 +406,57 @@ function startDiscoveryCountdown() {
 
     counter.textContent =
       String(
-        remainingSeconds
+        Math.ceil(
+          remaining /
+          1000
+        )
       );
 
-    if (
-      remainingMilliseconds <=
-      0
-    ) {
+    if (remaining <= 0) {
       stopDiscoveryCountdown();
-
       dismissDiscovery();
     }
   };
 
-  update();
+  tick();
 
   discoveryTimer =
     setInterval(
-      update,
+      tick,
       250
     );
+}
+
+function openDiscoveryDestination(
+  destination,
+  renderApp
+) {
+  dismissDiscovery();
+
+  if (
+    destination ===
+    "market"
+  ) {
+    state.marketBrowseMode =
+      false;
+
+    state.page =
+      "market";
+
+    renderApp?.();
+
+    return;
+  }
+
+  if (
+    destination ===
+    "timetrust"
+  ) {
+    state.page =
+      "timetrust";
+
+    renderApp?.();
+  }
 }
 
 function renderDiscoveryBanner() {
@@ -557,42 +468,22 @@ function renderDiscoveryBanner() {
       style="
         position:relative;
         overflow:hidden;
-        margin:0 0 22px;
-        padding:30px 26px 28px;
-        min-height:300px;
-        border-radius:24px;
-        display:flex;
-        flex-direction:column;
-        justify-content:center;
+        margin:0 0 18px;
+        padding:24px 20px;
+        border-radius:22px;
         box-shadow:var(--shadow);
       "
     >
-      <div
-        style="
-          position:absolute;
-          inset:0;
-          pointer-events:none;
-          opacity:.08;
-          background:
-            radial-gradient(circle at 15% 20%, currentColor 0, transparent 35%),
-            radial-gradient(circle at 85% 80%, currentColor 0, transparent 40%);
-        "
-      ></div>
-
       <button
         type="button"
         class="icon-btn"
         id="discoveryClose"
         aria-label="Close discovery"
-        title="Close"
         style="
           position:absolute;
-          top:14px;
-          right:14px;
-          width:42px;
-          height:42px;
+          top:12px;
+          right:12px;
           z-index:2;
-          font-size:20px;
         "
       >
         ✕
@@ -600,12 +491,10 @@ function renderDiscoveryBanner() {
 
       <div
         style="
-          position:relative;
-          z-index:1;
           display:flex;
           align-items:center;
           justify-content:space-between;
-          gap:24px;
+          gap:18px;
           flex-wrap:wrap;
         "
       >
@@ -621,7 +510,7 @@ function renderDiscoveryBanner() {
               font-weight:800;
               letter-spacing:.08em;
               text-transform:uppercase;
-              margin-bottom:8px;
+              margin-bottom:6px;
             "
           >
             MARVEL CHAT DISCOVERY
@@ -629,8 +518,8 @@ function renderDiscoveryBanner() {
 
           <h2
             style="
-              margin:0 0 10px;
-              font-size:clamp(28px, 6vw, 42px);
+              margin:0 0 8px;
+              font-size:clamp(25px,6vw,38px);
               line-height:1.05;
             "
           >
@@ -640,22 +529,21 @@ function renderDiscoveryBanner() {
           <p
             style="
               margin:0;
+              line-height:1.55;
               max-width:560px;
-              line-height:1.65;
-              opacity:.86;
-              font-size:15px;
             "
           >
-            Discover people, conversations, skills, TimeTrust
-            and the Market — all from one Marvel Chat universe.
+            Discover people, conversations, skills,
+            TimeTrust and the Market — all from one
+            Marvel Chat universe.
           </p>
 
           <div
             style="
               display:flex;
-              gap:10px;
+              gap:8px;
               flex-wrap:wrap;
-              margin-top:20px;
+              margin-top:15px;
             "
           >
             <button
@@ -678,21 +566,21 @@ function renderDiscoveryBanner() {
 
         <div
           style="
-            width:92px;
-            height:92px;
+            width:76px;
+            height:76px;
             border-radius:50%;
             display:grid;
             place-items:center;
-            flex:0 0 auto;
             color:var(--primary);
-            background:rgba(255,255,255,.04);
+            background:rgba(124,58,237,.08);
+            flex:0 0 auto;
           "
         >
           <div
             id="discoveryRing"
             style="
-              width:74px;
-              height:74px;
+              width:62px;
+              height:62px;
               border-radius:50%;
               display:grid;
               place-items:center;
@@ -701,13 +589,14 @@ function renderDiscoveryBanner() {
                   currentColor 100%,
                   rgba(255,255,255,.10) 100%
                 );
-              position:relative;
             "
           >
             <div
               style="
-                position:absolute;
                 inset:5px;
+                position:relative;
+                width:52px;
+                height:52px;
                 border-radius:50%;
                 background:var(--card);
                 display:grid;
@@ -718,7 +607,6 @@ function renderDiscoveryBanner() {
                 id="discoveryCountdown"
                 style="
                   font-weight:900;
-                  font-size:18px;
                 "
               >
                 ${DISCOVERY_DURATION_SECONDS}
@@ -731,255 +619,112 @@ function renderDiscoveryBanner() {
   `;
 }
 
-function getPosts() {
-  return Array.isArray(state.posts)
-    ? state.posts
-    : [];
-}
-
-function getPostById(id) {
-  return getPosts().find(
-    post =>
-      String(post.id) ===
-      String(id)
-  );
-}
-
-function getPostAuthorName(post) {
+function isLiked(post) {
   return (
-    post?.displayName ||
-    post?.authorName ||
-    post?.username ||
-    "Marvel User"
+    !!uid() &&
+    Array.isArray(
+      post?.likedBy
+    ) &&
+    post.likedBy
+      .map(String)
+      .includes(
+        String(uid())
+      )
   );
 }
 
-function getPostAuthorInitials(post) {
-  return initials(
-    getPostAuthorName(post)
+function isSaved(post) {
+  return savedPostIds.has(
+    postId(post?.id)
   );
 }
 
-function getPostText(post) {
-  return (
-    post?.text ||
-    post?.content ||
-    ""
-  );
-}
-
-function getPostDate(post) {
-  return (
-    post?.createdAt ||
-    post?.timestamp ||
-    post?.updatedAt ||
-    null
-  );
-}
-
-function getPostLikes(post) {
-  const value =
+function postLikes(post) {
+  const n =
     Number(post?.likes);
 
-  return Number.isFinite(value)
-    ? value
+  return Number.isFinite(n)
+    ? n
     : 0;
 }
 
-function getPostComments(post) {
-  const value =
+function postComments(post) {
+  const n =
     Number(post?.comments);
 
-  return Number.isFinite(value)
-    ? value
+  return Number.isFinite(n)
+    ? n
     : 0;
 }
 
-function getLikedBy(post) {
-  return Array.isArray(
-    post?.likedBy
-  )
-    ? post.likedBy
-    : [];
-}
-
-function isPostLiked(post) {
-  if (!state.user?.uid) {
-    return false;
+function cssEscape(value) {
+  if (
+    typeof CSS !==
+      "undefined" &&
+    typeof CSS.escape ===
+      "function"
+  ) {
+    return CSS.escape(
+      String(value)
+    );
   }
 
-  return getLikedBy(post).includes(
-    state.user.uid
-  );
-}
-
-function isPostSaved(post) {
-  return savedPostIds.has(
-    String(post?.id)
-  );
-}
-
-function updateLocalPost(id, updater) {
-  if (!Array.isArray(state.posts)) {
-    return;
-  }
-
-  state.posts =
-    state.posts.map(post => {
-      if (
-        String(post.id) !==
-        String(id)
-      ) {
-        return post;
-      }
-
-      return updater(post);
-    });
+  return String(value)
+    .replace(
+      /[^a-zA-Z0-9_-]/g,
+      "\\$&"
+    );
 }
 
 function refreshPostCard(id) {
   const card =
     document.querySelector(
-      `[data-post-card="${cssEscape(id)}"]`
+      `#homePage [data-post-card="${cssEscape(
+        postId(id)
+      )}"]`
     );
 
-  if (!card) {
-    return;
-  }
-
   const post =
-    getPostById(id);
+    getPost(id);
 
-  if (!post) {
-    card.remove();
-
+  if (
+    !card ||
+    !post ||
+    isPostExpired(post)
+  ) {
+    card?.remove();
     return;
   }
 
-  const replacement =
+  const holder =
     document.createElement(
       "div"
     );
 
-  replacement.innerHTML =
+  holder.innerHTML =
     renderPostCard(post);
 
-  const newCard =
-    replacement.firstElementChild;
-
-  if (!newCard) {
-    return;
-  }
-
   card.replaceWith(
-    newCard
+    holder.firstElementChild
   );
-}
-
-async function loadSavedPostIds() {
-  const uid =
-    state.user?.uid;
-
-  if (!uid) {
-    savedPostIds =
-      new Set();
-
-    savedPostsLoadedForUid =
-      null;
-
-    return;
-  }
-
-  if (
-    savedPostsLoadedForUid ===
-    uid
-  ) {
-    return;
-  }
-
-  if (
-    savedPostsLoadingUid ===
-      uid &&
-    savedPostsLoadPromise
-  ) {
-    return savedPostsLoadPromise;
-  }
-
-  savedPostsLoadingUid =
-    uid;
-
-  savedPostsLoadPromise =
-    (async () => {
-      try {
-        const snapshot =
-          await getDocs(
-            collection(
-              db,
-              "users",
-              uid,
-              "savedPosts"
-            )
-          );
-
-        const ids =
-          new Set();
-
-        snapshot.forEach(
-          item => {
-            ids.add(
-              String(item.id)
-            );
-          }
-        );
-
-        savedPostIds =
-          ids;
-
-        savedPostsLoadedForUid =
-          uid;
-      } finally {
-        savedPostsLoadingUid =
-          null;
-
-        savedPostsLoadPromise =
-          null;
-      }
-    })();
-
-  return savedPostsLoadPromise;
 }
 
 function renderPostCard(post) {
   const id =
-    String(post.id);
+    postId(post.id);
 
   const owner =
-    state.user?.uid &&
     String(post.uid) ===
-      String(state.user.uid);
+    String(uid());
 
   const liked =
-    isPostLiked(post);
+    isLiked(post);
 
   const saved =
-    isPostSaved(post);
+    isSaved(post);
 
-  const likes =
-    getPostLikes(post);
-
-  const comments =
-    getPostComments(post);
-
-  const expiryLabel =
-    formatExpiryLabel(post);
-
-  const created =
+  const date =
     getPostDate(post);
-
-  const dateLabel =
-    created
-      ? formatDate(created)
-      : "";
 
   const text =
     escapeHtml(
@@ -989,36 +734,42 @@ function renderPostCard(post) {
       "<br>"
     );
 
-  const authorName =
+  const name =
     escapeHtml(
-      getPostAuthorName(post)
+      getPostAuthor(post)
     );
 
-  const authorInitials =
+  const initialsText =
     escapeHtml(
-      getPostAuthorInitials(post)
+      initials(
+        getPostAuthor(post)
+      )
     );
+
+  const expiry =
+    expiryLabel(post);
 
   return `
     <article
       class="card post-card"
       data-post-card="${escapeHtml(id)}"
-      style="margin-bottom:16px;"
+      style="
+        margin-bottom:12px;
+      "
     >
       <div
-        class="post-header"
         style="
           display:flex;
           align-items:flex-start;
           justify-content:space-between;
-          gap:12px;
+          gap:10px;
         "
       >
         <div
           style="
             display:flex;
             align-items:center;
-            gap:12px;
+            gap:10px;
             min-width:0;
           "
         >
@@ -1026,7 +777,7 @@ function renderPostCard(post) {
             class="avatar"
             aria-hidden="true"
           >
-            ${authorInitials}
+            ${initialsText}
           </div>
 
           <div
@@ -1039,16 +790,22 @@ function renderPostCard(post) {
                 display:block;
                 overflow:hidden;
                 text-overflow:ellipsis;
+                white-space:nowrap;
               "
             >
-              ${authorName}
+              ${name}
             </strong>
 
             <div class="small">
-              ${escapeHtml(dateLabel)}
+              ${escapeHtml(
+                date
+                  ? formatDate(date)
+                  : ""
+              )}
+
               ${
-                expiryLabel
-                  ? ` · ${escapeHtml(expiryLabel)}`
+                expiry
+                  ? ` · ${escapeHtml(expiry)}`
                   : ""
               }
             </div>
@@ -1057,14 +814,16 @@ function renderPostCard(post) {
 
         <div
           class="dropdown-container"
-          style="position:relative;"
+          style="
+            position:relative;
+          "
         >
           <button
             type="button"
             class="icon-btn"
-            data-menu-post="${escapeHtml(id)}"
+            data-home-action="menu"
+            data-id="${escapeHtml(id)}"
             aria-label="Post menu"
-            title="Post menu"
           >
             ⋯
           </button>
@@ -1075,9 +834,9 @@ function renderPostCard(post) {
             style="
               position:absolute;
               right:0;
-              top:46px;
-              z-index:20;
-              min-width:160px;
+              top:42px;
+              z-index:30;
+              min-width:150px;
             "
           >
             ${
@@ -1086,7 +845,8 @@ function renderPostCard(post) {
                   <button
                     type="button"
                     class="dropdown-item"
-                    data-edit-post="${escapeHtml(id)}"
+                    data-home-action="edit"
+                    data-id="${escapeHtml(id)}"
                   >
                     ✏️ Edit
                   </button>
@@ -1094,7 +854,8 @@ function renderPostCard(post) {
                   <button
                     type="button"
                     class="dropdown-item"
-                    data-delete-post="${escapeHtml(id)}"
+                    data-home-action="delete"
+                    data-id="${escapeHtml(id)}"
                   >
                     🗑️ Delete
                   </button>
@@ -1103,7 +864,8 @@ function renderPostCard(post) {
                   <button
                     type="button"
                     class="dropdown-item"
-                    data-share="${escapeHtml(id)}"
+                    data-home-action="share"
+                    data-id="${escapeHtml(id)}"
                   >
                     ↗️ Share
                   </button>
@@ -1116,8 +878,8 @@ function renderPostCard(post) {
       <div
         class="post-content"
         style="
-          margin-top:14px;
-          line-height:1.65;
+          margin-top:12px;
+          line-height:1.6;
           overflow-wrap:anywhere;
         "
       >
@@ -1127,44 +889,100 @@ function renderPostCard(post) {
       <div
         class="post-actions"
         style="
-          display:flex;
-          align-items:center;
-          gap:8px;
-          flex-wrap:wrap;
-          margin-top:16px;
+          display:grid;
+          grid-template-columns:
+            repeat(
+              4,
+              minmax(0,1fr)
+            );
+          gap:6px;
+          margin-top:13px;
+          padding-top:11px;
+          border-top:
+            1px solid
+            var(--border);
         "
       >
         <button
           type="button"
           class="btn secondary"
-          data-like="${escapeHtml(id)}"
-          ${pendingLikeIds.has(id) ? "disabled" : ""}
+          data-home-action="like"
+          data-id="${escapeHtml(id)}"
+          ${
+            pendingLikeIds.has(id)
+              ? "disabled"
+              : ""
+          }
+          style="
+            min-width:0;
+            padding:8px 3px;
+            font-size:12px;
+            white-space:nowrap;
+            overflow:hidden;
+            text-overflow:ellipsis;
+          "
         >
           ${liked ? "❤️" : "🤍"}
-          ${likes}
+          ${postLikes(post)}
         </button>
 
         <button
           type="button"
           class="btn secondary"
-          data-comment="${escapeHtml(id)}"
+          data-home-action="comment"
+          data-id="${escapeHtml(id)}"
+          style="
+            min-width:0;
+            padding:8px 3px;
+            font-size:12px;
+            white-space:nowrap;
+            overflow:hidden;
+            text-overflow:ellipsis;
+          "
         >
-          💬 ${comments}
+          💬
+          ${postComments(post)}
         </button>
 
         <button
           type="button"
           class="btn secondary"
-          data-save="${escapeHtml(id)}"
-          ${pendingSaveIds.has(id) ? "disabled" : ""}
+          data-home-action="save"
+          data-id="${escapeHtml(id)}"
+          ${
+            pendingSaveIds.has(id)
+              ? "disabled"
+              : ""
+          }
+          style="
+            min-width:0;
+            padding:8px 3px;
+            font-size:12px;
+            white-space:nowrap;
+            overflow:hidden;
+            text-overflow:ellipsis;
+          "
         >
-          ${saved ? "🔖 Saved" : "🔖 Save"}
+          ${
+            saved
+              ? "🔖 Saved"
+              : "🔖 Save"
+          }
         </button>
 
         <button
           type="button"
           class="btn secondary"
-          data-share="${escapeHtml(id)}"
+          data-home-action="share"
+          data-id="${escapeHtml(id)}"
+          style="
+            min-width:0;
+            padding:8px 3px;
+            font-size:12px;
+            white-space:nowrap;
+            overflow:hidden;
+            text-overflow:ellipsis;
+          "
         >
           ↗️ Share
         </button>
@@ -1178,7 +996,7 @@ function renderQuickActions() {
     <section
       class="quick-grid"
       style="
-        margin-bottom:22px;
+        margin-bottom:20px;
       "
     >
       <button
@@ -1186,10 +1004,16 @@ function renderQuickActions() {
         class="quick"
         data-quick="post"
       >
-        <span class="quick-icon">✍️</span>
-        <strong>Create Post</strong>
+        <span class="quick-icon">
+          ✍️
+        </span>
+
+        <strong>
+          Create post
+        </strong>
+
         <span class="small">
-          Share something with the community
+          Share something
         </span>
       </button>
 
@@ -1198,110 +1022,132 @@ function renderQuickActions() {
         class="quick"
         data-quick="chat"
       >
-        <span class="quick-icon">💬</span>
-        <strong>Start Chat</strong>
+        <span class="quick-icon">
+          💬
+        </span>
+
+        <strong>
+          Start chat
+        </strong>
+
         <span class="small">
-          Continue your conversations
+          Talk to someone
         </span>
       </button>
 
       <button
         type="button"
         class="quick"
-        data-quick="timetrust"
+        data-quick="skill"
       >
-        <span class="quick-icon">⏱️</span>
-        <strong>Explore TimeTrust</strong>
+        <span class="quick-icon">
+          ⏱️
+        </span>
+
+        <strong>
+          Offer a skill
+        </strong>
+
         <span class="small">
-          Exchange skills and time
+          Trade your time
         </span>
       </button>
 
       <button
         type="button"
         class="quick"
-        data-quick="market"
+        data-quick="sell"
       >
-        <span class="quick-icon">🛍️</span>
-        <strong>Explore Market</strong>
+        <span class="quick-icon">
+          🛍️
+        </span>
+
+        <strong>
+          Sell something
+        </strong>
+
         <span class="small">
-          Browse community listings
+          Open the market
         </span>
       </button>
     </section>
   `;
 }
 
-function renderCommunityHeader() {
+function renderSearchCard() {
   return `
     <section
-      class="card"
+      class="card home-search-card"
       style="
-        margin-bottom:18px;
+        margin-bottom:12px;
+        padding:12px;
+        border:
+          1px solid
+          rgba(124,58,237,.20);
+        background:
+          linear-gradient(
+            135deg,
+            rgba(124,58,237,.10),
+            rgba(139,92,246,.035)
+          );
       "
     >
       <div
         style="
-          display:flex;
-          align-items:flex-start;
-          justify-content:space-between;
-          gap:16px;
-          flex-wrap:wrap;
-        "
-      >
-        <div>
-          <div
-            class="small"
-            style="
-              font-weight:800;
-              letter-spacing:.06em;
-              text-transform:uppercase;
-            "
-          >
-            Community
-          </div>
-
-          <h2
-            style="
-              margin:5px 0 5px;
-            "
-          >
-            Marvel Community Feed
-          </h2>
-
-          <p
-            class="small"
-            style="
-              margin:0;
-              line-height:1.5;
-            "
-          >
-            Share updates, ideas and moments with the Marvel Chat community.
-          </p>
-        </div>
-
-        <button
-          type="button"
-          class="btn"
-          id="createPostBtn"
-        >
-          ✍️ Create Post
-        </button>
-      </div>
-
-      <div
-        style="
-          margin-top:18px;
+          position:relative;
         "
       >
         <input
           id="communityFeedSearch"
           class="input"
           type="search"
-          placeholder="Search posts..."
+          value="${escapeHtml(homeSearchTerm)}"
+          placeholder="Search posts or people…"
           autocomplete="off"
-        />
+          aria-label="Search community posts"
+          style="
+            width:100%;
+            min-height:45px;
+            padding-right:44px;
+            border-radius:14px;
+            box-sizing:border-box;
+          "
+        >
+
+        <button
+          id="clearCommunitySearch"
+          class="icon-btn"
+          type="button"
+          aria-label="Clear search"
+          title="Clear search"
+          style="
+            display:${
+              homeSearchTerm
+                ? "inline-flex"
+                : "none"
+            };
+            position:absolute;
+            right:6px;
+            top:50%;
+            transform:
+              translateY(-50%);
+            width:34px;
+            height:34px;
+          "
+        >
+          ✕
+        </button>
       </div>
+
+      <div
+        id="communitySearchStatus"
+        class="small"
+        aria-live="polite"
+        style="
+          margin:6px 2px 0;
+          min-height:15px;
+        "
+      ></div>
     </section>
   `;
 }
@@ -1309,9 +1155,19 @@ function renderCommunityHeader() {
 function renderYouTubeLiveCard() {
   return `
     <section
-      class="card"
+      class="card home-youtube-card"
       style="
-        margin-bottom:18px;
+        margin-bottom:16px;
+        padding:13px 15px;
+        border:
+          1px solid
+          rgba(168,85,247,.20);
+        background:
+          linear-gradient(
+            135deg,
+            rgba(168,85,247,.10),
+            rgba(244,63,94,.055)
+          );
       "
     >
       <div
@@ -1319,17 +1175,32 @@ function renderYouTubeLiveCard() {
           display:flex;
           align-items:center;
           justify-content:space-between;
-          gap:14px;
-          flex-wrap:wrap;
+          gap:12px;
         "
       >
-        <div>
-          <strong>
+        <div
+          style="
+            min-width:0;
+          "
+        >
+          <strong
+            style="
+              display:block;
+              font-size:16px;
+            "
+          >
             🔴 YouTube Live
           </strong>
 
-          <div class="small">
-            Find live Marvel-related streams and community content.
+          <div
+            class="small"
+            style="
+              margin-top:3px;
+              line-height:1.4;
+            "
+          >
+            Find live Marvel-related streams
+            and community content.
           </div>
         </div>
 
@@ -1337,6 +1208,13 @@ function renderYouTubeLiveCard() {
           type="button"
           class="btn secondary"
           id="youtubeLiveSearchBtn"
+          style="
+            flex:0 0 auto;
+            min-height:40px;
+            padding:8px 11px;
+            border-radius:12px;
+            font-size:12px;
+          "
         >
           Find Live Streams
         </button>
@@ -1360,13 +1238,12 @@ function renderPosts() {
         id="emptyCommunityFeed"
         style="
           text-align:center;
-          padding:36px 20px;
+          padding:32px 18px;
         "
       >
         <div
           style="
-            font-size:42px;
-            margin-bottom:12px;
+            font-size:40px;
           "
         >
           🌌
@@ -1374,7 +1251,7 @@ function renderPosts() {
 
         <h3
           style="
-            margin:0 0 8px;
+            margin:8px 0;
           "
         >
           Your community feed is quiet
@@ -1384,11 +1261,11 @@ function renderPosts() {
           class="small"
           style="
             max-width:520px;
-            margin:0 auto 18px;
-            line-height:1.6;
+            margin:0 auto 16px;
           "
         >
-          Be the first to share something with the Marvel Chat universe.
+          Be the first to share something
+          with the Marvel Chat universe.
         </p>
 
         <button
@@ -1403,117 +1280,347 @@ function renderPosts() {
   }
 
   return `
-    <section
-      id="communityPosts"
-    >
-      ${posts
-        .map(
-          post =>
-            renderPostCard(post)
-        )
-        .join("")}
+    <section id="communityPosts">
+      ${
+        posts
+          .map(renderPostCard)
+          .join("")
+      }
     </section>
   `;
 }
 
 export function renderHome() {
   stopDiscoveryCountdown();
+  closeHomeModal();
 
-  const discovery =
-    shouldShowDiscovery()
-      ? renderDiscoveryBanner()
-      : "";
+  const me =
+    state.profile?.displayName ||
+    state.profile?.username ||
+    "there";
 
   return `
-    <main
-      class="page"
+    <div
+      class="page home-page"
       id="homePage"
+      style="
+        padding-bottom:90px;
+      "
     >
+      <style>
+        #homePage .home-hero{
+          position:relative;
+          overflow:hidden;
+          margin-bottom:18px;
+          padding:25px 21px;
+          border-radius:24px;
+          color:#fff;
+          background:
+            radial-gradient(
+              circle at 88% 15%,
+              rgba(255,255,255,.18),
+              transparent 34%
+            ),
+            radial-gradient(
+              circle at 12% 88%,
+              rgba(255,255,255,.12),
+              transparent 36%
+            ),
+            linear-gradient(
+              135deg,
+              #4c1d95,
+              #7c3aed 55%,
+              #8b5cf6
+            );
+          box-shadow:
+            0 18px 44px
+            rgba(91,33,182,.22);
+        }
+
+        #homePage .home-hero h1{
+          position:relative;
+          z-index:1;
+          margin:0 0 8px;
+          font-size:
+            clamp(
+              28px,
+              7vw,
+              42px
+            );
+          line-height:1.05;
+        }
+
+        #homePage .home-hero p{
+          position:relative;
+          z-index:1;
+          max-width:650px;
+          margin:0;
+          line-height:1.55;
+          font-size:15px;
+          opacity:.93;
+        }
+
+        #homePage .home-section-head{
+          display:flex;
+          align-items:flex-end;
+          justify-content:space-between;
+          gap:10px;
+          margin:2px 0 10px;
+        }
+
+        #homePage .home-section-head h2{
+          margin:0;
+          font-size:
+            clamp(
+              22px,
+              5vw,
+              30px
+            );
+        }
+
+        #homePage .home-section-head .small{
+          margin-top:3px;
+        }
+
+        #homePage .post-actions button{
+          touch-action:manipulation;
+        }
+
+        #homePage .post-actions button:disabled{
+          opacity:.6;
+        }
+
+        @media(max-width:520px){
+          #homePage .home-hero{
+            padding:21px 17px;
+            border-radius:20px;
+          }
+
+          #homePage .home-youtube-card>div{
+            align-items:flex-start!important;
+          }
+
+          #homePage .home-youtube-card button{
+            font-size:11px!important;
+            padding:8px 9px!important;
+          }
+
+          #homePage .post-actions{
+            gap:5px!important;
+          }
+
+          #homePage .post-actions button{
+            font-size:10.5px!important;
+            padding-left:2px!important;
+            padding-right:2px!important;
+          }
+        }
+      </style>
+
+      <section
+        class="home-hero"
+        aria-label="Marvel Chat welcome"
+      >
+        <h1>
+          Hey ${escapeHtml(me)} 👋
+        </h1>
+
+        <p>
+          Welcome to your futuristic community.
+          Connect, chat, trade skills and discover
+          what people around you are building.
+        </p>
+      </section>
+
       ${
-        discovery
-          ? discovery
+        shouldShowDiscovery()
+          ? renderDiscoveryBanner()
           : ""
       }
 
       ${renderQuickActions()}
 
-      ${renderCommunityHeader()}
+      <div
+        class="home-section-head"
+      >
+        <div>
+          <h2>
+            Community feed
+          </h2>
+
+          <div class="small">
+            Discover conversations,
+            ideas and opportunities.
+          </div>
+        </div>
+
+        <button
+          class="btn btn-primary"
+          id="createPostBtn"
+          type="button"
+        >
+          + Post
+        </button>
+      </div>
+
+      ${renderSearchCard()}
 
       ${renderYouTubeLiveCard()}
 
       ${renderPosts()}
-    </main>
+    </div>
   `;
 }
 
-export async function toggleLike(id) {
-  if (!state.user?.uid) {
-    toast(
-      "Please sign in first."
-    );
+async function loadSavedPostIds() {
+  const currentUid =
+    uid();
+
+  if (!currentUid) {
+    savedPostIds =
+      new Set();
+
+    savedPostsLoadedForUid =
+      null;
 
     return;
+  }
+
+  if (
+    savedPostsLoadedForUid ===
+    currentUid
+  ) {
+    return;
+  }
+
+  if (
+    savedPostsLoadPromise
+  ) {
+    return savedPostsLoadPromise;
+  }
+
+  savedPostsLoadPromise =
+    (async () => {
+      try {
+        const snapshot =
+          await getDocs(
+            collection(
+              db,
+              "users",
+              currentUid,
+              "savedPosts"
+            )
+          );
+
+        savedPostIds =
+          new Set(
+            snapshot.docs.map(
+              item =>
+                String(item.id)
+            )
+          );
+
+        savedPostsLoadedForUid =
+          currentUid;
+      } catch (error) {
+        console.warn(
+          "Could not load saved posts:",
+          error
+        );
+      } finally {
+        savedPostsLoadPromise =
+          null;
+      }
+    })();
+
+  return savedPostsLoadPromise;
+}
+
+export async function toggleLike(
+  id
+) {
+  if (!uid()) {
+    return toast(
+      "Please sign in first."
+    );
   }
 
   const post =
-    getPostById(id);
+    getPost(id);
 
   if (!post) {
-    toast(
+    return toast(
       "Post is no longer available."
     );
-
-    return;
   }
 
-  const postId =
-    String(id);
+  const idString =
+    postId(id);
 
   if (
-    pendingLikeIds.has(postId)
+    pendingLikeIds.has(
+      idString
+    )
   ) {
     return;
   }
 
   pendingLikeIds.add(
-    postId
+    idString
   );
 
   const liked =
-    isPostLiked(post);
+    isLiked(post);
 
-  const nextLikes =
-    Math.max(
-      0,
-      getPostLikes(post) +
-        (liked ? -1 : 1)
-    );
+  const previousLikes =
+    postLikes(post);
+
+  const previousLikedBy =
+    Array.isArray(
+      post.likedBy
+    )
+      ? [
+          ...post.likedBy
+        ]
+      : [];
 
   const nextLikedBy =
     liked
-      ? getLikedBy(post).filter(
-          uid =>
-            String(uid) !==
-            String(state.user.uid)
+      ? previousLikedBy.filter(
+          value =>
+            String(value) !==
+            String(uid())
         )
       : [
-          ...getLikedBy(post),
-          state.user.uid
+          ...previousLikedBy,
+          uid()
         ];
 
-  updateLocalPost(
-    postId,
-    current => ({
-      ...current,
-      likes:
-        nextLikes,
-      likedBy:
-        nextLikedBy
-    })
-  );
+  state.posts =
+    getPosts().map(
+      item =>
+        postId(item.id) ===
+        idString
+          ? {
+              ...item,
+              likes:
+                Math.max(
+                  0,
+                  previousLikes +
+                    (
+                      liked
+                        ? -1
+                        : 1
+                    )
+                ),
+              likedBy:
+                nextLikedBy
+            }
+          : item
+    );
 
   refreshPostCard(
-    postId
+    idString
   );
 
   try {
@@ -1521,7 +1628,7 @@ export async function toggleLike(id) {
       doc(
         db,
         "posts",
-        postId
+        idString
       ),
       liked
         ? {
@@ -1529,7 +1636,7 @@ export async function toggleLike(id) {
               increment(-1),
             likedBy:
               arrayRemove(
-                state.user.uid
+                uid()
               )
           }
         : {
@@ -1537,58 +1644,30 @@ export async function toggleLike(id) {
               increment(1),
             likedBy:
               arrayUnion(
-                state.user.uid
+                uid()
               )
           }
     );
 
-    if (
-      post.uid &&
-      String(post.uid) !==
-        String(state.user.uid) &&
-      !liked
-    ) {
-      try {
-        await addDoc(
-          collection(
-            db,
-            "users",
-            post.uid,
-            "notifications"
-          ),
-          {
-            type: "like",
-            actorUid: state.user.uid,
-            actorName: getCurrentUserName(),
-            targetId: postId,
-            text: `${getCurrentUserName()} liked your post.`,
-            read: false,
-            createdAt: serverTimestamp()
-          }
-        );
-      } catch (notificationError) {
-        console.warn(
-          "Could not create like notification:",
-          notificationError
-        );
-      }
-    }
-
     markHomeActivity();
   } catch (error) {
-    updateLocalPost(
-      postId,
-      current => ({
-        ...current,
-        likes:
-          getPostLikes(post),
-        likedBy:
-          getLikedBy(post)
-      })
-    );
+    state.posts =
+      getPosts().map(
+        item =>
+          postId(item.id) ===
+          idString
+            ? {
+                ...item,
+                likes:
+                  previousLikes,
+                likedBy:
+                  previousLikedBy
+              }
+            : item
+      );
 
     refreshPostCard(
-      postId
+      idString
     );
 
     toast(
@@ -1596,89 +1675,87 @@ export async function toggleLike(id) {
     );
   } finally {
     pendingLikeIds.delete(
-      postId
+      idString
     );
 
     refreshPostCard(
-      postId
+      idString
     );
   }
 }
 
-export async function savePost(id) {
-  if (!state.user?.uid) {
-    toast(
+export async function savePost(
+  id
+) {
+  if (!uid()) {
+    return toast(
       "Please sign in first."
     );
-
-    return;
   }
 
   const post =
-    getPostById(id);
+    getPost(id);
 
   if (!post) {
-    toast(
+    return toast(
       "Post is no longer available."
     );
-
-    return;
   }
 
-  const postId =
-    String(id);
+  const idString =
+    postId(id);
 
   if (
     pendingSaveIds.has(
-      postId
+      idString
     )
   ) {
     return;
   }
 
   pendingSaveIds.add(
-    postId
+    idString
   );
 
   const wasSaved =
     savedPostIds.has(
-      postId
+      idString
     );
 
   if (wasSaved) {
     savedPostIds.delete(
-      postId
+      idString
     );
   } else {
     savedPostIds.add(
-      postId
+      idString
     );
   }
 
   refreshPostCard(
-    postId
+    idString
   );
 
   try {
-    const savedRef =
+    const ref =
       doc(
         db,
         "users",
-        state.user.uid,
+        uid(),
         "savedPosts",
-        postId
+        idString
       );
 
     if (wasSaved) {
       await deleteDoc(
-        savedRef
+        ref
       );
     } else {
       await setDoc(
-        savedRef,
+        ref,
         {
           postId:
-            postId,
+            idString,
           savedAt:
             serverTimestamp()
         }
@@ -1686,7 +1763,7 @@ export async function savePost(id) {
     }
 
     savedPostsLoadedForUid =
-      state.user.uid;
+      uid();
 
     markHomeActivity();
 
@@ -1698,16 +1775,16 @@ export async function savePost(id) {
   } catch (error) {
     if (wasSaved) {
       savedPostIds.add(
-        postId
+        idString
       );
     } else {
       savedPostIds.delete(
-        postId
+        idString
       );
     }
 
     refreshPostCard(
-      postId
+      idString
     );
 
     toast(
@@ -1715,43 +1792,40 @@ export async function savePost(id) {
     );
   } finally {
     pendingSaveIds.delete(
-      postId
+      idString
     );
 
     refreshPostCard(
-      postId
+      idString
     );
   }
 }
 
-export async function sharePost(id) {
+export async function sharePost(
+  id
+) {
   const post =
-    getPostById(id);
+    getPost(id);
 
   if (!post) {
-    toast(
+    return toast(
       "Post is no longer available."
     );
-
-    return;
   }
 
   const text =
     getPostText(post);
-
-  const shareData = {
-    title:
-      "Marvel Chat post",
-    text:
-      text
-  };
 
   try {
     if (
       navigator.share
     ) {
       await navigator.share(
-        shareData
+        {
+          title:
+            "Marvel Chat post",
+          text
+        }
       );
     } else if (
       navigator.clipboard
@@ -1783,15 +1857,202 @@ export async function sharePost(id) {
   }
 }
 
-function showCreatePost() {
-  const defaultName =
-    getCurrentUserName();
+function closeHomeModal() {
+  if (
+    homeModalEscapeHandler
+  ) {
+    document.removeEventListener(
+      "keydown",
+      homeModalEscapeHandler
+    );
 
-  showModal(`
+    homeModalEscapeHandler =
+      null;
+  }
+
+  document
+    .getElementById(
+      "homeModalHost"
+    )
+    ?.remove();
+}
+
+function showHomeModal(
+  rawHtml
+) {
+  closeHomeModal();
+
+  const homePage =
+    document.getElementById(
+      "homePage"
+    );
+
+  if (!homePage) {
+    return;
+  }
+
+  const host =
+    document.createElement(
+      "div"
+    );
+
+  host.id =
+    "homeModalHost";
+
+  host.innerHTML = `
+    <style>
+      #homeModalHost{
+        position:fixed;
+        inset:0;
+        z-index:99999;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        padding:14px;
+        box-sizing:border-box;
+        background:
+          rgba(20,12,45,.50);
+        backdrop-filter:blur(7px);
+        -webkit-backdrop-filter:blur(7px);
+      }
+
+      #homeModalHost
+      .home-modal-shell{
+        width:min(640px,100%);
+        max-height:90vh;
+        overflow:auto;
+        border:
+          1px solid
+          var(--border);
+        border-radius:22px;
+        background:
+          var(--card,var(--surface));
+        color:var(--text);
+        box-shadow:
+          0 24px 70px
+          rgba(0,0,0,.30);
+      }
+
+      #homeModalHost
+      .modal-content{
+        width:100%;
+        max-width:none!important;
+        box-sizing:border-box;
+      }
+
+      #homeModalHost
+      .modal-header{
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:12px;
+        margin-bottom:12px;
+      }
+
+      #homeModalHost
+      .modal-header h3{
+        margin:0;
+      }
+
+      #homeModalHost
+      .modal-body{
+        padding:0;
+      }
+
+      #homeModalHost
+      .modal-footer{
+        display:flex;
+        justify-content:flex-end;
+        align-items:center;
+        gap:9px;
+        flex-wrap:wrap;
+        margin-top:16px;
+      }
+
+      #homeModalHost
+      textarea,
+      #homeModalHost
+      input,
+      #homeModalHost
+      select{
+        box-sizing:border-box;
+        max-width:100%;
+      }
+
+      @media(max-width:520px){
+        #homeModalHost{
+          align-items:flex-end;
+          padding:8px;
+        }
+
+        #homeModalHost
+        .home-modal-shell{
+          max-height:93vh;
+          border-radius:
+            20px 20px 12px 12px;
+        }
+      }
+    </style>
+
+    <div
+      class="home-modal-shell"
+      role="dialog"
+      aria-modal="true"
+    >
+      ${rawHtml}
+    </div>
+  `;
+
+  homePage.appendChild(
+    host
+  );
+
+  host
+    .querySelectorAll(
+      "[data-modal-close]"
+    )
+    .forEach(
+      button =>
+        button.addEventListener(
+          "click",
+          closeHomeModal
+        )
+    );
+
+  host.addEventListener(
+    "click",
+    event => {
+      if (
+        event.target ===
+        host
+      ) {
+        closeHomeModal();
+      }
+    }
+  );
+
+  homeModalEscapeHandler =
+    event => {
+      if (
+        event.key ===
+        "Escape"
+      ) {
+        closeHomeModal();
+      }
+    };
+
+  document.addEventListener(
+    "keydown",
+    homeModalEscapeHandler
+  );
+}
+
+function showCreatePost() {
+  showHomeModal(`
     <div
       class="modal-content"
       style="
-        max-width:620px;
+        padding:18px;
       "
     >
       <div
@@ -1817,18 +2078,19 @@ function showCreatePost() {
         <div
           class="small"
           style="
-            margin-bottom:10px;
+            margin-bottom:9px;
           "
         >
-          Posting as ${escapeHtml(
-            defaultName
+          Posting as
+          ${escapeHtml(
+            currentUserName()
           )}
         </div>
 
         <textarea
           id="createPostText"
           class="input"
-          rows="7"
+          rows="6"
           maxlength="1000"
           placeholder="What's happening in your Marvel universe?"
         ></textarea>
@@ -1836,11 +2098,11 @@ function showCreatePost() {
         <div
           style="
             display:flex;
+            align-items:flex-end;
             justify-content:space-between;
-            align-items:center;
-            gap:12px;
-            margin-top:12px;
+            gap:10px;
             flex-wrap:wrap;
+            margin-top:10px;
           "
         >
           <label
@@ -1852,26 +2114,30 @@ function showCreatePost() {
               id="createPostExpiry"
               class="input"
               style="
-                margin-top:6px;
+                margin-top:5px;
               "
             >
-              <option value="">
+              <option
+                value=""
+              >
                 No expiry
               </option>
 
-              ${POST_EXPIRY_OPTIONS
-                .map(
-                  option => `
-                    <option
-                      value="${option.value}"
-                    >
-                      ${escapeHtml(
-                        option.label
-                      )}
-                    </option>
-                  `
-                )
-                .join("")}
+              ${
+                POST_EXPIRY_OPTIONS
+                  .map(
+                    option => `
+                      <option
+                        value="${option.value}"
+                      >
+                        ${escapeHtml(
+                          option.label
+                        )}
+                      </option>
+                    `
+                  )
+                  .join("")
+              }
             </select>
           </label>
 
@@ -1896,7 +2162,7 @@ function showCreatePost() {
 
         <button
           type="button"
-          class="btn"
+          class="btn btn-primary"
           id="submitCreatePost"
         >
           Publish
@@ -1905,20 +2171,7 @@ function showCreatePost() {
     </div>
   `);
 
-  document
-    .querySelectorAll(
-      "[data-modal-close]"
-    )
-    .forEach(
-      button => {
-        button.addEventListener(
-          "click",
-          closeModal
-        );
-      }
-    );
-
-  const textInput =
+  const input =
     document.getElementById(
       "createPostText"
     );
@@ -1928,67 +2181,58 @@ function showCreatePost() {
       "createPostExpiry"
     );
 
-  const submitButton =
+  const button =
     document.getElementById(
       "submitCreatePost"
     );
 
-  textInput?.focus();
+  input?.focus();
 
-  submitButton?.addEventListener(
+  button?.addEventListener(
     "click",
     async () => {
-      if (!state.user?.uid) {
-        toast(
+      if (!uid()) {
+        return toast(
           "Please sign in first."
         );
-
-        return;
       }
 
       const text =
         String(
-          textInput?.value ||
-            ""
+          input?.value ||
+          ""
         ).trim();
 
       if (!text) {
-        toast(
+        return toast(
           "Write something before publishing."
         );
-
-        return;
       }
 
       if (
-        text.length > 1000
+        text.length >
+        1000
       ) {
-        toast(
+        return toast(
           "Posts must be 1000 characters or less."
         );
-
-        return;
       }
 
-      submitButton.disabled =
+      button.disabled =
         true;
 
-      submitButton.textContent =
+      button.textContent =
         "Publishing...";
 
       try {
-        const expiryValue =
-          expiryInput?.value ||
-          "";
-
-        const expiryDate =
-          getPostExpiryDate(
-            expiryValue
-          );
+        const username =
+          currentUserName();
 
         const payload = {
           uid:
-            state.user.uid,
+            uid(),
+          username:
+            username,
           text:
             text,
           createdAt:
@@ -2000,6 +2244,12 @@ function showCreatePost() {
           comments:
             0
         };
+
+        const expiryDate =
+          getExpiryDate(
+            expiryInput?.value ||
+            ""
+          );
 
         if (expiryDate) {
           payload.expiresAt =
@@ -2013,68 +2263,105 @@ function showCreatePost() {
                 expiryDate.getTime() -
                 Date.now()
               ) /
-                3600000
+              3600000
             );
         }
 
-        await addDoc(
-          collection(
-            db,
-            "posts"
-          ),
-          payload
-        );
+        const ref =
+          await addDoc(
+            collection(
+              db,
+              "posts"
+            ),
+            payload
+          );
 
+        state.posts = [
+          {
+            id:
+              ref.id,
+            uid:
+              uid(),
+            username:
+              username,
+            text:
+              text,
+            createdAt:
+              new Date(),
+            likes:
+              0,
+            likedBy:
+              [],
+            comments:
+              0,
+
+            ...(expiryDate
+              ? {
+                  expiresAt:
+                    expiryDate,
+
+                  expiryDurationHours:
+                    Math.round(
+                      (
+                        expiryDate.getTime() -
+                        Date.now()
+                      ) /
+                      3600000
+                    )
+                }
+              : {})
+          },
+
+          ...getPosts()
+        ];
+
+        closeHomeModal();
         markHomeActivity();
-
-        closeModal();
 
         toast(
           "Post published ✨"
         );
       } catch (error) {
+        button.disabled =
+          false;
+
+        button.textContent =
+          "Publish";
+
         toast(
           friendly(error)
         );
-
-        submitButton.disabled =
-          false;
-
-        submitButton.textContent =
-          "Publish";
       }
     }
   );
 }
 
-export function showEditPost(id) {
+export function showEditPost(
+  id
+) {
   const post =
-    getPostById(id);
+    getPost(id);
 
   if (!post) {
-    toast(
+    return toast(
       "Post is no longer available."
     );
-
-    return;
   }
 
   if (
     String(post.uid) !==
-    String(state.user?.uid)
+    String(uid())
   ) {
-    toast(
+    return toast(
       "You can only edit your own posts."
     );
-
-    return;
   }
 
-  showModal(`
+  showHomeModal(`
     <div
       class="modal-content"
       style="
-        max-width:620px;
+        padding:18px;
       "
     >
       <div
@@ -2100,7 +2387,7 @@ export function showEditPost(id) {
         <textarea
           id="editPostText"
           class="input"
-          rows="7"
+          rows="6"
           maxlength="1000"
         >${escapeHtml(
           getPostText(post)
@@ -2120,7 +2407,7 @@ export function showEditPost(id) {
 
         <button
           type="button"
-          class="btn"
+          class="btn btn-primary"
           id="submitEditPost"
         >
           Save changes
@@ -2129,62 +2416,46 @@ export function showEditPost(id) {
     </div>
   `);
 
-  document
-    .querySelectorAll(
-      "[data-modal-close]"
-    )
-    .forEach(
-      button => {
-        button.addEventListener(
-          "click",
-          closeModal
-        );
-      }
-    );
-
   const input =
     document.getElementById(
       "editPostText"
     );
 
-  const submit =
+  const button =
     document.getElementById(
       "submitEditPost"
     );
 
   input?.focus();
 
-  submit?.addEventListener(
+  button?.addEventListener(
     "click",
     async () => {
       const text =
         String(
           input?.value ||
-            ""
+          ""
         ).trim();
 
       if (!text) {
-        toast(
+        return toast(
           "Post text cannot be empty."
         );
-
-        return;
       }
 
       if (
-        text.length > 1000
+        text.length >
+        1000
       ) {
-        toast(
+        return toast(
           "Posts must be 1000 characters or less."
         );
-
-        return;
       }
 
-      submit.disabled =
+      button.disabled =
         true;
 
-      submit.textContent =
+      button.textContent =
         "Saving...";
 
       try {
@@ -2192,7 +2463,7 @@ export function showEditPost(id) {
           doc(
             db,
             "posts",
-            String(id)
+            postId(id)
           ),
           {
             text:
@@ -2202,17 +2473,20 @@ export function showEditPost(id) {
           }
         );
 
-        updateLocalPost(
-          id,
-          current => ({
-            ...current,
-            text:
-              text
-          })
-        );
+        state.posts =
+          getPosts().map(
+            item =>
+              postId(item.id) ===
+              postId(id)
+                ? {
+                    ...item,
+                    text:
+                      text
+                  }
+                : item
+          );
 
-        closeModal();
-
+        closeHomeModal();
         markHomeActivity();
 
         refreshPostCard(
@@ -2223,15 +2497,15 @@ export function showEditPost(id) {
           "Post updated."
         );
       } catch (error) {
+        button.disabled =
+          false;
+
+        button.textContent =
+          "Save changes";
+
         toast(
           friendly(error)
         );
-
-        submit.disabled =
-          false;
-
-        submit.textContent =
-          "Save changes";
       }
     }
   );
@@ -2241,32 +2515,28 @@ export function showDeletePostConfirmation(
   id
 ) {
   const post =
-    getPostById(id);
+    getPost(id);
 
   if (!post) {
-    toast(
+    return toast(
       "Post is no longer available."
     );
-
-    return;
   }
 
   if (
     String(post.uid) !==
-    String(state.user?.uid)
+    String(uid())
   ) {
-    toast(
+    return toast(
       "You can only delete your own posts."
     );
-
-    return;
   }
 
-  showModal(`
+  showHomeModal(`
     <div
       class="modal-content"
       style="
-        max-width:500px;
+        padding:18px;
       "
     >
       <div
@@ -2292,9 +2562,11 @@ export function showDeletePostConfirmation(
         <p
           style="
             line-height:1.6;
+            margin:0;
           "
         >
-          This will permanently remove your post from the community feed.
+          This will permanently remove
+          your post from the community feed.
         </p>
       </div>
 
@@ -2311,7 +2583,7 @@ export function showDeletePostConfirmation(
 
         <button
           type="button"
-          class="btn"
+          class="btn btn-primary"
           id="confirmDeletePost"
         >
           Delete
@@ -2319,19 +2591,6 @@ export function showDeletePostConfirmation(
       </div>
     </div>
   `);
-
-  document
-    .querySelectorAll(
-      "[data-modal-close]"
-    )
-    .forEach(
-      button => {
-        button.addEventListener(
-          "click",
-          closeModal
-        );
-      }
-    );
 
   document
     .getElementById(
@@ -2354,24 +2613,25 @@ export function showDeletePostConfirmation(
             doc(
               db,
               "posts",
-              String(id)
+              postId(id)
             )
           );
 
           state.posts =
             getPosts().filter(
               item =>
-                String(item.id) !==
-                String(id)
+                postId(item.id) !==
+                postId(id)
             );
 
-          closeModal();
-
+          closeHomeModal();
           markHomeActivity();
 
           document
             .querySelector(
-              `[data-post-card="${cssEscape(id)}"]`
+              `#homePage [data-post-card="${cssEscape(
+                postId(id)
+              )}"]`
             )
             ?.remove();
 
@@ -2379,15 +2639,15 @@ export function showDeletePostConfirmation(
             "Post deleted."
           );
         } catch (error) {
-          toast(
-            friendly(error)
-          );
-
           button.disabled =
             false;
 
           button.textContent =
             "Delete";
+
+          toast(
+            friendly(error)
+          );
         }
       }
     );
@@ -2397,37 +2657,32 @@ export async function showComments(
   id
 ) {
   const post =
-    getPostById(id);
+    getPost(id);
 
   if (!post) {
-    toast(
+    return toast(
       "Post is no longer available."
     );
-
-    return;
   }
 
   let comments = [];
 
   try {
-    const commentsQuery =
-      query(
-        collection(
-          db,
-          "posts",
-          String(id),
-          "comments"
-        ),
-        orderBy(
-          "createdAt",
-          "asc"
-        ),
-        limit(50)
-      );
-
     const snapshot =
       await getDocs(
-        commentsQuery
+        query(
+          collection(
+            db,
+            "posts",
+            postId(id),
+            "comments"
+          ),
+          orderBy(
+            "createdAt",
+            "asc"
+          ),
+          limit(50)
+        )
       );
 
     comments =
@@ -2439,11 +2694,9 @@ export async function showComments(
         })
       );
   } catch (error) {
-    toast(
+    return toast(
       friendly(error)
     );
-
-    return;
   }
 
   const commentsHtml =
@@ -2451,51 +2704,32 @@ export async function showComments(
       ? comments
           .map(
             comment => {
-              const name =
-                escapeHtml(
-                  comment.displayName ||
-                    comment.authorName ||
-                    comment.username ||
-                    "Marvel User"
-                );
-
-              const text =
-                escapeHtml(
-                  comment.text ||
-                    ""
-                );
-
-              const date =
-                comment.createdAt
-                  ? formatDate(
-                      comment.createdAt
-                    )
-                  : "";
-
               const own =
                 String(
                   comment.uid
                 ) ===
                 String(
-                  state.user?.uid
+                  uid()
                 );
 
               return `
                 <div
                   class="list-item"
-                  style="
-                    position:relative;
-                  "
                 >
                   <div
                     style="
                       display:flex;
                       justify-content:space-between;
-                      gap:12px;
+                      gap:8px;
                     "
                   >
                     <strong>
-                      ${name}
+                      ${escapeHtml(
+                        comment.displayName ||
+                        comment.authorName ||
+                        comment.username ||
+                        "Marvel User"
+                      )}
                     </strong>
 
                     ${
@@ -2504,9 +2738,10 @@ export async function showComments(
                           <button
                             type="button"
                             class="icon-btn"
-                            data-delete-comment="${escapeHtml(comment.id)}"
+                            data-delete-comment="${escapeHtml(
+                              comment.id
+                            )}"
                             aria-label="Delete comment"
-                            title="Delete comment"
                           >
                             🗑️
                           </button>
@@ -2517,15 +2752,24 @@ export async function showComments(
 
                   <div
                     style="
-                      margin-top:5px;
+                      margin-top:4px;
                       overflow-wrap:anywhere;
                     "
                   >
-                    ${text}
+                    ${escapeHtml(
+                      comment.text ||
+                      ""
+                    )}
                   </div>
 
                   <div class="small">
-                    ${escapeHtml(date)}
+                    ${escapeHtml(
+                      comment.createdAt
+                        ? formatDate(
+                            comment.createdAt
+                          )
+                        : ""
+                    )}
                   </div>
                 </div>
               `;
@@ -2535,20 +2779,20 @@ export async function showComments(
       : `
         <div
           class="small"
-          id="noCommentsMessage"
           style="
             padding:10px 0;
           "
         >
-          No comments yet. Start the conversation.
+          No comments yet.
+          Start the conversation.
         </div>
       `;
 
-  showModal(`
+  showHomeModal(`
     <div
       class="modal-content"
       style="
-        max-width:640px;
+        padding:18px;
       "
     >
       <div
@@ -2583,13 +2827,13 @@ export async function showComments(
 
         <div
           style="
-            margin-top:18px;
+            margin-top:15px;
           "
         >
           <textarea
             id="commentText"
             class="input"
-            rows="4"
+            rows="3"
             maxlength="500"
             placeholder="Write a comment..."
           ></textarea>
@@ -2598,12 +2842,12 @@ export async function showComments(
             style="
               display:flex;
               justify-content:flex-end;
-              margin-top:10px;
+              margin-top:9px;
             "
           >
             <button
               type="button"
-              class="btn"
+              class="btn btn-primary"
               id="submitComment"
             >
               Add comment
@@ -2613,38 +2857,6 @@ export async function showComments(
       </div>
     </div>
   `);
-
-  document
-    .querySelectorAll(
-      "[data-modal-close]"
-    )
-    .forEach(
-      button => {
-        button.addEventListener(
-          "click",
-          closeModal
-        );
-      }
-    );
-
-  document
-    .querySelectorAll(
-      "[data-delete-comment]"
-    )
-    .forEach(
-      button => {
-        button.addEventListener(
-          "click",
-          () => {
-            deleteComment(
-              id,
-              button.dataset
-                .deleteComment
-            );
-          }
-        );
-      }
-    );
 
   const input =
     document.getElementById(
@@ -2658,39 +2870,51 @@ export async function showComments(
 
   input?.focus();
 
+  document
+    .querySelectorAll(
+      "[data-delete-comment]"
+    )
+    .forEach(
+      commentButton =>
+        commentButton.addEventListener(
+          "click",
+          () =>
+            deleteComment(
+              id,
+              commentButton.dataset
+                .deleteComment
+            )
+        )
+    );
+
   button?.addEventListener(
     "click",
     async () => {
-      if (!state.user?.uid) {
-        toast(
+      if (!uid()) {
+        return toast(
           "Please sign in first."
         );
-
-        return;
       }
 
       const text =
         String(
           input?.value ||
-            ""
+          ""
         ).trim();
 
       if (!text) {
-        toast(
+        return toast(
           "Write a comment first."
         );
-
-        return;
       }
 
       if (
-        text.length > 500
+        text.length >
+        500
       ) {
-        toast(
+        return toast(
           "Comments must be 500 characters or less."
         );
-
-        return;
       }
 
       button.disabled =
@@ -2701,18 +2925,18 @@ export async function showComments(
 
       try {
         const actorName =
-          getCurrentUserName();
+          currentUserName();
 
         await addDoc(
           collection(
             db,
             "posts",
-            String(id),
+            postId(id),
             "comments"
           ),
           {
             uid:
-              state.user.uid,
+              uid(),
             displayName:
               actorName,
             text:
@@ -2726,7 +2950,7 @@ export async function showComments(
           doc(
             db,
             "posts",
-            String(id)
+            postId(id)
           ),
           {
             comments:
@@ -2734,88 +2958,20 @@ export async function showComments(
           }
         );
 
-        if (
-          post.uid &&
-          String(post.uid) !==
-            String(state.user.uid)
-        ) {
-          try {
-            await addDoc(
-              collection(
-                db,
-                "users",
-                post.uid,
-                "notifications"
-              ),
-              {
-                type: "comment",
-                actorUid: state.user.uid,
-                actorName: actorName,
-                targetId: String(id),
-                text: `${actorName} commented on your post.`,
-                read: false,
-                createdAt: serverTimestamp()
-              }
-            );
-          } catch (notificationError) {
-            console.warn(
-              "Could not create comment notification:",
-              notificationError
-            );
-          }
-        }
-
-        updateLocalPost(
-          id,
-          item => ({
-            ...item,
-            comments:
-              getPostComments(
-                item
-              ) + 1
-          })
-        );
-
-        const commentsList =
-          document.getElementById(
-            "commentsList"
+        state.posts =
+          getPosts().map(
+            item =>
+              postId(item.id) ===
+              postId(id)
+                ? {
+                    ...item,
+                    comments:
+                      postComments(
+                        item
+                      ) + 1
+                  }
+                : item
           );
-
-        if (commentsList) {
-          const emptyMessage =
-            commentsList.textContent?.trim() ===
-            "No comments yet. Start the conversation.";
-
-          const commentHtml = `
-            <div class="list-item">
-              <strong>
-                ${escapeHtml(
-                  actorName
-                )}
-              </strong>
-
-              <div>
-                ${escapeHtml(
-                  text
-                )}
-              </div>
-
-              <div class="small">
-                Just now
-              </div>
-            </div>
-          `;
-
-          if (emptyMessage) {
-            commentsList.innerHTML =
-              commentHtml;
-          } else {
-            commentsList.insertAdjacentHTML(
-              "beforeend",
-              commentHtml
-            );
-          }
-        }
 
         input.value =
           "";
@@ -2826,57 +2982,86 @@ export async function showComments(
           id
         );
 
+        const list =
+          document.getElementById(
+            "commentsList"
+          );
+
+        if (list) {
+          list.insertAdjacentHTML(
+            "beforeend",
+            `
+              <div
+                class="list-item"
+              >
+                <strong>
+                  ${escapeHtml(
+                    actorName
+                  )}
+                </strong>
+
+                <div>
+                  ${escapeHtml(
+                    text
+                  )}
+                </div>
+
+                <div class="small">
+                  Just now
+                </div>
+              </div>
+            `
+          );
+        }
+
+        button.disabled =
+          false;
+
+        button.textContent =
+          "Add comment";
+
         toast(
           "Comment added 💬"
         );
-
+      } catch (error) {
         button.disabled =
           false;
 
         button.textContent =
           "Add comment";
-      } catch (error) {
+
         toast(
           friendly(error)
         );
-
-        button.disabled =
-          false;
-
-        button.textContent =
-          "Add comment";
       }
     }
   );
 }
 
 async function deleteComment(
-  postId,
+  postIdValue,
   commentId
 ) {
-  if (!state.user?.uid) {
+  if (!uid()) {
     return;
   }
 
   try {
-    const commentRef =
+    await deleteDoc(
       doc(
         db,
         "posts",
-        String(postId),
+        postId(postIdValue),
         "comments",
         String(commentId)
-      );
-
-    await deleteDoc(
-      commentRef
+      )
     );
 
     await updateDoc(
       doc(
         db,
         "posts",
-        String(postId)
+        postId(postIdValue)
       ),
       {
         comments:
@@ -2884,32 +3069,36 @@ async function deleteComment(
       }
     );
 
-    updateLocalPost(
-      postId,
-      item => ({
-        ...item,
-        comments:
-          Math.max(
-            0,
-            getPostComments(
-              item
-            ) - 1
-          )
-      })
-    );
+    state.posts =
+      getPosts().map(
+        item =>
+          postId(item.id) ===
+          postId(postIdValue)
+            ? {
+                ...item,
+                comments:
+                  Math.max(
+                    0,
+                    postComments(
+                      item
+                    ) - 1
+                  )
+              }
+            : item
+      );
 
     markHomeActivity();
+
+    refreshPostCard(
+      postIdValue
+    );
 
     toast(
       "Comment deleted."
     );
 
-    refreshPostCard(
-      postId
-    );
-
     await showComments(
-      postId
+      postIdValue
     );
   } catch (error) {
     toast(
@@ -2919,8 +3108,22 @@ async function deleteComment(
 }
 
 function openYouTubeLiveSearch() {
+  const input =
+    document.getElementById(
+      "communityFeedSearch"
+    );
+
+  const queryText =
+    input?.value.trim() ||
+    "Marvel Chat";
+
   const url =
-    "https://www.youtube.com/results?search_query=live";
+    "https://www.youtube.com/results?search_query=" +
+    encodeURIComponent(
+      queryText +
+      " live"
+    ) +
+    "&sp=EgJAAQ%253D%253D";
 
   try {
     window.open(
@@ -2934,261 +3137,361 @@ function openYouTubeLiveSearch() {
   }
 }
 
-/*
- * IMPORTANT STARTUP RULE
- *
- * This function is deliberately NOT called by attachHomeEvents().
- *
- * Home must not delete expired Firestore documents while the application
- * is initializing. Expiry is presentation state here. The post is simply
- * hidden from the Home feed when it is expired.
- *
- * Keeping the helper isolated also preserves the possibility of explicit
- * maintenance later without adding Firestore writes to Home startup.
- */
-async function cleanupExpiredPosts() {
-  if (!state.user) {
-    return;
-  }
+function filterRenderedPosts(
+  value
+) {
+  homeSearchTerm =
+    String(
+      value || ""
+    )
+      .trim()
+      .toLowerCase();
 
-  const expired =
-    getPosts().filter(
-      post =>
-        post.uid ===
-          state.user.uid &&
-        isPostExpired(post)
+  const cards =
+    Array.from(
+      document.querySelectorAll(
+        "#homePage [data-post-card]"
+      )
     );
 
-  for (
-    const post of expired
-  ) {
-    try {
-      await deleteDoc(
-        doc(
-          db,
-          "posts",
-          post.id
-        )
-      );
+  let visible =
+    0;
 
-      state.posts =
-        getPosts().filter(
-          item =>
-            item.id !==
-            post.id
-        );
-    } catch (error) {
-      console.warn(
-        "Could not clean up expired post:",
-        error
-      );
+  cards.forEach(
+    card => {
+      const matches =
+        !homeSearchTerm ||
+        card.textContent
+          .toLowerCase()
+          .includes(
+            homeSearchTerm
+          );
+
+      card.style.display =
+        matches
+          ? ""
+          : "none";
+
+      if (matches) {
+        visible++;
+      }
     }
+  );
+
+  const status =
+    document.getElementById(
+      "communitySearchStatus"
+    );
+
+  if (status) {
+    if (!homeSearchTerm) {
+      status.textContent =
+        cards.length
+          ? `Showing ${cards.length} recent post${
+              cards.length === 1
+                ? ""
+                : "s"
+            }.`
+          : "";
+    } else if (
+      visible === 0
+    ) {
+      status.textContent =
+        "No matching posts in the recent feed.";
+    } else {
+      status.textContent =
+        `${visible} matching post${
+          visible === 1
+            ? ""
+            : "s"
+        }.`;
+    }
+  }
+
+  const clear =
+    document.getElementById(
+      "clearCommunitySearch"
+    );
+
+  if (clear) {
+    clear.style.display =
+      homeSearchTerm
+        ? "inline-flex"
+        : "none";
   }
 }
 
 export function attachHomeEvents(
   renderApp
 ) {
-  /*
-   * =========================================================
-   * HOME STARTUP SAFETY
-   * =========================================================
-   *
-   * The global posts listener is responsible for supplying
-   * state.posts.
-   *
-   * Home therefore does NOT:
-   *
-   *   - fetch the posts collection
-   *   - delete expired posts
-   *   - run Firestore cleanup
-   *   - perform a synchronous saved-post query
-   *
-   * Saved posts are hydrated only after the current render
-   * cycle has completed.
-   */
-
-  stopDiscoveryCountdown();
-
-  if (state.user?.uid) {
-    setTimeout(
-      () => {
-        loadSavedPostIds()
-          .catch(
-            error => {
-              console.warn(
-                "Deferred saved-post hydration failed:",
-                error
-              );
-            }
-          );
-      },
-      0
-    );
-  }
-
-  document
-    .querySelectorAll(
-      "[data-like]"
-    )
-    .forEach(
-      button => {
-        button.addEventListener(
-          "click",
-          () => {
-            toggleLike(
-              button.dataset.like
-            );
-          }
-        );
-      }
-    );
-
-  document
-    .querySelectorAll(
-      "[data-save]"
-    )
-    .forEach(
-      button => {
-        button.addEventListener(
-          "click",
-          () => {
-            savePost(
-              button.dataset.save
-            );
-          }
-        );
-      }
-    );
-
-  document
-    .querySelectorAll(
-      "[data-share]"
-    )
-    .forEach(
-      button => {
-        button.addEventListener(
-          "click",
-          () => {
-            sharePost(
-              button.dataset.share
-            );
-          }
-        );
-      }
-    );
-
-  document
-    .querySelectorAll(
-      "[data-comment]"
-    )
-    .forEach(
-      button => {
-        button.addEventListener(
-          "click",
-          () => {
-            showComments(
-              button.dataset.comment
-            );
-          }
-        );
-      }
-    );
-
-  document
-    .querySelectorAll(
-      "[data-edit-post]"
-    )
-    .forEach(
-      button => {
-        button.addEventListener(
-          "click",
-          event => {
-            event.stopPropagation();
-
-            showEditPost(
-              button.dataset.editPost
-            );
-          }
-        );
-      }
-    );
-
-  document
-    .querySelectorAll(
-      "[data-delete-post]"
-    )
-    .forEach(
-      button => {
-        button.addEventListener(
-          "click",
-          event => {
-            event.stopPropagation();
-
-            showDeletePostConfirmation(
-              button.dataset.deletePost
-            );
-          }
-        );
-      }
-    );
-
-  document
-    .querySelectorAll(
-      "[data-menu-post]"
-    )
-    .forEach(
-      button => {
-        button.addEventListener(
-          "click",
-          event => {
-            event.stopPropagation();
-
-            const menu =
-              document.getElementById(
-                `postMenu-${button.dataset.menuPost}`
-              );
-
-            if (!menu) {
-              return;
-            }
-
-            document
-              .querySelectorAll(
-                ".dropdown-menu"
-              )
-              .forEach(
-                item => {
-                  if (
-                    item !==
-                    menu
-                  ) {
-                    item.classList.add(
-                      "hidden"
-                    );
-                  }
-                }
-              );
-
-            menu.classList.toggle(
-              "hidden"
-            );
-          }
-        );
-      }
-    );
-
   if (
-    homeDocumentClickHandler
+    homeNavigationHandler
   ) {
     document.removeEventListener(
       "click",
-      homeDocumentClickHandler
+      homeNavigationHandler,
+      true
     );
   }
 
-  homeDocumentClickHandler =
+  homeNavigationHandler =
     event => {
+      if (
+        event.target
+          ?.closest?.(
+            "[data-nav]"
+          )
+      ) {
+        closeHomeModal();
+        stopDiscoveryCountdown();
+      }
+    };
+
+  document.addEventListener(
+    "click",
+    homeNavigationHandler,
+    true
+  );
+
+  if (
+    homeClickHandler
+  ) {
+    document
+      .getElementById(
+        "homePage"
+      )
+      ?.removeEventListener(
+        "click",
+        homeClickHandler
+      );
+  }
+
+  const homePage =
+    document.getElementById(
+      "homePage"
+    );
+
+  if (!homePage) {
+    return;
+  }
+
+  homeClickHandler =
+    event => {
+      const quick =
+        event.target.closest(
+          "[data-quick]"
+        );
+
+      if (quick) {
+        const action =
+          quick.dataset.quick;
+
+        markHomeActivity();
+
+        if (
+          action ===
+          "post"
+        ) {
+          showCreatePost();
+        } else if (
+          action ===
+          "chat"
+        ) {
+          closeHomeModal();
+
+          state.page =
+            "chat";
+
+          renderApp?.();
+        } else if (
+          action ===
+          "skill"
+        ) {
+          closeHomeModal();
+
+          state.page =
+            "timetrust";
+
+          renderApp?.();
+        } else if (
+          action ===
+          "sell"
+        ) {
+          closeHomeModal();
+
+          state.marketBrowseMode =
+            false;
+
+          state.page =
+            "market";
+
+          renderApp?.();
+        }
+
+        return;
+      }
+
+      const actionButton =
+        event.target.closest(
+          "[data-home-action]"
+        );
+
+      if (
+        actionButton &&
+        homePage.contains(
+          actionButton
+        )
+      ) {
+        event.stopPropagation();
+
+        const action =
+          actionButton.dataset
+            .homeAction;
+
+        const id =
+          actionButton.dataset
+            .id;
+
+        if (
+          action ===
+          "like"
+        ) {
+          toggleLike(id);
+        } else if (
+          action ===
+          "save"
+        ) {
+          savePost(id);
+        } else if (
+          action ===
+          "share"
+        ) {
+          sharePost(id);
+        } else if (
+          action ===
+          "comment"
+        ) {
+          showComments(id);
+        } else if (
+          action ===
+          "edit"
+        ) {
+          showEditPost(id);
+        } else if (
+          action ===
+          "delete"
+        ) {
+          showDeletePostConfirmation(
+            id
+          );
+        } else if (
+          action ===
+          "menu"
+        ) {
+          const menu =
+            document.getElementById(
+              `postMenu-${id}`
+            );
+
+          if (!menu) {
+            return;
+          }
+
+          document
+            .querySelectorAll(
+              "#homePage .dropdown-menu"
+            )
+            .forEach(
+              item => {
+                if (
+                  item !==
+                  menu
+                ) {
+                  item.classList.add(
+                    "hidden"
+                  );
+                }
+              }
+            );
+
+          menu.classList.toggle(
+            "hidden"
+          );
+        }
+
+        return;
+      }
+
+      if (
+        event.target.closest(
+          "#createPostBtn,#emptyCreatePost"
+        )
+      ) {
+        showCreatePost();
+        return;
+      }
+
+      if (
+        event.target.closest(
+          "#clearCommunitySearch"
+        )
+      ) {
+        homeSearchTerm =
+          "";
+
+        const input =
+          document.getElementById(
+            "communityFeedSearch"
+          );
+
+        if (input) {
+          input.value =
+            "";
+
+          input.focus();
+        }
+
+        filterRenderedPosts(
+          ""
+        );
+
+        return;
+      }
+
+      if (
+        event.target.closest(
+          "#youtubeLiveSearchBtn"
+        )
+      ) {
+        markHomeActivity();
+        openYouTubeLiveSearch();
+        return;
+      }
+
+      const discovery =
+        event.target.closest(
+          "[data-discovery-nav]"
+        );
+
+      if (discovery) {
+        openDiscoveryDestination(
+          discovery.dataset
+            .discoveryNav,
+          renderApp
+        );
+
+        return;
+      }
+
+      if (
+        event.target.closest(
+          "#discoveryClose"
+        )
+      ) {
+        dismissDiscovery();
+        return;
+      }
+
       if (
         !event.target.closest(
           ".dropdown-container"
@@ -3196,183 +3499,113 @@ export function attachHomeEvents(
       ) {
         document
           .querySelectorAll(
-            ".dropdown-menu"
+            "#homePage .dropdown-menu"
           )
           .forEach(
-            menu => {
+            menu =>
               menu.classList.add(
                 "hidden"
-              );
-            }
+              )
           );
       }
     };
 
-  document.addEventListener(
+  homePage.addEventListener(
     "click",
-    homeDocumentClickHandler
+    homeClickHandler
   );
 
-  document
-    .getElementById(
-      "createPostBtn"
-    )
-    ?.addEventListener(
-      "click",
-      showCreatePost
-    );
-
-  document
-    .getElementById(
-      "emptyCreatePost"
-    )
-    ?.addEventListener(
-      "click",
-      showCreatePost
-    );
-
-  document
-    .querySelectorAll(
-      '[data-quick="post"]'
-    )
-    .forEach(
-      button => {
-        button.addEventListener(
-          "click",
-          showCreatePost
-        );
-      }
-    );
-
-  document
-    .querySelectorAll(
-      '[data-quick="chat"]'
-    )
-    .forEach(
-      button => {
-        button.addEventListener(
-          "click",
-          () => {
-            state.page =
-              "chat";
-
-            renderApp();
-          }
-        );
-      }
-    );
-
-  document
-    .querySelectorAll(
-      '[data-quick="timetrust"]'
-    )
-    .forEach(
-      button => {
-        button.addEventListener(
-          "click",
-          () => {
-            state.page =
-              "timetrust";
-
-            renderApp();
-          }
-        );
-      }
-    );
-
-  document
-    .querySelectorAll(
-      '[data-quick="market"]'
-    )
-    .forEach(
-      button => {
-        button.addEventListener(
-          "click",
-          () => {
-            state.marketBrowseMode =
-              false;
-
-            state.page =
-              "market";
-
-            renderApp();
-          }
-        );
-      }
-    );
-
-  document
-    .getElementById(
-      "youtubeLiveSearchBtn"
-    )
-    ?.addEventListener(
-      "click",
-      openYouTubeLiveSearch
-    );
-
-  document
-    .getElementById(
+  const search =
+    document.getElementById(
       "communityFeedSearch"
-    )
-    ?.addEventListener(
-      "input",
-      event => {
-        const term =
-          String(
-            event.target.value ||
-              ""
-          )
-            .trim()
-            .toLowerCase();
-
-        document
-          .querySelectorAll(
-            "[data-post-card]"
-          )
-          .forEach(
-            card => {
-              const text =
-                card.textContent
-                  .toLowerCase();
-
-              card.style.display =
-                !term ||
-                text.includes(
-                  term
-                )
-                  ? ""
-                  : "none";
-            }
-          );
-      }
     );
 
-  document
-    .querySelectorAll(
-      "[data-discovery-nav]"
-    )
-    .forEach(
-      button => {
-        button.addEventListener(
-          "click",
-          () => {
-            openDiscoveryDestination(
-              button.dataset
-                .discoveryNav,
-              renderApp
-            );
-          }
+  search?.addEventListener(
+    "input",
+    event => {
+      markHomeActivity();
+
+      filterRenderedPosts(
+        event.target.value
+      );
+    }
+  );
+
+  search?.addEventListener(
+    "keydown",
+    event => {
+      if (
+        event.key ===
+        "Escape"
+      ) {
+        homeSearchTerm =
+          "";
+
+        search.value =
+          "";
+
+        filterRenderedPosts(
+          ""
         );
       }
-    );
+    }
+  );
 
-  document
-    .getElementById(
-      "discoveryClose"
+  loadSavedPostIds()
+    .then(
+      () => {
+        if (
+          state.page ===
+            "home" &&
+          document.getElementById(
+            "homePage"
+          )
+        ) {
+          document
+            .querySelectorAll(
+              "#homePage [data-post-card]"
+            )
+            .forEach(
+              card => {
+                const id =
+                  card.dataset
+                    .postCard;
+
+                const post =
+                  getPost(id);
+
+                if (!post) {
+                  return;
+                }
+
+                const holder =
+                  document.createElement(
+                    "div"
+                  );
+
+                holder.innerHTML =
+                  renderPostCard(
+                    post
+                  );
+
+                card.replaceWith(
+                  holder.firstElementChild
+                );
+              }
+            );
+
+          filterRenderedPosts(
+            homeSearchTerm
+          );
+        }
+      }
     )
-    ?.addEventListener(
-      "click",
-      dismissDiscovery
+    .catch(
+      error =>
+        console.warn(
+          "Saved posts load failed:",
+          error
+        )
     );
 
   if (
@@ -3381,9 +3614,12 @@ export function attachHomeEvents(
     )
   ) {
     recordDiscoveryImpression();
-
     startDiscoveryCountdown();
   }
+
+  filterRenderedPosts(
+    homeSearchTerm
+  );
 
   markHomeActivity();
 }
