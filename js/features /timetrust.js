@@ -755,7 +755,7 @@ export function renderTimeTrust(
               margin:4px 0;
             "
           >
-            Skill Exchange
+            Explore Skills 
           </strong>
 
           <span class="small">
