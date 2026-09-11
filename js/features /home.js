@@ -647,7 +647,7 @@ function renderDiscoveryBanner() {
             "
           >
             Discover people, conversations, skills, TimeTrust
-            and the Market — all from one place.
+            and the Market — all from one Marvel Chat universe.
           </p>
 
           <div
@@ -659,16 +659,16 @@ function renderDiscoveryBanner() {
             "
           >
             <button
-              class="btn btn-primary"
               type="button"
+              class="btn"
               data-discovery-nav="market"
             >
               🛍️ Explore Market
             </button>
 
             <button
-              class="btn btn-ghost"
               type="button"
+              class="btn secondary"
               data-discovery-nav="timetrust"
             >
               ⏱️ Explore TimeTrust
@@ -678,55 +678,50 @@ function renderDiscoveryBanner() {
 
         <div
           style="
+            width:92px;
+            height:92px;
+            border-radius:50%;
+            display:grid;
+            place-items:center;
             flex:0 0 auto;
-            display:flex;
-            align-items:center;
-            justify-content:center;
-            min-width:130px;
+            color:var(--primary);
+            background:rgba(255,255,255,.04);
           "
         >
           <div
             id="discoveryRing"
             style="
-              width:112px;
-              height:112px;
+              width:74px;
+              height:74px;
               border-radius:50%;
               display:grid;
               place-items:center;
+              background:
+                conic-gradient(
+                  currentColor 100%,
+                  rgba(255,255,255,.10) 100%
+                );
               position:relative;
-              color:inherit;
-              background:conic-gradient(currentColor 100%, rgba(255,255,255,.10) 100%);
             "
           >
             <div
               style="
                 position:absolute;
-                inset:7px;
+                inset:5px;
                 border-radius:50%;
-                background:var(--surface);
-                display:flex;
-                flex-direction:column;
-                align-items:center;
-                justify-content:center;
+                background:var(--card);
+                display:grid;
+                place-items:center;
               "
             >
-              <strong
+              <span
                 id="discoveryCountdown"
                 style="
-                  font-size:30px;
-                  line-height:1;
+                  font-weight:900;
+                  font-size:18px;
                 "
               >
-                40
-              </strong>
-
-              <span
-                class="small"
-                style="
-                  margin-top:5px;
-                "
-              >
-                seconds
+                ${DISCOVERY_DURATION_SECONDS}
               </span>
             </div>
           </div>
@@ -734,6 +729,151 @@ function renderDiscoveryBanner() {
       </div>
     </section>
   `;
+}
+
+function getPosts() {
+  return Array.isArray(state.posts)
+    ? state.posts
+    : [];
+}
+
+function getPostById(id) {
+  return getPosts().find(
+    post =>
+      String(post.id) ===
+      String(id)
+  );
+}
+
+function getPostAuthorName(post) {
+  return (
+    post?.displayName ||
+    post?.authorName ||
+    post?.username ||
+    "Marvel User"
+  );
+}
+
+function getPostAuthorInitials(post) {
+  return initials(
+    getPostAuthorName(post)
+  );
+}
+
+function getPostText(post) {
+  return (
+    post?.text ||
+    post?.content ||
+    ""
+  );
+}
+
+function getPostDate(post) {
+  return (
+    post?.createdAt ||
+    post?.timestamp ||
+    post?.updatedAt ||
+    null
+  );
+}
+
+function getPostLikes(post) {
+  const value =
+    Number(post?.likes);
+
+  return Number.isFinite(value)
+    ? value
+    : 0;
+}
+
+function getPostComments(post) {
+  const value =
+    Number(post?.comments);
+
+  return Number.isFinite(value)
+    ? value
+    : 0;
+}
+
+function getLikedBy(post) {
+  return Array.isArray(
+    post?.likedBy
+  )
+    ? post.likedBy
+    : [];
+}
+
+function isPostLiked(post) {
+  if (!state.user?.uid) {
+    return false;
+  }
+
+  return getLikedBy(post).includes(
+    state.user.uid
+  );
+}
+
+function isPostSaved(post) {
+  return savedPostIds.has(
+    String(post?.id)
+  );
+}
+
+function updateLocalPost(id, updater) {
+  if (!Array.isArray(state.posts)) {
+    return;
+  }
+
+  state.posts =
+    state.posts.map(post => {
+      if (
+        String(post.id) !==
+        String(id)
+      ) {
+        return post;
+      }
+
+      return updater(post);
+    });
+}
+
+function refreshPostCard(id) {
+  const card =
+    document.querySelector(
+      `[data-post-card="${cssEscape(id)}"]`
+    );
+
+  if (!card) {
+    return;
+  }
+
+  const post =
+    getPostById(id);
+
+  if (!post) {
+    card.remove();
+
+    return;
+  }
+
+  const replacement =
+    document.createElement(
+      "div"
+    );
+
+  replacement.innerHTML =
+    renderPostCard(post);
+
+  const newCard =
+    replacement.firstElementChild;
+
+  if (!newCard) {
+    return;
+  }
+
+  card.replaceWith(
+    newCard
+  );
 }
 
 async function loadSavedPostIds() {
@@ -747,12 +887,6 @@ async function loadSavedPostIds() {
     savedPostsLoadedForUid =
       null;
 
-    savedPostsLoadPromise =
-      null;
-
-    savedPostsLoadingUid =
-      null;
-
     return;
   }
 
@@ -764,9 +898,9 @@ async function loadSavedPostIds() {
   }
 
   if (
-    savedPostsLoadPromise &&
     savedPostsLoadingUid ===
-      uid
+      uid &&
+    savedPostsLoadPromise
   ) {
     return savedPostsLoadPromise;
   }
@@ -775,371 +909,125 @@ async function loadSavedPostIds() {
     uid;
 
   savedPostsLoadPromise =
-    getDocs(
-      collection(
-        db,
-        "users",
-        uid,
-        "savedPosts"
-      )
-    )
-      .then(snapshot => {
-        savedPostIds =
-          new Set(
-            snapshot.docs.map(
-              item =>
-                item.id
+    (async () => {
+      try {
+        const snapshot =
+          await getDocs(
+            collection(
+              db,
+              "users",
+              uid,
+              "savedPosts"
             )
           );
 
-        state.savedPostCount =
-          savedPostIds.size;
+        const ids =
+          new Set();
+
+        snapshot.forEach(
+          item => {
+            ids.add(
+              String(item.id)
+            );
+          }
+        );
+
+        savedPostIds =
+          ids;
 
         savedPostsLoadedForUid =
           uid;
+      } finally {
+        savedPostsLoadingUid =
+          null;
 
-        state.posts =
-          state.posts.map(
-            post => ({
-              ...post,
-              savedBy:
-                savedPostIds.has(
-                  post.id
-                )
-                  ? Array.from(
-                      new Set([
-                        ...(Array.isArray(
-                          post.savedBy
-                        )
-                          ? post.savedBy
-                          : []),
-                        uid
-                      ])
-                    )
-                  : (
-                      Array.isArray(
-                        post.savedBy
-                      )
-                        ? post.savedBy.filter(
-                            id =>
-                              id !==
-                              uid
-                          )
-                        : []
-                    )
-            })
-          );
-
-        refreshSavedButtons();
-      })
-      .catch(error => {
-        console.warn(
-          "Could not load saved posts:",
-          error
-        );
-      })
-      .finally(() => {
-        if (
-          savedPostsLoadingUid ===
-          uid
-        ) {
-          savedPostsLoadPromise =
-            null;
-
-          savedPostsLoadingUid =
-            null;
-        }
-      });
+        savedPostsLoadPromise =
+          null;
+      }
+    })();
 
   return savedPostsLoadPromise;
 }
 
-function refreshSavedButtons() {
-  document
-    .querySelectorAll(
-      "[data-save]"
-    )
-    .forEach(
-      button => {
-        const id =
-          button.dataset.save;
+function renderPostCard(post) {
+  const id =
+    String(post.id);
 
-        const saved =
-          savedPostIds.has(
-            id
-          );
-
-        button.innerHTML =
-          saved
-            ? "🔖 Saved"
-            : "🔖 Save";
-
-        button.classList.toggle(
-          "btn-primary",
-          saved
-        );
-
-        button.classList.toggle(
-          "btn-ghost",
-          !saved
-        );
-      }
-    );
-}
-
-function getLikeCount(post) {
-  if (
-    typeof post?.likes ===
-    "number"
-  ) {
-    return post.likes;
-  }
-
-  if (
-    Array.isArray(
-      post?.likedBy
-    )
-  ) {
-    return post.likedBy.length;
-  }
-
-  return 0;
-}
-
-function isLiked(post) {
-  if (!state.user) {
-    return false;
-  }
-
-  return Array.isArray(
-    post?.likedBy
-  )
-    ? post.likedBy.includes(
-        state.user.uid
-      )
-    : false;
-}
-
-function isSaved(post) {
-  if (!state.user) {
-    return false;
-  }
-
-  return (
-    savedPostIds.has(
-      post.id
-    ) ||
-    (
-      Array.isArray(
-        post?.savedBy
-      ) &&
-      post.savedBy.includes(
-        state.user.uid
-      )
-    )
-  );
-}
-
-function renderPostActions(post) {
-  const likeCount =
-    getLikeCount(post);
-
-  const commentCount =
-    Number(
-      post?.comments || 0
-    );
+  const owner =
+    state.user?.uid &&
+    String(post.uid) ===
+      String(state.user.uid);
 
   const liked =
-    isLiked(post);
+    isPostLiked(post);
 
   const saved =
-    isSaved(post);
+    isPostSaved(post);
 
-  return `
-    <div
-      style="
-        display:grid;
-        grid-template-columns:repeat(4,minmax(0,1fr));
-        gap:8px;
-        margin-top:16px;
-        padding-top:14px;
-        border-top:1px solid var(--border);
-      "
-    >
-      <button
-        type="button"
-        class="btn ${
-          liked
-            ? "btn-primary"
-            : "btn-ghost"
-        }"
-        data-like="${cssEscape(
-          post.id
-        )}"
-        style="
-          min-width:0;
-          padding:10px 8px;
-          white-space:nowrap;
-        "
-      >
-        ❤️ ${likeCount}
-      </button>
+  const likes =
+    getPostLikes(post);
 
-      <button
-        type="button"
-        class="btn btn-ghost"
-        data-comment="${cssEscape(
-          post.id
-        )}"
-        style="
-          min-width:0;
-          padding:10px 8px;
-          white-space:nowrap;
-        "
-      >
-        💬 ${commentCount}
-      </button>
-
-      <button
-        type="button"
-        class="btn btn-ghost"
-        data-share="${cssEscape(
-          post.id
-        )}"
-        style="
-          min-width:0;
-          padding:10px 8px;
-          white-space:nowrap;
-        "
-      >
-        ↗ Share
-      </button>
-
-      <button
-        type="button"
-        class="btn ${
-          saved
-            ? "btn-primary"
-            : "btn-ghost"
-        }"
-        data-save="${cssEscape(
-          post.id
-        )}"
-        style="
-          min-width:0;
-          padding:10px 8px;
-          white-space:nowrap;
-        "
-      >
-        🔖 ${
-          saved
-            ? "Saved"
-            : "Save"
-        }
-      </button>
-    </div>
-  `;
-}
-
-function renderPost(post) {
-  if (
-    !post ||
-    !post.id
-  ) {
-    return "";
-  }
-
-  const author =
-    post.username ||
-    post.displayName ||
-    post.authorName ||
-    "User";
-
-  const avatar =
-    post.photoURL ||
-    post.avatarUrl ||
-    "";
-
-  const text =
-    post.text ||
-    post.content ||
-    "";
-
-  const own =
-    state.user?.uid ===
-    post.uid;
+  const comments =
+    getPostComments(post);
 
   const expiryLabel =
     formatExpiryLabel(post);
 
-  const menuId =
-    `postMenu-${post.id}`;
+  const created =
+    getPostDate(post);
+
+  const dateLabel =
+    created
+      ? formatDate(created)
+      : "";
+
+  const text =
+    escapeHtml(
+      getPostText(post)
+    ).replace(
+      /\n/g,
+      "<br>"
+    );
+
+  const authorName =
+    escapeHtml(
+      getPostAuthorName(post)
+    );
+
+  const authorInitials =
+    escapeHtml(
+      getPostAuthorInitials(post)
+    );
 
   return `
     <article
       class="card post-card"
-      data-post-card="${cssEscape(
-        post.id
-      )}"
-      style="
-        margin-bottom:18px;
-        padding:24px;
-      "
+      data-post-card="${escapeHtml(id)}"
+      style="margin-bottom:16px;"
     >
       <div
+        class="post-header"
         style="
           display:flex;
           align-items:flex-start;
           justify-content:space-between;
-          gap:14px;
+          gap:12px;
         "
       >
         <div
           style="
             display:flex;
             align-items:center;
-            gap:14px;
+            gap:12px;
             min-width:0;
           "
         >
-          ${
-            avatar
-              ? `
-                <img
-                  src="${escapeHtml(
-                    avatar
-                  )}"
-                  alt=""
-                  style="
-                    width:54px;
-                    height:54px;
-                    border-radius:50%;
-                    object-fit:cover;
-                    flex:0 0 54px;
-                  "
-                >
-              `
-              : `
-                <div
-                  style="
-                    width:54px;
-                    height:54px;
-                    border-radius:50%;
-                    display:grid;
-                    place-items:center;
-                    background:var(--primary-soft);
-                    color:var(--primary);
-                    font-weight:800;
-                    font-size:18px;
-                    flex:0 0 54px;
-                  "
-                >
-                  ${escapeHtml(
-                    initials(author)
-                  )}
-                </div>
-              `
-          }
+          <div
+            class="avatar"
+            aria-hidden="true"
+          >
+            ${authorInitials}
+          </div>
 
           <div
             style="
@@ -1149,158 +1037,207 @@ function renderPost(post) {
             <strong
               style="
                 display:block;
-                font-size:17px;
-                line-height:1.25;
-                overflow-wrap:anywhere;
+                overflow:hidden;
+                text-overflow:ellipsis;
               "
             >
-              ${escapeHtml(
-                author
-              )}
+              ${authorName}
             </strong>
 
-            <div
-              class="small"
-              style="
-                margin-top:4px;
-              "
-            >
-              ${escapeHtml(
-                formatDate(
-                  post.createdAt
-                )
-              )}
+            <div class="small">
+              ${escapeHtml(dateLabel)}
+              ${
+                expiryLabel
+                  ? ` · ${escapeHtml(expiryLabel)}`
+                  : ""
+              }
             </div>
-
-            ${
-              expiryLabel
-                ? `
-                  <div
-                    class="small"
-                    style="
-                      margin-top:4px;
-                      color:var(--muted);
-                    "
-                  >
-                    ⏳ ${escapeHtml(
-                      expiryLabel
-                    )}
-                  </div>
-                `
-                : ""
-            }
           </div>
         </div>
 
-        ${
-          own
-            ? `
-              <div
-                class="dropdown-container"
-                style="
-                  position:relative;
-                  flex:0 0 auto;
-                "
-              >
-                <button
-                  type="button"
-                  class="icon-btn"
-                  data-menu-post="${cssEscape(
-                    post.id
-                  )}"
-                  aria-label="Post options"
-                  title="Post options"
-                >
-                  ⋮
-                </button>
+        <div
+          class="dropdown-container"
+          style="position:relative;"
+        >
+          <button
+            type="button"
+            class="icon-btn"
+            data-menu-post="${escapeHtml(id)}"
+            aria-label="Post menu"
+            title="Post menu"
+          >
+            ⋯
+          </button>
 
-                <div
-                  class="dropdown-menu hidden"
-                  id="${menuId}"
-                  style="
-                    position:absolute;
-                    right:0;
-                    top:48px;
-                    z-index:20;
-                    min-width:150px;
-                  "
-                >
+          <div
+            id="postMenu-${escapeHtml(id)}"
+            class="dropdown-menu hidden"
+            style="
+              position:absolute;
+              right:0;
+              top:46px;
+              z-index:20;
+              min-width:160px;
+            "
+          >
+            ${
+              owner
+                ? `
                   <button
                     type="button"
-                    class="btn btn-ghost btn-block"
-                    data-edit-post="${cssEscape(
-                      post.id
-                    )}"
+                    class="dropdown-item"
+                    data-edit-post="${escapeHtml(id)}"
                   >
                     ✏️ Edit
                   </button>
 
                   <button
                     type="button"
-                    class="btn btn-ghost btn-block"
-                    data-delete-post="${cssEscape(
-                      post.id
-                    )}"
+                    class="dropdown-item"
+                    data-delete-post="${escapeHtml(id)}"
                   >
                     🗑️ Delete
                   </button>
-                </div>
-              </div>
-            `
-            : ""
-        }
+                `
+                : `
+                  <button
+                    type="button"
+                    class="dropdown-item"
+                    data-share="${escapeHtml(id)}"
+                  >
+                    ↗️ Share
+                  </button>
+                `
+            }
+          </div>
+        </div>
       </div>
 
       <div
+        class="post-content"
         style="
-          margin-top:24px;
-          padding:0 8px;
-          font-size:18px;
-          line-height:1.7;
+          margin-top:14px;
+          line-height:1.65;
           overflow-wrap:anywhere;
         "
       >
-        ${escapeHtml(text)}
+        ${text}
       </div>
 
-      ${
-        post.imageUrl
-          ? `
-            <div
-              style="
-                margin-top:18px;
-              "
-            >
-              <img
-                src="${escapeHtml(
-                  post.imageUrl
-                )}"
-                alt="Post image"
-                style="
-                  width:100%;
-                  max-height:520px;
-                  object-fit:cover;
-                  border-radius:16px;
-                  display:block;
-                "
-              >
-            </div>
-          `
-          : ""
-      }
+      <div
+        class="post-actions"
+        style="
+          display:flex;
+          align-items:center;
+          gap:8px;
+          flex-wrap:wrap;
+          margin-top:16px;
+        "
+      >
+        <button
+          type="button"
+          class="btn secondary"
+          data-like="${escapeHtml(id)}"
+          ${pendingLikeIds.has(id) ? "disabled" : ""}
+        >
+          ${liked ? "❤️" : "🤍"}
+          ${likes}
+        </button>
 
-      ${renderPostActions(
-        post
-      )}
+        <button
+          type="button"
+          class="btn secondary"
+          data-comment="${escapeHtml(id)}"
+        >
+          💬 ${comments}
+        </button>
+
+        <button
+          type="button"
+          class="btn secondary"
+          data-save="${escapeHtml(id)}"
+          ${pendingSaveIds.has(id) ? "disabled" : ""}
+        >
+          ${saved ? "🔖 Saved" : "🔖 Save"}
+        </button>
+
+        <button
+          type="button"
+          class="btn secondary"
+          data-share="${escapeHtml(id)}"
+        >
+          ↗️ Share
+        </button>
+      </div>
     </article>
   `;
 }
 
-function renderHomeHeader() {
+function renderQuickActions() {
   return `
     <section
+      class="quick-grid"
       style="
         margin-bottom:22px;
+      "
+    >
+      <button
+        type="button"
+        class="quick"
+        data-quick="post"
+      >
+        <span class="quick-icon">✍️</span>
+        <strong>Create Post</strong>
+        <span class="small">
+          Share something with the community
+        </span>
+      </button>
+
+      <button
+        type="button"
+        class="quick"
+        data-quick="chat"
+      >
+        <span class="quick-icon">💬</span>
+        <strong>Messages</strong>
+        <span class="small">
+          Continue your conversations
+        </span>
+      </button>
+
+      <button
+        type="button"
+        class="quick"
+        data-quick="timetrust"
+      >
+        <span class="quick-icon">⏱️</span>
+        <strong>TimeTrust</strong>
+        <span class="small">
+          Exchange skills and time
+        </span>
+      </button>
+
+      <button
+        type="button"
+        class="quick"
+        data-quick="market"
+      >
+        <span class="quick-icon">🛍️</span>
+        <strong>Marvel Market</strong>
+        <span class="small">
+          Browse community listings
+        </span>
+      </button>
+    </section>
+  `;
+}
+
+function renderCommunityHeader() {
+  return `
+    <section
+      class="card"
+      style="
+        margin-bottom:18px;
       "
     >
       <div
@@ -1316,393 +1253,201 @@ function renderHomeHeader() {
           <div
             class="small"
             style="
-              font-weight:700;
-              letter-spacing:.04em;
+              font-weight:800;
+              letter-spacing:.06em;
               text-transform:uppercase;
             "
           >
-            COMMUNITY FEED
+            Community
           </div>
 
-          <h1
+          <h2
             style="
-              margin:8px 0 0;
-              font-size:clamp(30px,7vw,42px);
-              line-height:1.1;
+              margin:5px 0 5px;
             "
           >
-            What's happening?
-          </h1>
+            Marvel Community Feed
+          </h2>
+
+          <p
+            class="small"
+            style="
+              margin:0;
+              line-height:1.5;
+            "
+          >
+            Share updates, ideas and moments with the Marvel Chat community.
+          </p>
         </div>
 
         <button
-          class="btn btn-primary"
-          id="createPostBtn"
           type="button"
+          class="btn"
+          id="createPostBtn"
         >
-          ＋ Create Post
+          ✍️ Create Post
         </button>
       </div>
 
       <div
         style="
-          display:flex;
-          gap:10px;
-          margin-top:22px;
-          flex-wrap:wrap;
+          margin-top:18px;
         "
       >
         <input
           id="communityFeedSearch"
           class="input"
           type="search"
-          placeholder="Search the community feed..."
+          placeholder="Search posts..."
           autocomplete="off"
-          style="
-            flex:1 1 280px;
-          "
         />
+      </div>
+    </section>
+  `;
+}
+
+function renderYouTubeLiveCard() {
+  return `
+    <section
+      class="card"
+      style="
+        margin-bottom:18px;
+      "
+    >
+      <div
+        style="
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          gap:14px;
+          flex-wrap:wrap;
+        "
+      >
+        <div>
+          <strong>
+            🔴 YouTube Live
+          </strong>
+
+          <div class="small">
+            Find live Marvel-related streams and community content.
+          </div>
+        </div>
 
         <button
-          class="btn btn-ghost"
-          id="youtubeLiveSearchBtn"
           type="button"
+          class="btn secondary"
+          id="youtubeLiveSearchBtn"
         >
-          ▶️ YouTube Live
+          Find Live Streams
         </button>
       </div>
     </section>
   `;
 }
 
-function renderQuickActions() {
+function renderPosts() {
+  const posts =
+    getPosts()
+      .filter(
+        post =>
+          !isPostExpired(post)
+      );
+
+  if (!posts.length) {
+    return `
+      <section
+        class="card"
+        id="emptyCommunityFeed"
+        style="
+          text-align:center;
+          padding:36px 20px;
+        "
+      >
+        <div
+          style="
+            font-size:42px;
+            margin-bottom:12px;
+          "
+        >
+          🌌
+        </div>
+
+        <h3
+          style="
+            margin:0 0 8px;
+          "
+        >
+          Your community feed is quiet
+        </h3>
+
+        <p
+          class="small"
+          style="
+            max-width:520px;
+            margin:0 auto 18px;
+            line-height:1.6;
+          "
+        >
+          Be the first to share something with the Marvel Chat universe.
+        </p>
+
+        <button
+          type="button"
+          class="btn"
+          id="emptyCreatePost"
+        >
+          ✍️ Create the first post
+        </button>
+      </section>
+    `;
+  }
+
   return `
     <section
-      style="
-        display:grid;
-        grid-template-columns:repeat(2,minmax(0,1fr));
-        gap:14px;
-        margin-bottom:26px;
-      "
+      id="communityPosts"
     >
-      <button
-        class="card"
-        type="button"
-        data-quick="post"
-        style="
-          text-align:left;
-          cursor:pointer;
-          padding:20px;
-          border:1px solid var(--border);
-        "
-      >
-        <div
-          style="
-            font-size:28px;
-            margin-bottom:12px;
-          "
-        >
-          📝
-        </div>
-
-        <strong
-          style="
-            display:block;
-            font-size:18px;
-          "
-        >
-          Create post
-        </strong>
-
-        <span
-          class="small"
-          style="
-            display:block;
-            margin-top:6px;
-          "
-        >
-          Share something
-        </span>
-      </button>
-
-      <button
-        class="card"
-        type="button"
-        data-quick="chat"
-        style="
-          text-align:left;
-          cursor:pointer;
-          padding:20px;
-          border:1px solid var(--border);
-        "
-      >
-        <div
-          style="
-            font-size:28px;
-            margin-bottom:12px;
-          "
-        >
-          💬
-        </div>
-
-        <strong
-          style="
-            display:block;
-            font-size:18px;
-          "
-        >
-          Explore Chat
-        </strong>
-
-        <span
-          class="small"
-          style="
-            display:block;
-            margin-top:6px;
-          "
-        >
-          Meet and talk with people
-        </span>
-      </button>
-
-      <button
-        class="card"
-        type="button"
-        data-quick="timetrust"
-        style="
-          text-align:left;
-          cursor:pointer;
-          padding:20px;
-          border:1px solid var(--border);
-        "
-      >
-        <div
-          style="
-            font-size:28px;
-            margin-bottom:12px;
-          "
-        >
-          ⏱️
-        </div>
-
-        <strong
-          style="
-            display:block;
-            font-size:18px;
-          "
-        >
-          TimeTrust
-        </strong>
-
-        <span
-          class="small"
-          style="
-            display:block;
-            margin-top:6px;
-          "
-        >
-          Exchange skills and time
-        </span>
-      </button>
-
-      <button
-        class="card"
-        type="button"
-        data-quick="market"
-        style="
-          text-align:left;
-          cursor:pointer;
-          padding:20px;
-          border:1px solid var(--border);
-        "
-      >
-        <div
-          style="
-            font-size:28px;
-            margin-bottom:12px;
-          "
-        >
-          🛍️
-        </div>
-
-        <strong
-          style="
-            display:block;
-            font-size:18px;
-          "
-        >
-          Market
-        </strong>
-
-        <span
-          class="small"
-          style="
-            display:block;
-            margin-top:6px;
-          "
-        >
-          Discover products and listings
-        </span>
-      </button>
+      ${posts
+        .map(
+          post =>
+            renderPostCard(post)
+        )
+        .join("")}
     </section>
   `;
 }
 
 export function renderHome() {
-  markHomeActivity();
+  stopDiscoveryCountdown();
 
-  const posts =
-    Array.isArray(state.posts)
-      ? state.posts.filter(
-          post =>
-            post &&
-            !isPostExpired(post)
-        )
-      : [];
-
-  const showDiscovery =
-    shouldShowDiscovery();
+  const discovery =
+    shouldShowDiscovery()
+      ? renderDiscoveryBanner()
+      : "";
 
   return `
-    <div
-      style="
-        padding-bottom:24px;
-      "
+    <main
+      class="page"
+      id="homePage"
     >
       ${
-        showDiscovery
-          ? renderDiscoveryBanner()
+        discovery
+          ? discovery
           : ""
       }
 
       ${renderQuickActions()}
 
-      ${renderHomeHeader()}
+      ${renderCommunityHeader()}
 
-      <section>
-        <div
-          style="
-            display:flex;
-            align-items:center;
-            justify-content:space-between;
-            gap:12px;
-            margin-bottom:16px;
-          "
-        >
-          <h2
-            style="
-              margin:0;
-              font-size:28px;
-            "
-          >
-            Community feed
-          </h2>
+      ${renderYouTubeLiveCard()}
 
-          <span
-            class="small"
-            id="homePostCount"
-          >
-            ${posts.length}
-          </span>
-        </div>
-
-        <div id="homePosts">
-          ${
-            posts.length
-              ? posts
-                  .map(
-                    post =>
-                      renderPost(
-                        post
-                      )
-                  )
-                  .join("")
-              : `
-                <section
-                  class="card empty"
-                  style="
-                    padding:38px 22px;
-                    text-align:center;
-                  "
-                >
-                  <div style="font-size:42px;">
-                    ✨
-                  </div>
-
-                  <h3>
-                    Your community feed is quiet.
-                  </h3>
-
-                  <p class="small">
-                    Be the first to start a conversation.
-                  </p>
-
-                  <button
-                    class="btn btn-primary"
-                    type="button"
-                    id="emptyCreatePost"
-                  >
-                    Create the first post
-                  </button>
-                </section>
-              `
-          }
-        </div>
-      </section>
-    </div>
+      ${renderPosts()}
+    </main>
   `;
 }
 
-function updateLikeButton(
-  postId
-) {
-  const post =
-    state.posts.find(
-      item =>
-        item.id === postId
-    );
-
-  if (!post) {
-    return;
-  }
-
-  const liked =
-    !!state.user &&
-    Array.isArray(
-      post.likedBy
-    ) &&
-    post.likedBy.includes(
-      state.user.uid
-    );
-
-  document
-    .querySelectorAll(
-      `[data-like="${cssEscape(postId)}"]`
-    )
-    .forEach(
-      button => {
-        button.classList.toggle(
-          "btn-primary",
-          liked
-        );
-
-        button.classList.toggle(
-          "btn-ghost",
-          !liked
-        );
-
-        button.textContent =
-          `❤️ ${Number(
-            post.likes || 0
-          )}`;
-      }
-    );
-}
-
-async function toggleLike(
-  id
-) {
-  if (!state.user) {
+async function toggleLike(id) {
+  if (!state.user?.uid) {
     toast(
       "Please sign in first."
     );
@@ -1710,81 +1455,65 @@ async function toggleLike(
     return;
   }
 
+  const post =
+    getPostById(id);
+
+  if (!post) {
+    toast(
+      "Post is no longer available."
+    );
+
+    return;
+  }
+
+  const postId =
+    String(id);
+
   if (
-    pendingLikeIds.has(id)
+    pendingLikeIds.has(postId)
   ) {
     return;
   }
 
-  const post =
-    state.posts.find(
-      item =>
-        item.id === id
-    );
-
-  if (!post) {
-    return;
-  }
-
-  pendingLikeIds.add(id);
+  pendingLikeIds.add(
+    postId
+  );
 
   const liked =
-    Array.isArray(
-      post.likedBy
-    ) &&
-    post.likedBy.includes(
-      state.user.uid
-    );
-
-  const previousLikes =
-    Number(
-      post.likes || 0
-    );
-
-  const previousLikedBy =
-    Array.isArray(
-      post.likedBy
-    )
-      ? [
-          ...post.likedBy
-        ]
-      : [];
+    isPostLiked(post);
 
   const nextLikes =
     Math.max(
       0,
-      previousLikes +
+      getPostLikes(post) +
         (liked ? -1 : 1)
     );
 
   const nextLikedBy =
     liked
-      ? previousLikedBy.filter(
+      ? getLikedBy(post).filter(
           uid =>
-            uid !==
-            state.user.uid
+            String(uid) !==
+            String(state.user.uid)
         )
       : [
-          ...previousLikedBy,
+          ...getLikedBy(post),
           state.user.uid
         ];
 
-  state.posts =
-    state.posts.map(
-      item =>
-        item.id === id
-          ? {
-              ...item,
-              likes:
-                nextLikes,
-              likedBy:
-                nextLikedBy
-            }
-          : item
-    );
+  updateLocalPost(
+    postId,
+    current => ({
+      ...current,
+      likes:
+        nextLikes,
+      likedBy:
+        nextLikedBy
+    })
+  );
 
-  updateLikeButton(
-    id
+  refreshPostCard(
+    postId
   );
 
   try {
@@ -1792,105 +1521,60 @@ async function toggleLike(
       doc(
         db,
         "posts",
-        id
+        postId
       ),
-      {
-        likes:
-          increment(
-            liked ? -1 : 1
-          ),
-        likedBy:
-          liked
-            ? arrayRemove(
+      liked
+        ? {
+            likes:
+              increment(-1),
+            likedBy:
+              arrayRemove(
                 state.user.uid
               )
-            : arrayUnion(
+          }
+        : {
+            likes:
+              increment(1),
+            likedBy:
+              arrayUnion(
                 state.user.uid
               )
-      }
+          }
     );
 
-    const updatedPost =
-      state.posts.find(
-        item =>
-          item.id === id
-      );
-
-    if (
-      updatedPost?.uid &&
-      updatedPost.uid !==
-        state.user.uid &&
-      !liked
-    ) {
-      try {
-        await addDoc(
-          collection(
-            db,
-            "users",
-            updatedPost.uid,
-            "notifications"
-          ),
-          {
-            type:
-              "like",
-            actorUid:
-              state.user.uid,
-            actorName:
-              getCurrentUserName(),
-            targetId:
-              id,
-            text:
-              `${getCurrentUserName()} liked your post.`,
-            read:
-              false,
-            createdAt:
-              serverTimestamp()
-          }
-        );
-      } catch (
-        notificationError
-      ) {
-        console.warn(
-          "Could not create like notification:",
-          notificationError
-        );
-      }
-    }
+    markHomeActivity();
+  } catch (error) {
+    updateLocalPost(
+      postId,
+      current => ({
+        ...current,
+        likes:
+          getPostLikes(post),
+        likedBy:
+          getLikedBy(post)
+      })
+    );
 
     refreshPostCard(
-      id
-    );
-  } catch (error) {
-    state.posts =
-      state.posts.map(
-        item =>
-          item.id === id
-            ? {
-                ...item,
-                likes:
-                  previousLikes,
-                likedBy:
-                  previousLikedBy
-              }
-            : item
-      );
-
-    updateLikeButton(
-      id
+      postId
     );
 
     toast(
       friendly(error)
     );
   } finally {
-    pendingLikeIds.delete(id);
+    pendingLikeIds.delete(
+      postId
+    );
+
+    refreshPostCard(
+      postId
+    );
   }
 }
 
-async function savePost(
-  id
-) {
-  if (!state.user) {
+async function savePost(id) {
+  if (!state.user?.uid) {
     toast(
       "Please sign in first."
     );
@@ -1898,16 +1582,50 @@ async function savePost(
     return;
   }
 
+  const post =
+    getPostById(id);
+
+  if (!post) {
+    toast(
+      "Post is no longer available."
+    );
+
+    return;
+  }
+
+  const postId =
+    String(id);
+
   if (
-    pendingSaveIds.has(id)
+    pendingSaveIds.has(
+      postId
+    )
   ) {
     return;
   }
 
-  pendingSaveIds.add(id);
+  pendingSaveIds.add(
+    postId
+  );
 
-  const alreadySaved =
-    savedPostIds.has(id);
+  const wasSaved =
+    savedPostIds.has(
+      postId
+    );
+
+  if (wasSaved) {
+    savedPostIds.delete(
+      postId
+    );
+  } else {
+    savedPostIds.add(
+      postId
+    );
+  }
+
+  refreshPostCard(
+    postId
+  );
 
   try {
     const savedRef =
@@ -1916,113 +1634,84 @@ async function savePost(
         "users",
         state.user.uid,
         "savedPosts",
-        id
+        postId
       );
 
-    if (alreadySaved) {
+    if (wasSaved) {
       await deleteDoc(
         savedRef
-      );
-
-      savedPostIds.delete(
-        id
       );
     } else {
       await setDoc(
         savedRef,
         {
           postId:
-            id,
+            postId,
           savedAt:
             serverTimestamp()
         }
       );
+    }
 
+    savedPostsLoadedForUid =
+      state.user.uid;
+
+    markHomeActivity();
+
+    toast(
+      wasSaved
+        ? "Post removed from saved posts."
+        : "Post saved."
+    );
+  } catch (error) {
+    if (wasSaved) {
       savedPostIds.add(
-        id
+        postId
+      );
+    } else {
+      savedPostIds.delete(
+        postId
       );
     }
 
-    state.savedPostCount =
-      savedPostIds.size;
-
-    state.posts =
-      state.posts.map(
-        post =>
-          post.id === id
-            ? {
-                ...post,
-                savedBy:
-                  alreadySaved
-                    ? (
-                        Array.isArray(
-                          post.savedBy
-                        )
-                          ? post.savedBy.filter(
-                              uid =>
-                                uid !==
-                                state.user.uid
-                            )
-                          : []
-                      )
-                    : Array.from(
-                        new Set([
-                          ...(Array.isArray(
-                            post.savedBy
-                          )
-                            ? post.savedBy
-                            : []),
-                          state.user.uid
-                        ])
-                      )
-              }
-            : post
-      );
-
-    refreshSavedButtons();
-
     refreshPostCard(
-      id
+      postId
     );
 
-    toast(
-      alreadySaved
-        ? "Post removed from saved."
-        : "Post saved 🔖"
-    );
-  } catch (error) {
     toast(
       friendly(error)
     );
   } finally {
     pendingSaveIds.delete(
-      id
+      postId
+    );
+
+    refreshPostCard(
+      postId
     );
   }
 }
 
-async function sharePost(
-  id
-) {
+async function sharePost(id) {
   const post =
-    state.posts.find(
-      item =>
-        item.id === id
-    );
+    getPostById(id);
 
   if (!post) {
+    toast(
+      "Post is no longer available."
+    );
+
     return;
   }
 
   const text =
-    post.text ||
-    post.content ||
-    "";
+    getPostText(post);
 
   const shareData = {
     title:
-      "Marvel Chat",
-    text
+      "Marvel Chat post",
+    text:
+      text
   };
 
   try {
@@ -2032,317 +1721,161 @@ async function sharePost(
       await navigator.share(
         shareData
       );
-      return;
+    } else if (
+      navigator.clipboard
+        ?.writeText
+    ) {
+      await navigator.clipboard.writeText(
+        text
+      );
+
+      toast(
+        "Post text copied."
+      );
+    } else {
+      toast(
+        "Sharing is not available on this device."
+      );
     }
-  } catch (
-    error
-  ) {
+
+    markHomeActivity();
+  } catch (error) {
     if (
-      error?.name ===
+      error?.name !==
       "AbortError"
     ) {
-      return;
+      toast(
+        friendly(error)
+      );
     }
   }
-
-  try {
-    await navigator.clipboard.writeText(
-      text
-    );
-
-    toast(
-      "Post copied to clipboard."
-    );
-  } catch {
-    toast(
-      text
-    );
-  }
-}
-
-function refreshPostCard(
-  id
-) {
-  const post =
-    state.posts.find(
-      item =>
-        item.id === id
-    );
-
-  const card =
-    document.querySelector(
-      `[data-post-card="${cssEscape(id)}"]`
-    );
-
-  if (!post || !card) {
-    return;
-  }
-
-  const replacement =
-    document.createElement(
-      "div"
-    );
-
-  replacement.innerHTML =
-    renderPost(post);
-
-  const nextCard =
-    replacement.firstElementChild;
-
-  if (!nextCard) {
-    return;
-  }
-
-  card.replaceWith(
-    nextCard
-  );
-
-  attachSinglePostEvents(
-    nextCard
-  );
-}
-
-function attachSinglePostEvents(
-  root
-) {
-  root
-    .querySelectorAll(
-      "[data-like]"
-    )
-    .forEach(
-      button => {
-        button.addEventListener(
-          "click",
-          () => {
-            toggleLike(
-              button.dataset
-                .like
-            );
-          }
-        );
-      }
-    );
-
-  root
-    .querySelectorAll(
-      "[data-save]"
-    )
-    .forEach(
-      button => {
-        button.addEventListener(
-          "click",
-          () => {
-            savePost(
-              button.dataset
-                .save
-            );
-          }
-        );
-      }
-    );
-
-  root
-    .querySelectorAll(
-      "[data-share]"
-    )
-    .forEach(
-      button => {
-        button.addEventListener(
-          "click",
-          () => {
-            sharePost(
-              button.dataset
-                .share
-            );
-          }
-        );
-      }
-    );
-
-  root
-    .querySelectorAll(
-      "[data-comment]"
-    )
-    .forEach(
-      button => {
-        button.addEventListener(
-          "click",
-          () => {
-            showComments(
-              button.dataset
-                .comment
-            );
-          }
-        );
-      }
-    );
-
-  root
-    .querySelectorAll(
-      "[data-edit-post]"
-    )
-    .forEach(
-      button => {
-        button.addEventListener(
-          "click",
-          event => {
-            event.stopPropagation();
-
-            showEditPost(
-              button.dataset
-                .editPost
-            );
-          }
-        );
-      }
-    );
-
-  root
-    .querySelectorAll(
-      "[data-delete-post]"
-    )
-    .forEach(
-      button => {
-        button.addEventListener(
-          "click",
-          event => {
-            event.stopPropagation();
-
-            showDeletePostConfirmation(
-              button.dataset
-                .deletePost
-            );
-          }
-        );
-      }
-    );
-
-  root
-    .querySelectorAll(
-      "[data-menu-post]"
-    )
-    .forEach(
-      button => {
-        button.addEventListener(
-          "click",
-          event => {
-            event.stopPropagation();
-
-            const menu =
-              document.getElementById(
-                `postMenu-${button.dataset.menuPost}`
-              );
-
-            if (!menu) {
-              return;
-            }
-
-            document
-              .querySelectorAll(
-                ".dropdown-menu"
-              )
-              .forEach(
-                item => {
-                  if (
-                    item !==
-                    menu
-                  ) {
-                    item.classList.add(
-                      "hidden"
-                    );
-                  }
-                }
-              );
-
-            menu.classList.toggle(
-              "hidden"
-            );
-          }
-        );
-      }
-    );
 }
 
 function showCreatePost() {
-  showModal(
-    `
-      <div class="modal-header">
-        <h2>Create Post</h2>
+  const defaultName =
+    getCurrentUserName();
+
+  showModal(`
+    <div
+      class="modal-content"
+      style="
+        max-width:620px;
+      "
+    >
+      <div
+        class="modal-header"
+      >
+        <h3>
+          Create a post
+        </h3>
 
         <button
-          class="icon-btn"
           type="button"
-          data-close-modal
+          class="icon-btn"
+          data-modal-close
           aria-label="Close"
         >
           ✕
         </button>
       </div>
 
-      <div class="modal-body">
+      <div
+        class="modal-body"
+      >
+        <div
+          class="small"
+          style="
+            margin-bottom:10px;
+          "
+        >
+          Posting as ${escapeHtml(
+            defaultName
+          )}
+        </div>
+
         <textarea
           id="createPostText"
           class="input"
           rows="7"
           maxlength="1000"
-          placeholder="What's on your mind?"
+          placeholder="What's happening in your Marvel universe?"
         ></textarea>
 
         <div
           style="
-            margin-top:14px;
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            gap:12px;
+            margin-top:12px;
+            flex-wrap:wrap;
           "
         >
           <label
             class="small"
-            for="postExpiry"
           >
-            Post visibility
+            Post expiry
+
+            <select
+              id="createPostExpiry"
+              class="input"
+              style="
+                margin-top:6px;
+              "
+            >
+              <option value="">
+                No expiry
+              </option>
+
+              ${POST_EXPIRY_OPTIONS
+                .map(
+                  option => `
+                    <option
+                      value="${option.value}"
+                    >
+                      ${escapeHtml(
+                        option.label
+                      )}
+                    </option>
+                  `
+                )
+                .join("")}
+            </select>
           </label>
 
-          <select
-            id="postExpiry"
-            class="input"
-            style="
-              margin-top:6px;
-            "
+          <span
+            class="small"
           >
-            <option value="">
-              No expiry
-            </option>
-
-            ${POST_EXPIRY_OPTIONS.map(
-              option => `
-                <option value="${escapeHtml(
-                  option.value
-                )}">
-                  ${escapeHtml(
-                    option.label
-                  )}
-                </option>
-              `
-            ).join("")}
-          </select>
+            Maximum 1000 characters
+          </span>
         </div>
+      </div>
+
+      <div
+        class="modal-footer"
+      >
+        <button
+          type="button"
+          class="btn secondary"
+          data-modal-close
+        >
+          Cancel
+        </button>
 
         <button
-          class="btn btn-primary"
-          id="publishPostBtn"
           type="button"
-          style="
-            margin-top:14px;
-            width:100%;
-          "
+          class="btn"
+          id="submitCreatePost"
         >
           Publish
         </button>
       </div>
-    `
-  );
+    </div>
+  `);
 
   document
     .querySelectorAll(
-      "[data-close-modal]"
+      "[data-modal-close]"
     )
     .forEach(
       button => {
@@ -2353,169 +1886,219 @@ function showCreatePost() {
       }
     );
 
-  document
-    .getElementById(
-      "publishPostBtn"
-    )
-    ?.addEventListener(
-      "click",
-      async () => {
-        const input =
-          document.getElementById(
-            "createPostText"
-          );
+  const textInput =
+    document.getElementById(
+      "createPostText"
+    );
 
-        const expiryInput =
-          document.getElementById(
-            "postExpiry"
-          );
+  const expiryInput =
+    document.getElementById(
+      "createPostExpiry"
+    );
 
-        const button =
-          document.getElementById(
-            "publishPostBtn"
-          );
+  const submitButton =
+    document.getElementById(
+      "submitCreatePost"
+    );
 
-        const text =
-          input?.value.trim() ||
+  textInput?.focus();
+
+  submitButton?.addEventListener(
+    "click",
+    async () => {
+      if (!state.user?.uid) {
+        toast(
+          "Please sign in first."
+        );
+
+        return;
+      }
+
+      const text =
+        String(
+          textInput?.value ||
+            ""
+        ).trim();
+
+      if (!text) {
+        toast(
+          "Write something before publishing."
+        );
+
+        return;
+      }
+
+      if (
+        text.length > 1000
+      ) {
+        toast(
+          "Posts must be 1000 characters or less."
+        );
+
+        return;
+      }
+
+      submitButton.disabled =
+        true;
+
+      submitButton.textContent =
+        "Publishing...";
+
+      try {
+        const expiryValue =
+          expiryInput?.value ||
           "";
 
-        if (!text) {
-          toast(
-            "Write something first."
+        const expiryDate =
+          getPostExpiryDate(
+            expiryValue
           );
 
-          return;
-        }
+        const payload = {
+          uid:
+            state.user.uid,
+          text:
+            text,
+          createdAt:
+            serverTimestamp(),
+          likes:
+            0,
+          likedBy:
+            [],
+          comments:
+            0
+        };
 
-        if (!state.user) {
-          toast(
-            "Please sign in first."
-          );
-
-          return;
-        }
-
-        if (button) {
-          button.disabled =
-            true;
-
-          button.textContent =
-            "Publishing…";
-        }
-
-        try {
-          const expiryDate =
-            getPostExpiryDate(
-              expiryInput?.value
+        if (expiryDate) {
+          payload.expiresAt =
+            Timestamp.fromDate(
+              expiryDate
             );
-
-          await addDoc(
-            collection(
-              db,
-              "posts"
-            ),
-            {
-              uid:
-                state.user.uid,
-              username:
-                getCurrentUserName(),
-              text,
-              likes: 0,
-              comments: 0,
-              likedBy: [],
-              createdAt:
-                serverTimestamp(),
-              ...(expiryDate
-                ? {
-                    expiresAt:
-                      Timestamp.fromDate(
-                        expiryDate
-                      )
-                  }
-                : {})
-            }
-          );
-
-          closeModal();
-
-          toast(
-            "Post published 🎉"
-          );
-        } catch (error) {
-          toast(
-            friendly(error)
-          );
-
-          if (button) {
-            button.disabled =
-              false;
-
-            button.textContent =
-              "Publish";
-          }
+          payload.expiryDurationHours =
+            Math.round(
+              (
+                expiryDate.getTime() -
+                Date.now()
+              ) /
+                3600000
+            );
         }
+
+        await addDoc(
+          collection(
+            db,
+            "posts"
+          ),
+          payload
+        );
+
+        markHomeActivity();
+
+        closeModal();
+
+        toast(
+          "Post published ✨"
+        );
+      } catch (error) {
+        toast(
+          friendly(error)
+        );
+
+        submitButton.disabled =
+          false;
+
+        submitButton.textContent =
+          "Publish";
       }
-    );
+    }
+  );
 }
 
-async function showEditPost(
-  id
-) {
+function showEditPost(id) {
   const post =
-    state.posts.find(
-      item =>
-        item.id === id
-    );
+    getPostById(id);
 
   if (!post) {
+    toast(
+      "Post is no longer available."
+    );
+
     return;
   }
 
-  showModal(
-    `
-      <div class="modal-header">
-        <h2>Edit Post</h2>
+  if (
+    String(post.uid) !==
+    String(state.user?.uid)
+  ) {
+    toast(
+      "You can only edit your own posts."
+    );
+
+    return;
+  }
+
+  showModal(`
+    <div
+      class="modal-content"
+      style="
+        max-width:620px;
+      "
+    >
+      <div
+        class="modal-header"
+      >
+        <h3>
+          Edit post
+        </h3>
 
         <button
-          class="icon-btn"
           type="button"
-          data-close-modal
+          class="icon-btn"
+          data-modal-close
           aria-label="Close"
         >
           ✕
         </button>
       </div>
 
-      <div class="modal-body">
+      <div
+        class="modal-body"
+      >
         <textarea
           id="editPostText"
           class="input"
           rows="7"
           maxlength="1000"
         >${escapeHtml(
-          post.text ||
-          post.content ||
-          ""
+          getPostText(post)
         )}</textarea>
+      </div>
+
+      <div
+        class="modal-footer"
+      >
+        <button
+          type="button"
+          class="btn secondary"
+          data-modal-close
+        >
+          Cancel
+        </button>
 
         <button
-          class="btn btn-primary"
-          id="savePostEdit"
           type="button"
-          style="
-            margin-top:14px;
-            width:100%;
-          "
+          class="btn"
+          id="submitEditPost"
         >
           Save changes
         </button>
       </div>
-    `
-  );
+    </div>
+  `);
 
   document
     .querySelectorAll(
-      "[data-close-modal]"
+      "[data-modal-close]"
     )
     .forEach(
       button => {
@@ -2526,174 +2109,187 @@ async function showEditPost(
       }
     );
 
-  document
-    .getElementById(
-      "savePostEdit"
-    )
-    ?.addEventListener(
-      "click",
-      async () => {
-        const input =
-          document.getElementById(
-            "editPostText"
-          );
-
-        const button =
-          document.getElementById(
-            "savePostEdit"
-          );
-
-        const text =
-          input?.value.trim() ||
-          "";
-
-        if (!text) {
-          toast(
-            "Post cannot be empty."
-          );
-
-          return;
-        }
-
-        if (!state.user) {
-          return;
-        }
-
-        if (
-          post.uid !==
-          state.user.uid
-        ) {
-          toast(
-            "You can only edit your own posts."
-          );
-
-          return;
-        }
-
-        if (button) {
-          button.disabled =
-            true;
-
-          button.textContent =
-            "Saving…";
-        }
-
-        try {
-          await updateDoc(
-            doc(
-              db,
-              "posts",
-              id
-            ),
-            {
-              text,
-              editedAt:
-                serverTimestamp()
-            }
-          );
-
-          state.posts =
-            state.posts.map(
-              item =>
-                item.id === id
-                  ? {
-                      ...item,
-                      text,
-                      editedAt:
-                        new Date()
-                    }
-                  : item
-            );
-
-          closeModal();
-
-          refreshPostCard(
-            id
-          );
-
-          toast(
-            "Post updated."
-          );
-        } catch (error) {
-          toast(
-            friendly(error)
-          );
-
-          if (button) {
-            button.disabled =
-              false;
-
-            button.textContent =
-              "Save changes";
-          }
-        }
-      }
+  const input =
+    document.getElementById(
+      "editPostText"
     );
+
+  const submit =
+    document.getElementById(
+      "submitEditPost"
+    );
+
+  input?.focus();
+
+  submit?.addEventListener(
+    "click",
+    async () => {
+      const text =
+        String(
+          input?.value ||
+            ""
+        ).trim();
+
+      if (!text) {
+        toast(
+          "Post text cannot be empty."
+        );
+
+        return;
+      }
+
+      if (
+        text.length > 1000
+      ) {
+        toast(
+          "Posts must be 1000 characters or less."
+        );
+
+        return;
+      }
+
+      submit.disabled =
+        true;
+
+      submit.textContent =
+        "Saving...";
+
+      try {
+        await updateDoc(
+          doc(
+            db,
+            "posts",
+            String(id)
+          ),
+          {
+            text:
+              text,
+            editedAt:
+              serverTimestamp()
+          }
+        );
+
+        updateLocalPost(
+          id,
+          current => ({
+            ...current,
+            text:
+              text
+          })
+        );
+
+        closeModal();
+
+        markHomeActivity();
+
+        refreshPostCard(
+          id
+        );
+
+        toast(
+          "Post updated."
+        );
+      } catch (error) {
+        toast(
+          friendly(error)
+        );
+
+        submit.disabled =
+          false;
+
+        submit.textContent =
+          "Save changes";
+      }
+    }
+  );
 }
 
 function showDeletePostConfirmation(
   id
 ) {
   const post =
-    state.posts.find(
-      item =>
-        item.id === id
-    );
+    getPostById(id);
 
   if (!post) {
+    toast(
+      "Post is no longer available."
+    );
+
     return;
   }
 
-  showModal(
-    `
-      <div class="modal-header">
-        <h2>Delete Post?</h2>
+  if (
+    String(post.uid) !==
+    String(state.user?.uid)
+  ) {
+    toast(
+      "You can only delete your own posts."
+    );
+
+    return;
+  }
+
+  showModal(`
+    <div
+      class="modal-content"
+      style="
+        max-width:500px;
+      "
+    >
+      <div
+        class="modal-header"
+      >
+        <h3>
+          Delete post?
+        </h3>
 
         <button
-          class="icon-btn"
           type="button"
-          data-close-modal
+          class="icon-btn"
+          data-modal-close
           aria-label="Close"
         >
           ✕
         </button>
       </div>
 
-      <div class="modal-body">
-        <p>
-          This will permanently delete your post.
-        </p>
-
-        <div
+      <div
+        class="modal-body"
+      >
+        <p
           style="
-            display:flex;
-            gap:10px;
-            margin-top:18px;
+            line-height:1.6;
           "
         >
-          <button
-            class="btn btn-ghost"
-            type="button"
-            data-close-modal
-          >
-            Cancel
-          </button>
-
-          <button
-            class="btn btn-primary"
-            id="confirmDeletePost"
-            type="button"
-          >
-            Delete
-          </button>
-        </div>
+          This will permanently remove your post from the community feed.
+        </p>
       </div>
-    `
-  );
+
+      <div
+        class="modal-footer"
+      >
+        <button
+          type="button"
+          class="btn secondary"
+          data-modal-close
+        >
+          Cancel
+        </button>
+
+        <button
+          type="button"
+          class="btn"
+          id="confirmDeletePost"
+        >
+          Delete
+        </button>
+      </div>
+    </div>
+  `);
 
   document
     .querySelectorAll(
-      "[data-close-modal]"
+      "[data-modal-close]"
     )
     .forEach(
       button => {
@@ -2710,58 +2306,41 @@ function showDeletePostConfirmation(
     )
     ?.addEventListener(
       "click",
-      async () => {
+      async event => {
         const button =
-          document.getElementById(
-            "confirmDeletePost"
-          );
+          event.currentTarget;
 
-        if (!state.user) {
-          return;
-        }
+        button.disabled =
+          true;
 
-        if (
-          post.uid !==
-          state.user.uid
-        ) {
-          toast(
-            "You can only delete your own posts."
-          );
-
-          return;
-        }
-
-        if (button) {
-          button.disabled =
-            true;
-
-          button.textContent =
-            "Deleting…";
-        }
+        button.textContent =
+          "Deleting...";
 
         try {
           await deleteDoc(
             doc(
               db,
               "posts",
-              id
+              String(id)
             )
           );
 
           state.posts =
-            state.posts.filter(
+            getPosts().filter(
               item =>
-                item.id !== id
+                String(item.id) !==
+                String(id)
             );
 
           closeModal();
 
-          const card =
-            document.querySelector(
-              `[data-post-card="${cssEscape(id)}"]`
-            );
+          markHomeActivity();
 
-          card?.remove();
+          document
+            .querySelector(
+              `[data-post-card="${cssEscape(id)}"]`
+            )
+            ?.remove();
 
           toast(
             "Post deleted."
@@ -2771,13 +2350,11 @@ function showDeletePostConfirmation(
             friendly(error)
           );
 
-          if (button) {
-            button.disabled =
-              false;
+          button.disabled =
+            false;
 
-            button.textContent =
-              "Delete";
-          }
+          button.textContent =
+            "Delete";
         }
       }
     );
@@ -2787,80 +2364,226 @@ async function showComments(
   id
 ) {
   const post =
-    state.posts.find(
-      item =>
-        item.id === id
+    getPostById(id);
+
+  if (!post) {
+    toast(
+      "Post is no longer available."
     );
 
-  showModal(
-    `
-      <div class="modal-header">
-        <h2>Comments</h2>
+    return;
+  }
+
+  let comments = [];
+
+  try {
+    const commentsQuery =
+      query(
+        collection(
+          db,
+          "posts",
+          String(id),
+          "comments"
+        ),
+        orderBy(
+          "createdAt",
+          "asc"
+        ),
+        limit(50)
+      );
+
+    const snapshot =
+      await getDocs(
+        commentsQuery
+      );
+
+    comments =
+      snapshot.docs.map(
+        item => ({
+          id:
+            item.id,
+          ...item.data()
+        })
+      );
+  } catch (error) {
+    toast(
+      friendly(error)
+    );
+
+    return;
+  }
+
+  const commentsHtml =
+    comments.length
+      ? comments
+          .map(
+            comment => {
+              const name =
+                escapeHtml(
+                  comment.displayName ||
+                    comment.authorName ||
+                    comment.username ||
+                    "Marvel User"
+                );
+
+              const text =
+                escapeHtml(
+                  comment.text ||
+                    ""
+                );
+
+              const date =
+                comment.createdAt
+                  ? formatDate(
+                      comment.createdAt
+                    )
+                  : "";
+
+              const own =
+                String(
+                  comment.uid
+                ) ===
+                String(
+                  state.user?.uid
+                );
+
+              return `
+                <div
+                  class="list-item"
+                  style="
+                    position:relative;
+                  "
+                >
+                  <div
+                    style="
+                      display:flex;
+                      justify-content:space-between;
+                      gap:12px;
+                    "
+                  >
+                    <strong>
+                      ${name}
+                    </strong>
+
+                    ${
+                      own
+                        ? `
+                          <button
+                            type="button"
+                            class="icon-btn"
+                            data-delete-comment="${escapeHtml(comment.id)}"
+                            aria-label="Delete comment"
+                            title="Delete comment"
+                          >
+                            🗑️
+                          </button>
+                        `
+                        : ""
+                    }
+                  </div>
+
+                  <div
+                    style="
+                      margin-top:5px;
+                      overflow-wrap:anywhere;
+                    "
+                  >
+                    ${text}
+                  </div>
+
+                  <div class="small">
+                    ${escapeHtml(date)}
+                  </div>
+                </div>
+              `;
+            }
+          )
+          .join("")
+      : `
+        <div
+          class="small"
+          id="noCommentsMessage"
+          style="
+            padding:10px 0;
+          "
+        >
+          No comments yet. Start the conversation.
+        </div>
+      `;
+
+  showModal(`
+    <div
+      class="modal-content"
+      style="
+        max-width:640px;
+      "
+    >
+      <div
+        class="modal-header"
+      >
+        <h3>
+          Comments
+        </h3>
 
         <button
-          class="icon-btn"
           type="button"
-          data-close-modal
+          class="icon-btn"
+          data-modal-close
           aria-label="Close"
         >
           ✕
         </button>
       </div>
 
-      <div class="modal-body">
+      <div
+        class="modal-body"
+      >
         <div
           id="commentsList"
-          class="list"
+          style="
+            max-height:45vh;
+            overflow:auto;
+          "
         >
-          Loading comments…
+          ${commentsHtml}
         </div>
 
-        ${
-          state.user
-            ? `
-              <div
-                style="
-                  margin-top:18px;
-                "
-              >
-                <textarea
-                  id="commentText"
-                  class="input"
-                  rows="4"
-                  maxlength="2000"
-                  placeholder="Write a comment..."
-                ></textarea>
+        <div
+          style="
+            margin-top:18px;
+          "
+        >
+          <textarea
+            id="commentText"
+            class="input"
+            rows="4"
+            maxlength="500"
+            placeholder="Write a comment..."
+          ></textarea>
 
-                <button
-                  class="btn btn-primary"
-                  id="addComment"
-                  type="button"
-                  style="
-                    margin-top:10px;
-                  "
-                >
-                  Add comment
-                </button>
-              </div>
-            `
-            : `
-              <div
-                class="notice"
-                style="
-                  margin-top:18px;
-                "
-              >
-                Sign in to join the conversation.
-              </div>
-            `
-        }
+          <div
+            style="
+              display:flex;
+              justify-content:flex-end;
+              margin-top:10px;
+            "
+          >
+            <button
+              type="button"
+              class="btn"
+              id="submitComment"
+            >
+              Add comment
+            </button>
+          </div>
+        </div>
       </div>
-    `
-  );
+    </div>
+  `);
 
   document
     .querySelectorAll(
-      "[data-close-modal]"
+      "[data-modal-close]"
     )
     .forEach(
       button => {
@@ -2871,307 +2594,264 @@ async function showComments(
       }
     );
 
-  try {
-    const snapshot =
-      await getDocs(
-        query(
+  document
+    .querySelectorAll(
+      "[data-delete-comment]"
+    )
+    .forEach(
+      button => {
+        button.addEventListener(
+          "click",
+          () => {
+            deleteComment(
+              id,
+              button.dataset
+                .deleteComment
+            );
+          }
+        );
+      }
+    );
+
+  const input =
+    document.getElementById(
+      "commentText"
+    );
+
+  const button =
+    document.getElementById(
+      "submitComment"
+    );
+
+  input?.focus();
+
+  button?.addEventListener(
+    "click",
+    async () => {
+      if (!state.user?.uid) {
+        toast(
+          "Please sign in first."
+        );
+
+        return;
+      }
+
+      const text =
+        String(
+          input?.value ||
+            ""
+        ).trim();
+
+      if (!text) {
+        toast(
+          "Write a comment first."
+        );
+
+        return;
+      }
+
+      if (
+        text.length > 500
+      ) {
+        toast(
+          "Comments must be 500 characters or less."
+        );
+
+        return;
+      }
+
+      button.disabled =
+        true;
+
+      button.textContent =
+        "Adding...";
+
+      try {
+        const actorName =
+          getCurrentUserName();
+
+        await addDoc(
           collection(
             db,
             "posts",
-            id,
+            String(id),
             "comments"
           ),
-          orderBy(
-            "createdAt",
-            "asc"
+          {
+            uid:
+              state.user.uid,
+            displayName:
+              actorName,
+            text:
+              text,
+            createdAt:
+              serverTimestamp()
+          }
+        );
+
+        await updateDoc(
+          doc(
+            db,
+            "posts",
+            String(id)
           ),
-          limit(100)
-        )
-      );
+          {
+            comments:
+              increment(1)
+          }
+        );
 
-    const comments =
-      snapshot.docs.map(
-        item => ({
-          id:
-            item.id,
-          ...item.data()
-        })
-      );
+        updateLocalPost(
+          id,
+          item => ({
+            ...item,
+            comments:
+              getPostComments(
+                item
+              ) + 1
+          })
+        );
 
-    const list =
-      document.getElementById(
-        "commentsList"
-      );
+        const commentsList =
+          document.getElementById(
+            "commentsList"
+          );
 
-    if (list) {
-      list.innerHTML =
-        comments.length
-          ? comments
-              .map(
-                comment => `
-                  <div class="list-item">
-                    <strong>
-                      ${escapeHtml(
-                        comment.username ||
-                        "User"
-                      )}
-                    </strong>
+        if (commentsList) {
+          const emptyMessage =
+            commentsList.textContent?.trim() ===
+            "No comments yet. Start the conversation.";
 
-                    <div>
-                      ${escapeHtml(
-                        comment.text ||
-                        ""
-                      )}
-                    </div>
+          const commentHtml = `
+            <div class="list-item">
+              <strong>
+                ${escapeHtml(
+                  actorName
+                )}
+              </strong>
 
-                    <div class="small">
-                      ${escapeHtml(
-                        formatDate(
-                          comment.createdAt
-                        )
-                      )}
-                    </div>
-                  </div>
-                `
-              )
-              .join("")
-          : "No comments yet. Start the conversation.";
-    }
-  } catch (error) {
-    const list =
-      document.getElementById(
-        "commentsList"
-      );
+              <div>
+                ${escapeHtml(
+                  text
+                )}
+              </div>
 
-    if (list) {
-      list.innerHTML =
-        `<div class="status error">${escapeHtml(
+              <div class="small">
+                Just now
+              </div>
+            </div>
+          `;
+
+          if (emptyMessage) {
+            commentsList.innerHTML =
+              commentHtml;
+          } else {
+            commentsList.insertAdjacentHTML(
+              "beforeend",
+              commentHtml
+            );
+          }
+        }
+
+        input.value =
+          "";
+
+        markHomeActivity();
+
+        refreshPostCard(
+          id
+        );
+
+        toast(
+          "Comment added 💬"
+        );
+
+        button.disabled =
+          false;
+
+        button.textContent =
+          "Add comment";
+      } catch (error) {
+        toast(
           friendly(error)
-        )}</div>`;
+        );
+
+        button.disabled =
+          false;
+
+        button.textContent =
+          "Add comment";
+      }
     }
+  );
+}
+
+async function deleteComment(
+  postId,
+  commentId
+) {
+  if (!state.user?.uid) {
+    return;
   }
 
-  document
-    .getElementById(
-      "addComment"
-    )
-    ?.addEventListener(
-      "click",
-      async () => {
-        const input =
-          document.getElementById(
-            "commentText"
-          );
+  try {
+    const commentRef =
+      doc(
+        db,
+        "posts",
+        String(postId),
+        "comments",
+        String(commentId)
+      );
 
-        if (!input) {
-          return;
-        }
+    await deleteDoc(
+      commentRef
+    );
 
-        const text =
-          input.value.trim();
-
-        if (!text) {
-          toast(
-            "Write a comment first."
-          );
-
-          return;
-        }
-
-        if (!state.user) {
-          toast(
-            "Please sign in first."
-          );
-
-          return;
-        }
-
-        const button =
-          document.getElementById(
-            "addComment"
-          );
-
-        if (button) {
-          button.disabled =
-            true;
-
-          button.textContent =
-            "Adding…";
-        }
-
-        try {
-          const actorName =
-            getCurrentUserName();
-
-          await addDoc(
-            collection(
-              db,
-              "posts",
-              id,
-              "comments"
-            ),
-            {
-              uid:
-                state.user.uid,
-              username:
-                actorName,
-              text,
-              createdAt:
-                serverTimestamp()
-            }
-          );
-
-          await updateDoc(
-            doc(
-              db,
-              "posts",
-              id
-            ),
-            {
-              comments:
-                increment(1)
-            }
-          );
-
-          if (
-            post &&
-            post.uid &&
-            post.uid !==
-              state.user.uid
-          ) {
-            try {
-              await addDoc(
-                collection(
-                  db,
-                  "users",
-                  post.uid,
-                  "notifications"
-                ),
-                {
-                  type:
-                    "comment",
-                  actorUid:
-                    state.user.uid,
-                  actorName,
-                  targetId:
-                    id,
-                  text:
-                    `${actorName} commented on your post.`,
-                  read:
-                    false,
-                  createdAt:
-                    serverTimestamp()
-                }
-              );
-            } catch (
-              notificationError
-            ) {
-              console.warn(
-                "Could not create comment notification:",
-                notificationError
-              );
-            }
-          }
-
-          const currentPost =
-            state.posts.find(
-              item =>
-                item.id === id
-            );
-
-          if (currentPost) {
-            state.posts =
-              state.posts.map(
-                item =>
-                  item.id === id
-                    ? {
-                        ...item,
-                        comments:
-                          Number(
-                            item.comments ||
-                              0
-                          ) + 1
-                      }
-                    : item
-              );
-          }
-
-          const commentsList =
-            document.getElementById(
-              "commentsList"
-            );
-
-          if (commentsList) {
-            const emptyMessage =
-              commentsList.textContent?.trim() ===
-              "No comments yet. Start the conversation.";
-
-            const commentHtml = `
-              <div class="list-item">
-                <strong>
-                  ${escapeHtml(
-                    actorName
-                  )}
-                </strong>
-
-                <div>
-                  ${escapeHtml(
-                    text
-                  )}
-                </div>
-
-                <div class="small">
-                  Just now
-                </div>
-              </div>
-            `;
-
-            if (emptyMessage) {
-              commentsList.innerHTML =
-                commentHtml;
-            } else {
-              commentsList.insertAdjacentHTML(
-                "beforeend",
-                commentHtml
-              );
-            }
-          }
-
-          input.value =
-            "";
-
-          markHomeActivity();
-
-          refreshPostCard(
-            id
-          );
-
-          toast(
-            "Comment added 💬"
-          );
-
-          if (button) {
-            button.disabled =
-              false;
-
-            button.textContent =
-              "Add comment";
-          }
-        } catch (error) {
-          toast(
-            friendly(error)
-          );
-
-          if (button) {
-            button.disabled =
-              false;
-
-            button.textContent =
-              "Add comment";
-          }
-        }
+    await updateDoc(
+      doc(
+        db,
+        "posts",
+        String(postId)
+      ),
+      {
+        comments:
+          increment(-1)
       }
     );
+
+    updateLocalPost(
+      postId,
+      item => ({
+        ...item,
+        comments:
+          Math.max(
+            0,
+            getPostComments(
+              item
+            ) - 1
+          )
+      })
+    );
+
+    markHomeActivity();
+
+    toast(
+      "Comment deleted."
+    );
+
+    refreshPostCard(
+      postId
+    );
+
+    await showComments(
+      postId
+    );
+  } catch (error) {
+    toast(
+      friendly(error)
+    );
+  }
 }
 
 function openYouTubeLiveSearch() {
@@ -3190,13 +2870,25 @@ function openYouTubeLiveSearch() {
   }
 }
 
+/*
+ * IMPORTANT STARTUP RULE
+ *
+ * This function is deliberately NOT called by attachHomeEvents().
+ *
+ * Home must not delete expired Firestore documents while the application
+ * is initializing. Expiry is presentation state here. The post is simply
+ * hidden from the Home feed when it is expired.
+ *
+ * Keeping the helper isolated also preserves the possibility of explicit
+ * maintenance later without adding Firestore writes to Home startup.
+ */
 async function cleanupExpiredPosts() {
   if (!state.user) {
     return;
   }
 
   const expired =
-    state.posts.filter(
+    getPosts().filter(
       post =>
         post.uid ===
           state.user.uid &&
@@ -3216,7 +2908,7 @@ async function cleanupExpiredPosts() {
       );
 
       state.posts =
-        state.posts.filter(
+        getPosts().filter(
           item =>
             item.id !==
             post.id
@@ -3233,11 +2925,43 @@ async function cleanupExpiredPosts() {
 export function attachHomeEvents(
   renderApp
 ) {
+  /*
+   * =========================================================
+   * HOME STARTUP SAFETY
+   * =========================================================
+   *
+   * The global posts listener is responsible for supplying
+   * state.posts.
+   *
+   * Home therefore does NOT:
+   *
+   *   - fetch the posts collection
+   *   - delete expired posts
+   *   - run Firestore cleanup
+   *   - perform a synchronous saved-post query
+   *
+   * Saved posts are hydrated only after the current render
+   * cycle has completed.
+   */
+
   stopDiscoveryCountdown();
 
-  loadSavedPostIds();
-
-  cleanupExpiredPosts();
+  if (state.user?.uid) {
+    setTimeout(
+      () => {
+        loadSavedPostIds()
+          .catch(
+            error => {
+              console.warn(
+                "Deferred saved-post hydration failed:",
+                error
+              );
+            }
+          );
+      },
+      0
+    );
+  }
 
   document
     .querySelectorAll(
