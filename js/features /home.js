@@ -277,6 +277,200 @@ function renderPostMedia(post) {
   `;
 }
 
+const POST_BACKGROUND_OPTIONS = [
+  { key: "black", label: "Black", background: "#111827", text: "#ffffff" },
+  { key: "white", label: "White", background: "#ffffff", text: "#111827" },
+  { key: "purple", label: "Purple", background: "#5b21b6", text: "#ffffff" },
+  { key: "blue", label: "Blue", background: "#1d4ed8", text: "#ffffff" },
+  { key: "green", label: "Green", background: "#166534", text: "#ffffff" },
+  { key: "orange", label: "Orange", background: "#c2410c", text: "#ffffff" },
+  { key: "pink", label: "Pink", background: "#be185d", text: "#ffffff" }
+];
+
+function getPostBackground(key) {
+  return (
+    POST_BACKGROUND_OPTIONS.find(
+      option => option.key === String(key || "").toLowerCase()
+    ) || POST_BACKGROUND_OPTIONS[1]
+  );
+}
+
+function sanitizePostRichText(html, fallbackText = "") {
+  const source = String(html || "").trim();
+  if (!source) return escapeHtml(fallbackText).replace(/\n/g, "<br>");
+
+  try {
+    const parser = new DOMParser();
+    const parsed = parser.parseFromString(source, "text/html");
+    const root = parsed.body;
+
+    if (!root) return escapeHtml(fallbackText).replace(/\n/g, "<br>");
+
+    const allowedTags = new Set(["B", "STRONG", "BR", "DIV", "P"]);
+
+    const cleanNode = node => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        return document.createTextNode(node.nodeValue || "");
+      }
+
+      if (node.nodeType !== Node.ELEMENT_NODE) {
+        return document.createTextNode("");
+      }
+
+      const tag = node.tagName.toUpperCase();
+      const children = Array.from(node.childNodes)
+        .map(cleanNode)
+        .filter(Boolean);
+
+      if (!allowedTags.has(tag)) {
+        const fragment = document.createDocumentFragment();
+        children.forEach(child => fragment.appendChild(child));
+        return fragment;
+      }
+
+      const safe = document.createElement(
+        tag === "B" || tag === "STRONG"
+          ? "strong"
+          : tag === "P"
+            ? "div"
+            : tag === "BR"
+              ? "br"
+              : "div"
+      );
+
+      children.forEach(child => safe.appendChild(child));
+      return safe;
+    };
+
+    const holder = document.createElement("div");
+
+    Array.from(root.childNodes).forEach(node => {
+      const clean = cleanNode(node);
+      if (clean) holder.appendChild(clean);
+    });
+
+    return holder.innerHTML;
+  } catch {
+    return escapeHtml(fallbackText).replace(/\n/g, "<br>");
+  }
+}
+
+function renderPostText(post) {
+  const text = getPostText(post);
+  const rich = post?.richTextHtml || post?.formattedText || "";
+  return sanitizePostRichText(rich, text);
+}
+
+function normalizeComposerText(value) {
+  return String(value || "")
+    .replace(/\u00a0/g, " ")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/\n{4,}/g, "\n\n\n")
+    .trim();
+}
+
+function composerPlainText(editor) {
+  if (!editor) return "";
+  return normalizeComposerText(editor.innerText || editor.textContent || "");
+}
+
+function composerRichHtml(editor) {
+  if (!editor) return "";
+  const clone = editor.cloneNode(true);
+  clone.querySelectorAll("script,style,iframe,object,embed,link,meta").forEach(node => node.remove());
+  clone.querySelectorAll("*").forEach(node => {
+    Array.from(node.attributes).forEach(attribute => node.removeAttribute(attribute.name));
+  });
+  return sanitizePostRichText(clone.innerHTML, composerPlainText(editor));
+}
+
+function postEditorToolbarHtml() {
+  return `
+    <div
+      class="post-editor-toolbar"
+      role="toolbar"
+      aria-label="Post text formatting"
+      style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:9px 0 8px;"
+    >
+      <button
+        type="button"
+        class="btn secondary"
+        data-post-format="bold"
+        aria-label="Bold selected text"
+        title="Bold"
+        style="font-weight:900;padding:7px 12px;"
+      >
+        <strong>B</strong> Bold
+      </button>
+
+      <button
+        type="button"
+        class="btn secondary"
+        data-post-format="normal"
+        aria-label="Make selected text normal"
+        title="Normal text"
+        style="padding:7px 12px;"
+      >
+        Normal
+      </button>
+
+      <span class="small" style="margin-left:2px;">
+        Select text, then choose a style.
+      </span>
+    </div>
+  `;
+}
+
+function postBackgroundPickerHtml() {
+  return `
+    <div
+      style="margin-top:10px;padding:11px 12px;border:1px solid var(--border);border-radius:15px;background:var(--surface);max-width:100%;box-sizing:border-box;overflow:hidden;"
+    >
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:9px;">
+        <strong style="font-size:13px;">Post background</strong>
+        <span class="small">Choose one color</span>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(7,minmax(30px,1fr));gap:7px;width:100%;max-width:100%;box-sizing:border-box;">
+        ${POST_BACKGROUND_OPTIONS.map(
+          option => `
+            <button
+              type="button"
+              data-post-background="${option.key}"
+              aria-label="${escapeHtml(option.label)} background"
+              title="${escapeHtml(option.label)}"
+              style="width:100%;max-width:48px;aspect-ratio:1;min-width:30px;justify-self:center;border-radius:50%;border:2px solid ${option.key === "white" ? "#d1d5db" : "rgba(255,255,255,.75)"};background:${option.background};box-shadow:0 1px 5px rgba(0,0,0,.14);cursor:pointer;position:relative;"
+            >
+              <span data-background-check="${option.key}" aria-hidden="true" style="display:none;color:${option.text};font-weight:900;font-size:16px;line-height:1;">✓</span>
+            </button>
+          `
+        ).join("")}
+      </div>
+
+      <div id="postBackgroundLabel" class="small" style="margin-top:8px;" aria-live="polite">
+        White background selected
+      </div>
+    </div>
+  `;
+}
+
+function updatePostBackgroundPicker(selected) {
+  const key = getPostBackground(selected).key;
+  const option = getPostBackground(key);
+
+  document.querySelectorAll("#homeModalHost [data-post-background]").forEach(button => {
+    const active = button.dataset.postBackground === key;
+    button.style.outline = active ? "3px solid var(--primary)" : "none";
+    button.style.outlineOffset = "2px";
+    const check = button.querySelector("[data-background-check]");
+    if (check) check.style.display = active ? "inline" : "none";
+  });
+
+  const label = document.getElementById("postBackgroundLabel");
+  if (label) label.textContent = `${option.label} background selected`;
+}
+
 function getExpiryDate(value) {
   const option =
     POST_EXPIRY_OPTIONS.find(
@@ -803,7 +997,8 @@ function renderPostCard(post) {
   const liked = isLiked(post);
   const saved = isSaved(post);
   const date = getPostDate(post);
-  const text = escapeHtml(getPostText(post)).replace(/\n/g, "<br>");
+  const text = renderPostText(post);
+  const background = getPostBackground(post?.background);
   const name = escapeHtml(getPostAuthor(post));
   const initialsText = escapeHtml(initials(getPostAuthor(post)));
   const expiry = expiryLabel(post);
@@ -940,9 +1135,36 @@ function renderPostCard(post) {
 
       <div
         class="post-content"
-        style="margin-top:13px;line-height:1.65;overflow-wrap:anywhere;"
+        style="
+          margin-top:13px;
+          line-height:1.65;
+          overflow-wrap:anywhere;
+          max-width:100%;
+          box-sizing:border-box;
+        "
       >
-        ${text}
+        <div
+          class="post-text-surface"
+          data-post-background="${escapeHtml(background.key)}"
+          style="
+            width:100%;
+            max-width:100%;
+            box-sizing:border-box;
+            padding:16px 15px;
+            border-radius:17px;
+            overflow:hidden;
+            overflow-wrap:anywhere;
+            background:${background.background};
+            color:${background.text};
+            border:1px solid rgba(127,127,127,.20);
+            box-shadow:inset 0 0 0 1px rgba(255,255,255,.04);
+            font-size:16px;
+            font-weight:400;
+            letter-spacing:.005em;
+          "
+        >
+          ${text}
+        </div>
       </div>
 
       ${renderPostMedia(post)}
@@ -1452,6 +1674,22 @@ export function renderHome() {
           -ms-overflow-style:none;
         }
 
+        #homePage .post-text-surface strong,
+        #homePage .post-text-surface b{
+          font-weight:900;
+        }
+
+        #homeModalHost #createPostText:empty:before{
+          content:attr(data-placeholder);
+          color:var(--muted);
+          pointer-events:none;
+        }
+
+        #homeModalHost #createPostText:focus{
+          outline:2px solid var(--primary);
+          outline-offset:1px;
+        }
+
         #homePage .home-filter-row::-webkit-scrollbar{
           display:none;
         }
@@ -1594,13 +1832,6 @@ export function renderHome() {
           </div>
         </div>
 
-        <button
-          class="btn btn-primary"
-          id="createPostBtn"
-          type="button"
-        >
-          + Post
-        </button>
       </div>
 
       ${renderSearchCard()}
@@ -2191,314 +2422,172 @@ function showHomeModal(
 
 function showCreatePost() {
   showHomeModal(`
-    <div
-      class="modal-content"
-      style="
-        padding:18px;
-      "
-    >
-      <div
-        class="modal-header"
-      >
-        <h3>
-          Create a post
-        </h3>
-
-        <button
-          type="button"
-          class="icon-btn"
-          data-modal-close
-          aria-label="Close"
-        >
-          ✕
-        </button>
+    <div class="modal-content" style="padding:18px;">
+      <div class="modal-header">
+        <h3>Create a post</h3>
+        <button type="button" class="icon-btn" data-modal-close aria-label="Close">✕</button>
       </div>
 
-      <div
-        class="modal-body"
-      >
-        <div
-          class="small"
-          style="
-            margin-bottom:9px;
-          "
-        >
-          Posting as
-          ${escapeHtml(
-            currentUserName()
-          )}
+      <div class="modal-body">
+        <div class="small" style="margin-bottom:9px;">
+          Posting as ${escapeHtml(currentUserName())}
         </div>
 
-        <textarea
+        ${postEditorToolbarHtml()}
+
+        <div
           id="createPostText"
           class="input"
-          rows="6"
-          maxlength="1000"
-          placeholder="What's happening in your Marvel universe?"
-        ></textarea>
+          contenteditable="true"
+          role="textbox"
+          aria-multiline="true"
+          aria-label="Post text"
+          data-placeholder="What's happening in your Marvel universe?"
+          spellcheck="true"
+          style="min-height:150px;max-height:300px;overflow:auto;padding:13px 14px;border-radius:15px;box-sizing:border-box;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere;font-size:16px;"
+        ></div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:7px;">
+          <span id="createPostTextStatus" class="small" aria-live="polite">0 / 1000 characters</span>
+          <span class="small">Write line by line for a clean, readable post.</span>
+        </div>
+
+        ${postBackgroundPickerHtml()}
 
         <div
           data-media-slot="future"
-          style="
-            display:flex;
-            align-items:center;
-            justify-content:space-between;
-            gap:10px;
-            flex-wrap:wrap;
-            margin-top:10px;
-            padding:10px 12px;
-            border:1px dashed var(--border);
-            border-radius:14px;
-          "
+          style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:10px;padding:10px 12px;border:1px dashed var(--border);border-radius:14px;"
         >
-          <span class="small">
-            📷 Add photo or media
-          </span>
-
-          <span class="small">
-            Coming with Cloudinary media upload
-          </span>
+          <span class="small">📷 Add photo or media</span>
+          <span class="small">Coming with Cloudinary media upload</span>
         </div>
 
-        <div
-          style="
-            display:flex;
-            align-items:flex-end;
-            justify-content:space-between;
-            gap:10px;
-            flex-wrap:wrap;
-            margin-top:10px;
-          "
-        >
-          <label
-            class="small"
-          >
+        <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:10px;">
+          <label class="small">
             Post expiry
-
-            <select
-              id="createPostExpiry"
-              class="input"
-              style="
-                margin-top:5px;
-              "
-            >
-              <option
-                value=""
-              >
-                No expiry
-              </option>
-
-              ${
-                POST_EXPIRY_OPTIONS
-                  .map(
-                    option => `
-                      <option
-                        value="${option.value}"
-                      >
-                        ${escapeHtml(
-                          option.label
-                        )}
-                      </option>
-                    `
-                  )
-                  .join("")
-              }
+            <select id="createPostExpiry" class="input" style="margin-top:5px;">
+              <option value="">No expiry</option>
+              ${POST_EXPIRY_OPTIONS.map(option => `
+                <option value="${option.value}">${escapeHtml(option.label)}</option>
+              `).join("")}
             </select>
           </label>
-
-          <span
-            class="small"
-          >
-            Maximum 1000 characters
-          </span>
+          <span class="small">Maximum 1000 characters</span>
         </div>
       </div>
 
-      <div
-        class="modal-footer"
-      >
-        <button
-          type="button"
-          class="btn secondary"
-          data-modal-close
-        >
-          Cancel
-        </button>
-
-        <button
-          type="button"
-          class="btn btn-primary"
-          id="submitCreatePost"
-        >
-          Publish
-        </button>
+      <div class="modal-footer">
+        <button type="button" class="btn secondary" data-modal-close>Cancel</button>
+        <button type="button" class="btn btn-primary" id="submitCreatePost">Publish</button>
       </div>
     </div>
   `);
 
-  const input =
-    document.getElementById(
-      "createPostText"
-    );
+  const input = document.getElementById("createPostText");
+  const expiryInput = document.getElementById("createPostExpiry");
+  const button = document.getElementById("submitCreatePost");
+  let selectedBackground = "white";
 
-  const expiryInput =
-    document.getElementById(
-      "createPostExpiry"
-    );
+  updatePostBackgroundPicker(selectedBackground);
 
-  const button =
-    document.getElementById(
-      "submitCreatePost"
-    );
+  input?.addEventListener("input", () => {
+    const text = composerPlainText(input);
+    const status = document.getElementById("createPostTextStatus");
+    if (status) status.textContent = `${text.length} / 1000 characters`;
+  });
+
+  document.querySelectorAll("#homeModalHost [data-post-format]").forEach(formatButton => {
+    formatButton.addEventListener("mousedown", event => event.preventDefault());
+    formatButton.addEventListener("click", event => {
+      event.preventDefault();
+      try {
+        input?.focus();
+        document.execCommand("bold", false, formatButton.dataset.postFormat === "bold");
+        input?.dispatchEvent(new Event("input", { bubbles: true }));
+      } catch {}
+    });
+  });
+
+  document.querySelectorAll("#homeModalHost [data-post-background]").forEach(backgroundButton => {
+    backgroundButton.addEventListener("click", () => {
+      selectedBackground = getPostBackground(backgroundButton.dataset.postBackground).key;
+      updatePostBackgroundPicker(selectedBackground);
+    });
+  });
 
   input?.focus();
 
-  button?.addEventListener(
-    "click",
-    async () => {
-      if (!uid()) {
-        return toast(
-          "Please sign in first."
+  button?.addEventListener("click", async () => {
+    if (!uid()) return toast("Please sign in first.");
+
+    const text = composerPlainText(input);
+    const richTextHtml = composerRichHtml(input);
+
+    if (!text) return toast("Write something before publishing.");
+    if (text.length > 1000) return toast("Posts must be 1000 characters or less.");
+
+    button.disabled = true;
+    button.textContent = "Publishing...";
+
+    try {
+      const username = currentUserName();
+      const background = getPostBackground(selectedBackground);
+
+      const payload = {
+        uid: uid(),
+        username: username,
+        text: text,
+        richTextHtml: richTextHtml,
+        background: background.key,
+        createdAt: serverTimestamp(),
+        likes: 0,
+        likedBy: [],
+        comments: 0
+      };
+
+      const expiryDate = getExpiryDate(expiryInput?.value || "");
+      if (expiryDate) {
+        payload.expiresAt = Timestamp.fromDate(expiryDate);
+        payload.expiryDurationHours = Math.round(
+          (expiryDate.getTime() - Date.now()) / 3600000
         );
       }
 
-      const text =
-        String(
-          input?.value ||
-          ""
-        ).trim();
+      const ref = await addDoc(collection(db, "posts"), payload);
 
-      if (!text) {
-        return toast(
-          "Write something before publishing."
-        );
-      }
+      state.posts = [
+        {
+          id: ref.id,
+          uid: uid(),
+          username: username,
+          text: text,
+          richTextHtml: richTextHtml,
+          background: background.key,
+          createdAt: new Date(),
+          likes: 0,
+          likedBy: [],
+          comments: 0,
+          ...(expiryDate
+            ? {
+                expiresAt: expiryDate,
+                expiryDurationHours: Math.round(
+                  (expiryDate.getTime() - Date.now()) / 3600000
+                )
+              }
+            : {})
+        },
+        ...getPosts()
+      ];
 
-      if (
-        text.length >
-        1000
-      ) {
-        return toast(
-          "Posts must be 1000 characters or less."
-        );
-      }
-
-      button.disabled =
-        true;
-
-      button.textContent =
-        "Publishing...";
-
-      try {
-        const username =
-          currentUserName();
-
-        const payload = {
-          uid:
-            uid(),
-          username:
-            username,
-          text:
-            text,
-          createdAt:
-            serverTimestamp(),
-          likes:
-            0,
-          likedBy:
-            [],
-          comments:
-            0
-        };
-
-        const expiryDate =
-          getExpiryDate(
-            expiryInput?.value ||
-            ""
-          );
-
-        if (expiryDate) {
-          payload.expiresAt =
-            Timestamp.fromDate(
-              expiryDate
-            );
-
-          payload.expiryDurationHours =
-            Math.round(
-              (
-                expiryDate.getTime() -
-                Date.now()
-              ) /
-              3600000
-            );
-        }
-
-        const ref =
-          await addDoc(
-            collection(
-              db,
-              "posts"
-            ),
-            payload
-          );
-
-        state.posts = [
-          {
-            id:
-              ref.id,
-            uid:
-              uid(),
-            username:
-              username,
-            text:
-              text,
-            createdAt:
-              new Date(),
-            likes:
-              0,
-            likedBy:
-              [],
-            comments:
-              0,
-
-            ...(expiryDate
-              ? {
-                  expiresAt:
-                    expiryDate,
-
-                  expiryDurationHours:
-                    Math.round(
-                      (
-                        expiryDate.getTime() -
-                        Date.now()
-                      ) /
-                      3600000
-                    )
-                }
-              : {})
-          },
-
-          ...getPosts()
-        ];
-
-        closeHomeModal();
-        markHomeActivity();
-
-        toast(
-          "Post published ✨"
-        );
-      } catch (error) {
-        button.disabled =
-          false;
-
-        button.textContent =
-          "Publish";
-
-        toast(
-          friendly(error)
-        );
-      }
+      closeHomeModal();
+      markHomeActivity();
+      toast("Post published ✨");
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = "Publish";
+      toast(friendly(error));
     }
-  );
+  });
 }
 
 export function showEditPost(
@@ -3649,7 +3738,7 @@ export function attachHomeEvents(
 
       if (
         event.target.closest(
-          "#openComposerPreview,#openComposerButton,#createPostBtn,#emptyCreatePost"
+          "#openComposerPreview,#openComposerButton,#emptyCreatePost"
         )
       ) {
         showCreatePost();
