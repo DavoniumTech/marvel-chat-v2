@@ -1,13 +1,4 @@
-// js/features /home.js
-
-import {
-  state,
-  escapeHtml,
-  initials,
-  formatDate,
-  friendly
-} from "../state.js";
-
+import { state, escapeHtml, initials, formatDate, friendly } from "../state.js";
 import {
   db,
   collection,
@@ -16,24 +7,35 @@ import {
   deleteDoc,
   setDoc,
   doc,
-  getDoc,
+  serverTimestamp,
+  increment,
+  arrayUnion,
+  arrayRemove,
   getDocs,
   query,
   orderBy,
   limit,
-  serverTimestamp,
-  increment,
-  arrayUnion,
-  arrayRemove
+  Timestamp
 } from "../firebase/firestore.js";
-
-import {
-  showModal,
-  closeModal
-} from "../components/modal.js";
-
+import { showModal, closeModal } from "../components/modal.js";
 import { toast } from "../components/toast.js";
 
+const DISCOVERY_STORAGE_KEY = "marvel_discovery_seen_v2";
+const DISCOVERY_LAST_ACTIVE_KEY = "marvel_home_last_active_v1";
+const DISCOVERY_MIN_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const DISCOVERY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const DISCOVERY_MAX_IMPRESSIONS = 3;
+const DISCOVERY_DURATION_SECONDS = 40;
+
+let discoveryTimer = null;
+let discoveryStartedAt = 0;
+let savedPostIds = new Set();
+let savedPostsLoadedForUid = null;
+let savedPostsLoadPromise = null;
+let savedPostsLoadingUid = null;
+const pendingLikeIds = new Set();
+const pendingSaveIds = new Set();
+let homeDocumentClickHandler = null;
 
 const POST_EXPIRY_OPTIONS = [
   {
@@ -59,29 +61,12 @@ const POST_EXPIRY_OPTIONS = [
 ];
 
 
-let savedPostIds = new Set();
-let savedPostsLoadedForUid = null;
-
-const pendingLikeIds = new Set();
-const pendingSaveIds = new Set();
-
-let homeDocumentClickHandler = null;
-
-
 function cssEscape(value) {
-  if (
-    typeof CSS !== "undefined" &&
-    typeof CSS.escape === "function"
-  ) {
+  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
     return CSS.escape(String(value));
   }
-
-  return String(value).replace(
-    /[^a-zA-Z0-9_-]/g,
-    "\\$&"
-  );
+  return String(value).replace(/[^a-zA-Z0-9_-]/g, "\\$&");
 }
-
 
 function getCurrentUserName() {
   return (
@@ -91,11 +76,18 @@ function getCurrentUserName() {
   );
 }
 
+function getPostExpiryDate(value) {
+  const option = POST_EXPIRY_OPTIONS.find(item => item.value === value);
 
-function timestampToDate(value) {
-  if (!value) {
+  if (!option) {
     return null;
   }
+
+  return new Date(Date.now() + option.milliseconds);
+}
+
+function timestampToDate(value) {
+  if (!value) return null;
 
   if (value instanceof Date) {
     return value;
@@ -110,11 +102,8 @@ function timestampToDate(value) {
   }
 
   if (typeof value === "string") {
-    const date = new Date(value);
-
-    return Number.isNaN(date.getTime())
-      ? null
-      : date;
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
 
   if (typeof value?.seconds === "number") {
@@ -123,7 +112,6 @@ function timestampToDate(value) {
 
   return null;
 }
-
 
 function isPostExpired(post) {
   if (!post?.expiresAt) {
@@ -139,7 +127,6 @@ function isPostExpired(post) {
   return expiry.getTime() <= Date.now();
 }
 
-
 function formatExpiryLabel(post) {
   if (!post?.expiresAt) {
     return "";
@@ -151,24 +138,15 @@ function formatExpiryLabel(post) {
     return "";
   }
 
-  const remaining =
-    expiry.getTime() - Date.now();
+  const remaining = expiry.getTime() - Date.now();
 
   if (remaining <= 0) {
     return "Expired";
   }
 
-  const minutes = Math.floor(
-    remaining / 60000
-  );
-
-  const hours = Math.floor(
-    minutes / 60
-  );
-
-  const days = Math.floor(
-    hours / 24
-  );
+  const minutes = Math.floor(remaining / 60000);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
 
   if (days > 0) {
     return `${days}d remaining`;
@@ -185,641 +163,444 @@ function formatExpiryLabel(post) {
   return "Ending soon";
 }
 
-
-function getPostExpiryDate(value) {
-  const option =
-    POST_EXPIRY_OPTIONS.find(
-      item => item.value === value
+function markHomeActivity() {
+  try {
+    localStorage.setItem(
+      DISCOVERY_LAST_ACTIVE_KEY,
+      String(Date.now())
     );
-
-  if (!option) {
-    return null;
+  } catch {
+    /* ignore storage failures */
   }
-
-  return new Date(
-    Date.now() + option.milliseconds
-  );
 }
 
+function getDiscoveryHistory() {
+  try {
+    const raw = localStorage.getItem(DISCOVERY_STORAGE_KEY);
+    if (!raw) return [];
 
-function getLikeCount(post) {
-  if (typeof post?.likes === "number") {
-    return Math.max(0, post.likes);
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+
+    const cutoff = Date.now() - DISCOVERY_WINDOW_MS;
+    return parsed
+      .map(value => Number(value))
+      .filter(value => Number.isFinite(value) && value >= cutoff)
+      .sort((a, b) => a - b);
+  } catch {
+    return [];
   }
-
-  if (Array.isArray(post?.likedBy)) {
-    return post.likedBy.length;
-  }
-
-  return 0;
 }
 
+function saveDiscoveryHistory(history) {
+  try {
+    localStorage.setItem(
+      DISCOVERY_STORAGE_KEY,
+      JSON.stringify(history.slice(-DISCOVERY_MAX_IMPRESSIONS))
+    );
+  } catch {
+    /* ignore storage failures */
+  }
+}
 
-function isLiked(post) {
-  if (!state.user) {
+function recordDiscoveryImpression() {
+  const now = Date.now();
+  const history = getDiscoveryHistory();
+
+  if (
+    history.length &&
+    now - history[history.length - 1] < DISCOVERY_MIN_INTERVAL_MS
+  ) {
+    return;
+  }
+
+  history.push(now);
+  saveDiscoveryHistory(history);
+}
+
+function shouldShowDiscovery() {
+  const history = getDiscoveryHistory();
+
+  if (!history.length) {
+    return true;
+  }
+
+  if (history.length >= DISCOVERY_MAX_IMPRESSIONS) {
     return false;
   }
 
   return (
-    Array.isArray(post?.likedBy) &&
-    post.likedBy.includes(
-      state.user.uid
-    )
+    Date.now() - history[history.length - 1] >=
+    DISCOVERY_MIN_INTERVAL_MS
   );
 }
 
-
-function isSaved(post) {
-  if (!state.user || !post?.id) {
-    return false;
-  }
-
-  return savedPostIds.has(post.id);
+export function isDiscoveryDismissed() {
+  return !shouldShowDiscovery();
 }
 
+export function dismissDiscovery() {
+  markHomeActivity();
+  recordDiscoveryImpression();
 
-async function loadSavedPostIds() {
-  const uid = state.user?.uid;
+  stopDiscoveryCountdown();
 
-  if (!uid) {
-    savedPostIds = new Set();
-    savedPostsLoadedForUid = null;
-    return;
-  }
-
-  if (savedPostsLoadedForUid === uid) {
-    return;
-  }
-
-  try {
-    const snapshot = await getDocs(
-      collection(
-        db,
-        "users",
-        uid,
-        "savedPosts"
-      )
-    );
-
-    savedPostIds = new Set(
-      snapshot.docs.map(
-        item => item.id
-      )
-    );
-
-    savedPostsLoadedForUid = uid;
-
-    state.savedPostCount =
-      savedPostIds.size;
-
-    if (Array.isArray(state.posts)) {
-      state.posts = state.posts.map(
-        post => ({
-          ...post,
-          savedBy:
-            savedPostIds.has(post.id)
-              ? [
-                  ...new Set([
-                    ...(Array.isArray(
-                      post.savedBy
-                    )
-                      ? post.savedBy
-                      : []),
-                    uid
-                  ])
-                ]
-              : (
-                  Array.isArray(
-                    post.savedBy
-                  )
-                    ? post.savedBy.filter(
-                        id => id !== uid
-                      )
-                    : []
-                )
-        })
-      );
-    }
-
-    refreshSavedButtons();
-  } catch (error) {
-    console.warn(
-      "[Home] Could not load saved posts:",
-      error
-    );
-  }
-}
-
-
-function refreshSavedButtons() {
   document
-    .querySelectorAll("[data-save]")
-    .forEach(button => {
-      const id =
-        button.dataset.save;
-
-      const saved =
-        savedPostIds.has(id);
-
-      button.innerHTML =
-        saved
-          ? "🔖 Saved"
-          : "🔖 Save";
-
-      button.classList.toggle(
-        "active",
-        saved
-      );
-    });
+    .getElementById("discoveryBanner")
+    ?.remove();
 }
 
+function openDiscoveryDestination(destination, renderApp) {
+  dismissDiscovery();
 
-async function getPostById(id) {
-  if (!id) {
-    return null;
+  if (destination === "market") {
+    state.marketBrowseMode = false;
+    state.page = "market";
+    renderApp();
+    return;
   }
 
-  const cached =
-    (state.posts || []).find(
-      post => post?.id === id
-    );
+  if (destination === "timetrust") {
+    state.page = "timetrust";
+    renderApp();
+  }
+}
 
-  if (cached) {
-    return cached;
+function stopDiscoveryCountdown() {
+  if (discoveryTimer) {
+    clearInterval(discoveryTimer);
+    discoveryTimer = null;
+  }
+}
+
+function startDiscoveryCountdown() {
+  const banner = document.getElementById("discoveryBanner");
+  const ring = document.getElementById("discoveryRing");
+  const counter = document.getElementById("discoveryCountdown");
+
+  if (!banner || !ring || !counter) {
+    stopDiscoveryCountdown();
+    return;
   }
 
-  try {
-    const snapshot =
-      await getDoc(
-        doc(db, "posts", id)
-      );
+  if (discoveryTimer) {
+    return;
+  }
 
-    if (!snapshot.exists()) {
-      return null;
+  discoveryStartedAt = Date.now();
+  const duration = DISCOVERY_DURATION_SECONDS * 1000;
+
+  const update = () => {
+    if (!document.getElementById("discoveryBanner")) {
+      stopDiscoveryCountdown();
+      return;
     }
 
-    const post = {
-      id: snapshot.id,
-      ...snapshot.data()
-    };
+    const elapsed = Date.now() - discoveryStartedAt;
+    const remainingMilliseconds = Math.max(0, duration - elapsed);
+    const remainingSeconds = Math.ceil(remainingMilliseconds / 1000);
+    const progress = remainingMilliseconds / duration;
+    const percentage = Math.max(0, Math.min(100, progress * 100));
 
-    state.posts = [
-      post,
-      ...(Array.isArray(state.posts)
-        ? state.posts.filter(
-            item => item?.id !== id
-          )
-        : [])
-    ];
+    ring.style.background =
+      `conic-gradient(currentColor ${percentage}%, rgba(255,255,255,.10) ${percentage}% 100%)`;
+    counter.textContent = String(remainingSeconds);
 
-    return post;
-  } catch (error) {
-    console.warn(
-      "[Home] Could not resolve post:",
-      id,
-      error
-    );
+    if (remainingMilliseconds <= 0) {
+      stopDiscoveryCountdown();
+      dismissDiscovery();
+    }
+  };
 
-    return null;
-  }
+  update();
+  discoveryTimer = setInterval(update, 250);
 }
 
-
-function renderQuickActions() {
+function renderDiscoveryBanner() {
   return `
-    <div class="quick-grid">
+    <style>
+      @keyframes marvelDiscoveryPulse {
+        0%, 100% { transform:scale(1); filter:drop-shadow(0 0 0 transparent); }
+        50% { transform:scale(1.035); filter:drop-shadow(0 0 14px currentColor); }
+      }
+      @keyframes marvelDiscoveryOrbit {
+        from { transform:rotate(0deg); }
+        to { transform:rotate(360deg); }
+      }
+      #discoveryRing {
+        animation:marvelDiscoveryPulse 2.4s ease-in-out infinite;
+      }
+      #discoveryOrbit {
+        animation:marvelDiscoveryOrbit 7s linear infinite;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #discoveryRing, #discoveryOrbit { animation:none !important; }
+      }
+    </style>
+    <section
+      class="card"
+      id="discoveryBanner"
+      aria-label="Marvel Chat discovery"
+      style="
+        position:relative;
+        overflow:hidden;
+        margin:0 0 22px;
+        padding:30px 26px 28px;
+        min-height:300px;
+        border-radius:24px;
+        display:flex;
+        flex-direction:column;
+        justify-content:center;
+        box-shadow:var(--shadow);
+      "
+    >
+      <div
+        style="
+          position:absolute;
+          inset:0;
+          pointer-events:none;
+          opacity:.08;
+          background:
+            radial-gradient(circle at 15% 20%, currentColor 0, transparent 35%),
+            radial-gradient(circle at 85% 80%, currentColor 0, transparent 40%);
+        "
+      ></div>
 
       <button
-        class="quick"
-        data-quick="post"
         type="button"
+        class="icon-btn"
+        id="discoveryClose"
+        aria-label="Close discovery"
+        title="Close"
+        style="
+          position:absolute;
+          top:14px;
+          right:14px;
+          width:42px;
+          height:42px;
+          z-index:2;
+          font-size:20px;
+        "
       >
-        <div class="quick-icon">
-          ✍️
-        </div>
-
-        <strong>
-          Create post
-        </strong>
-
-        <span>
-          Share something
-        </span>
+        ✕
       </button>
 
-
-      <button
-        class="quick"
-        data-quick="chat"
-        type="button"
+      <div
+        style="
+          position:relative;
+          z-index:1;
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          gap:24px;
+          flex-wrap:wrap;
+        "
       >
-        <div class="quick-icon">
-          💬
+        <div style="flex:1; min-width:220px;">
+          <div
+            class="small"
+            style="
+              font-weight:800;
+              letter-spacing:.08em;
+              text-transform:uppercase;
+              margin-bottom:8px;
+            "
+          >
+            MARVEL CHAT DISCOVERY
+          </div>
+
+          <h2
+            style="
+              margin:0 0 10px;
+              font-size:clamp(28px, 6vw, 42px);
+              line-height:1.05;
+            "
+          >
+            Explore what your community can do ✨
+          </h2>
+
+          <p
+            style="
+              margin:0;
+              max-width:560px;
+              line-height:1.65;
+              opacity:.86;
+              font-size:15px;
+            "
+          >
+            Discover people, conversations, skills, TimeTrust
+            and the Market — all from one place.
+          </p>
+
+          <div
+            style="
+              display:flex;
+              gap:10px;
+              flex-wrap:wrap;
+              margin-top:20px;
+            "
+          >
+            <button
+              class="btn btn-primary"
+              type="button"
+              data-discovery-nav="market"
+            >
+              🛍️ Explore Market
+            </button>
+
+            <button
+              class="btn btn-ghost"
+              type="button"
+              data-discovery-nav="timetrust"
+            >
+              ⏱️ Explore TimeTrust
+            </button>
+          </div>
         </div>
 
-        <strong>
-          Chat with someone
-        </strong>
+        <div
+          style="
+            position:relative;
+            width:150px;
+            height:150px;
+            flex:0 0 150px;
+            display:grid;
+            place-items:center;
+            margin:auto;
+          "
+        >
+          <div
+            id="discoveryOrbit"
+            style="
+              position:absolute;
+              inset:-10px;
+              border:1px dashed currentColor;
+              border-radius:50%;
+              opacity:.35;
+            "
+          ></div>
 
-        <span>
-          Talk to someone
-        </span>
-      </button>
+          <div
+            style="
+              position:absolute;
+              inset:8px;
+              border-radius:50%;
+              border:1px solid currentColor;
+              opacity:.18;
+            "
+          ></div>
 
+          <div
+            id="discoveryRing"
+            style="
+              width:120px;
+              height:120px;
+              border-radius:50%;
+              display:grid;
+              place-items:center;
+              position:relative;
+              color:inherit;
+            "
+          >
+            <div
+              style="
+                position:absolute;
+                inset:7px;
+                border-radius:50%;
+                background:var(--card);
+                display:grid;
+                place-items:center;
+                text-align:center;
+              "
+            >
+              <strong
+                id="discoveryCountdown"
+                style="
+                  display:block;
+                  font-size:30px;
+                  line-height:1;
+                "
+              >
+                ${DISCOVERY_DURATION_SECONDS}
+              </strong>
 
-      <button
-        class="quick"
-        data-quick="timetrust"
-        type="button"
-      >
-        <div class="quick-icon">
-          ⏱️
+              <span
+                class="small"
+                style="margin-top:5px;"
+              >
+                seconds
+              </span>
+            </div>
+          </div>
         </div>
-
-        <strong>
-          Explore TimeTrust
-        </strong>
-
-        <span>
-          Discover skills and services
-        </span>
-      </button>
-
-
-      <button
-        class="quick"
-        data-quick="market"
-        type="button"
-      >
-        <div class="quick-icon">
-          🛍️
-        </div>
-
-        <strong>
-          Explore Market
-        </strong>
-
-        <span>
-          Discover products and listings
-        </span>
-      </button>
-
-    </div>
-  `;
-}
-
-
-function renderHomeHeader() {
-  const name =
-    state.profile?.displayName ||
-    state.profile?.username ||
-    "there";
-
-  return `
-    <section class="hero">
-
-      <h1>
-        Hey ${escapeHtml(name)} 👋
-      </h1>
-
-      <p>
-        Welcome to your futuristic community.
-        Connect, chat, trade skills and discover
-        what people around you are building.
-      </p>
-
+      </div>
     </section>
   `;
 }
 
-
-function renderCommunityFeedHeader() {
-  const search =
-    state.homeSearch || "";
-
-  return `
-    <div class="section-title">
-
-      <h2>
-        Community feed
-      </h2>
-
-      <button
-        class="btn btn-primary"
-        id="createPostBtn"
-        type="button"
-      >
-        + Post
-      </button>
-
-    </div>
-
-
-    <div class="search">
-
-      <input
-        class="input"
-        id="communityFeedSearch"
-        type="search"
-        autocomplete="off"
-        value="${escapeHtml(search)}"
-        placeholder="Search posts…"
-        aria-label="Search community posts"
-      >
-
-    </div>
-  `;
-}
-
-
-function renderPost(post) {
-  if (!post?.id) {
-    return "";
-  }
-
-  const author =
-    post.username ||
-    post.displayName ||
-    post.authorName ||
-    "User";
-
-  const text =
-    post.text ||
-    post.content ||
-    "";
-
-  const liked =
-    isLiked(post);
-
-  const saved =
-    isSaved(post);
-
-  const own =
-    post.uid ===
-    state.user?.uid;
-
-  const expiry =
-    formatExpiryLabel(post);
-
-  const menuId =
-    `postMenu-${cssEscape(post.id)}`;
-
-  return `
-    <article
-      class="card post"
-      data-post-card="${cssEscape(post.id)}"
-    >
-
-      <div class="post-head">
-
-        <div class="avatar">
-          ${escapeHtml(
-            initials(author)
-          )}
-        </div>
-
-
-        <div class="profile-meta">
-
-          <strong>
-            ${escapeHtml(author)}
-          </strong>
-
-          <span class="small">
-            ${escapeHtml(
-              formatDate(
-                post.createdAt
-              )
-            )}
-
-            ${
-              expiry
-                ? ` · ${escapeHtml(expiry)}`
-                : ""
-            }
-
-            ${
-              post.editedAt
-                ? " · Edited"
-                : ""
-            }
-          </span>
-
-        </div>
-
-
-        ${
-          own
-            ? `
-              <div
-                class="dropdown-container"
-                style="
-                  margin-left:auto;
-                  position:relative;
-                "
-              >
-
-                <button
-                  class="icon-btn post-menu-btn"
-                  type="button"
-                  aria-label="Post options"
-                  data-menu-post="${cssEscape(
-                    post.id
-                  )}"
-                >
-                  ⋮
-                </button>
-
-
-                <div
-                  class="dropdown-menu hidden"
-                  id="${menuId}"
-                >
-
-                  <button
-                    class="btn-text edit-post-btn"
-                    type="button"
-                    data-edit-post="${cssEscape(
-                      post.id
-                    )}"
-                  >
-                    Edit post
-                  </button>
-
-
-                  <button
-                    class="btn-text delete-post-btn"
-                    type="button"
-                    data-delete-post="${cssEscape(
-                      post.id
-                    )}"
-                  >
-                    Delete post
-                  </button>
-
-                </div>
-
-              </div>
-            `
-            : ""
-        }
-
-      </div>
-
-
-      <div class="post-body">
-        ${escapeHtml(text)}
-      </div>
-
-
-      ${
-        post.imageUrl
-          ? `
-            <img
-              src="${escapeHtml(
-                post.imageUrl
-              )}"
-              alt="Post image"
-              style="
-                width:100%;
-                max-height:520px;
-                object-fit:cover;
-                border-radius:16px;
-                margin-top:14px;
-              "
-            >
-          `
-          : ""
-      }
-
-
-      <div class="post-actions">
-
-        <button
-          class="action ${
-            liked ? "active" : ""
-          }"
-          type="button"
-          data-like="${cssEscape(
-            post.id
-          )}"
-        >
-          ${liked ? "❤️" : "♡"}
-          ${getLikeCount(post)}
-        </button>
-
-
-        <button
-          class="action"
-          type="button"
-          data-comment="${cssEscape(
-            post.id
-          )}"
-        >
-          💬 ${Number(
-            post.comments || 0
-          )}
-        </button>
-
-
-        <button
-          class="action"
-          type="button"
-          data-share="${cssEscape(
-            post.id
-          )}"
-        >
-          ↗ Share
-        </button>
-
-
-        <button
-          class="action ${
-            saved ? "active" : ""
-          }"
-          type="button"
-          data-save="${cssEscape(
-            post.id
-          )}"
-        >
-          🔖 ${
-            saved
-              ? "Saved"
-              : "Save"
-          }
-        </button>
-
-      </div>
-
-    </article>
-  `;
-}
-
-
-export function renderHome(renderApp) {
+function getVisiblePosts() {
   const posts =
     Array.isArray(state.posts)
-      ? state.posts.filter(
-          post =>
-            post &&
-            !isPostExpired(post)
-        )
+      ? state.posts
       : [];
 
-  return `
-    <div class="page">
-
-      ${renderHomeHeader()}
-
-      ${renderQuickActions()}
-
-      ${renderCommunityFeedHeader()}
-
-
-      ${
-        posts.length
-          ? posts
-              .map(renderPost)
-              .join("")
-          : `
-            <div class="card empty">
-
-              <div style="font-size:38px">
-                🌌
-              </div>
-
-              <h3>
-                The community is quiet…
-              </h3>
-
-              <p>
-                Be the first person to start
-                the conversation.
-              </p>
-
-              <button
-                class="btn btn-primary"
-                id="emptyCreatePost"
-                type="button"
-              >
-                Create the first post
-              </button>
-
-            </div>
-          `
-      }
-
-    </div>
-  `;
+  return posts.filter(
+    post => !isPostExpired(post)
+  );
 }
 
+async function cleanupExpiredPosts() {
+  if (!state.user) {
+    return;
+  }
+
+  const posts =
+    Array.isArray(state.posts)
+      ? state.posts
+      : [];
+
+  const expiredOwnedPosts =
+    posts.filter(
+      post =>
+        post?.uid === state.user.uid &&
+        isPostExpired(post)
+    );
+
+  if (!expiredOwnedPosts.length) {
+    return;
+  }
+
+  for (const post of expiredOwnedPosts) {
+    try {
+      await deleteDoc(
+        doc(
+          db,
+          "posts",
+          post.id
+        )
+      );
+
+      state.posts =
+        state.posts.filter(
+          item =>
+            item.id !== post.id
+        );
+    } catch (error) {
+      console.warn(
+        "Could not remove expired post:",
+        {
+          postId: post.id,
+          code: error?.code,
+          error
+        }
+      );
+    }
+  }
+}
 
 function filterRenderedPosts(value) {
-  state.homeSearch =
-    String(value || "");
-
   const term =
-    state.homeSearch
+    String(value || "")
       .trim()
       .toLowerCase();
 
@@ -827,532 +608,487 @@ function filterRenderedPosts(value) {
     .querySelectorAll(
       "[data-post-card]"
     )
-    .forEach(card => {
-      const text =
-        card.textContent
-          .toLowerCase();
+    .forEach(
+      card => {
 
-      card.style.display =
-        !term ||
-        text.includes(term)
-          ? ""
-          : "none";
-    });
+        if (!term) {
+          card.style.display = "";
+          return;
+        }
+
+        const text =
+          card.textContent
+            ?.toLowerCase() ||
+          "";
+
+        card.style.display =
+          text.includes(term)
+            ? ""
+            : "none";
+      }
+    );
 }
 
-
-export async function toggleLike(id) {
-  if (!state.user) {
-    toast(
-      "Please sign in to like posts."
-    );
-
-    return;
-  }
-
-  if (!id) {
-    return;
-  }
-
-  if (pendingLikeIds.has(id)) {
-    return;
-  }
-
-  const post =
-    await getPostById(id);
-
-  if (!post) {
-    toast(
-      "This post is no longer available."
-    );
-
-    return;
-  }
+function renderPost(post) {
+  const user = state.user;
+  const currentUid = user?.uid || "";
 
   const liked =
-    isLiked(post);
-
-  pendingLikeIds.add(id);
-
-  const button =
-    document.querySelector(
-      `[data-like="${cssEscape(id)}"]`
-    );
-
-  if (button) {
-    button.disabled = true;
-  }
-
-  try {
-    await updateDoc(
-      doc(db, "posts", id),
-      {
-        likes:
-          increment(
-            liked ? -1 : 1
-          ),
-
-        likedBy:
-          liked
-            ? arrayRemove(
-                state.user.uid
-              )
-            : arrayUnion(
-                state.user.uid
-              )
-      }
-    );
-
-    const nextLiked =
-      !liked;
-
-    const nextLikes =
-      Math.max(
-        0,
-        getLikeCount(post) +
-          (nextLiked ? 1 : -1)
-      );
-
-    state.posts =
-      (state.posts || []).map(
-        item =>
-          item.id === id
-            ? {
-                ...item,
-                likes: nextLikes,
-                likedBy:
-                  nextLiked
-                    ? [
-                        ...new Set([
-                          ...(Array.isArray(
-                            item.likedBy
-                          )
-                            ? item.likedBy
-                            : []),
-                          state.user.uid
-                        ])
-                      ]
-                    : (
-                        Array.isArray(
-                          item.likedBy
-                        )
-                          ? item.likedBy.filter(
-                              uid =>
-                                uid !==
-                                state.user.uid
-                            )
-                          : []
-                      )
-              }
-            : item
-      );
-
-    const updated =
-      state.posts.find(
-        item => item.id === id
-      );
-
-    if (
-      nextLiked &&
-      updated?.uid &&
-      updated.uid !== state.user.uid
-    ) {
-      try {
-        await addDoc(
-          collection(
-            db,
-            "users",
-            updated.uid,
-            "notifications"
-          ),
-          {
-            type: "like",
-            actorUid:
-              state.user.uid,
-            actorName:
-              getCurrentUserName(),
-            targetId: id,
-            text:
-              `${getCurrentUserName()} liked your post.`,
-            read: false,
-            createdAt:
-              serverTimestamp()
-          }
-        );
-      } catch (error) {
-        console.warn(
-          "[Home] Like notification failed:",
-          error
-        );
-      }
-    }
-
-    refreshPostCard(id);
-  } catch (error) {
-    toast(
-      friendly(error)
-    );
-  } finally {
-    pendingLikeIds.delete(id);
-
-    if (button) {
-      button.disabled = false;
-    }
-  }
-}
-
-
-export async function savePost(id) {
-  if (!state.user) {
-    toast(
-      "Please sign in to save posts."
-    );
-
-    return;
-  }
-
-  if (!id) {
-    return;
-  }
-
-  if (pendingSaveIds.has(id)) {
-    return;
-  }
-
-  const post =
-    await getPostById(id);
-
-  if (!post) {
-    toast(
-      "This post is no longer available."
-    );
-
-    return;
-  }
-
-  await loadSavedPostIds();
+    Array.isArray(post.likedBy) &&
+    currentUid &&
+    post.likedBy.includes(currentUid);
 
   const saved =
-    savedPostIds.has(id);
+    savedPostIds.has(post.id);
 
-  pendingSaveIds.add(id);
+  const isOwner =
+    currentUid &&
+    post.uid === currentUid;
 
-  const button =
-    document.querySelector(
-      `[data-save="${cssEscape(id)}"]`
+  const postInitials =
+    initials(
+      post.username ||
+      "User"
     );
 
-  if (button) {
-    button.disabled = true;
-  }
+  const expiryLabel =
+    formatExpiryLabel(post);
 
-  try {
-    const savedRef =
-      doc(
-        db,
-        "users",
-        state.user.uid,
-        "savedPosts",
-        id
-      );
+  return `
+    <article
+      class="card"
+      data-post-card="${cssEscape(post.id)}"
+      style="
+        padding:20px;
+        margin-bottom:14px;
+      "
+    >
+      <div
+        style="
+          display:flex;
+          align-items:flex-start;
+          justify-content:space-between;
+          gap:12px;
+        "
+      >
+        <div
+          style="
+            display:flex;
+            align-items:center;
+            gap:12px;
+            min-width:0;
+          "
+        >
+          <div
+            class="avatar"
+            aria-hidden="true"
+          >
+            ${escapeHtml(postInitials)}
+          </div>
 
-    if (saved) {
-      await deleteDoc(savedRef);
+          <div style="min-width:0;">
+            <strong>
+              ${escapeHtml(post.username || "User")}
+            </strong>
 
-      savedPostIds.delete(id);
-
-      state.savedPostCount =
-        savedPostIds.size;
-
-      toast(
-        "Post removed from Saved."
-      );
-    } else {
-      await setDoc(
-        savedRef,
-        {
-          postId: id,
-          uid:
-            state.user.uid,
-          createdAt:
-            serverTimestamp()
-        }
-      );
-
-      savedPostIds.add(id);
-
-      state.savedPostCount =
-        savedPostIds.size;
-
-      toast(
-        "Post saved 🔖"
-      );
-    }
-
-    savedPostsLoadedForUid =
-      state.user.uid;
-
-    refreshPostCard(id);
-  } catch (error) {
-    toast(
-      friendly(error)
-    );
-  } finally {
-    pendingSaveIds.delete(id);
-
-    if (button) {
-      button.disabled = false;
-    }
-  }
-}
-
-
-function refreshPostCard(id) {
-  const post =
-    state.posts.find(
-      item => item.id === id
-    );
-
-  const card =
-    document.querySelector(
-      `[data-post-card="${cssEscape(id)}"]`
-    );
-
-  if (!post || !card) {
-    return;
-  }
-
-  const holder =
-    document.createElement("div");
-
-  holder.innerHTML =
-    renderPost(post);
-
-  const replacement =
-    holder.firstElementChild;
-
-  if (!replacement) {
-    return;
-  }
-
-  card.replaceWith(
-    replacement
-  );
-
-  attachSinglePostEvents(
-    replacement
-  );
-}
-
-
-function attachSinglePostEvents(root) {
-  root
-    .querySelectorAll("[data-like]")
-    .forEach(button => {
-      button.addEventListener(
-        "click",
-        () =>
-          toggleLike(
-            button.dataset.like
-          )
-      );
-    });
-
-  root
-    .querySelectorAll("[data-save]")
-    .forEach(button => {
-      button.addEventListener(
-        "click",
-        () =>
-          savePost(
-            button.dataset.save
-          )
-      );
-    });
-
-  root
-    .querySelectorAll("[data-share]")
-    .forEach(button => {
-      button.addEventListener(
-        "click",
-        () =>
-          sharePost(
-            button.dataset.share
-          )
-      );
-    });
-
-  root
-    .querySelectorAll("[data-comment]")
-    .forEach(button => {
-      button.addEventListener(
-        "click",
-        () =>
-          showComments(
-            button.dataset.comment
-          )
-      );
-    });
-
-  root
-    .querySelectorAll("[data-edit-post]")
-    .forEach(button => {
-      button.addEventListener(
-        "click",
-        event => {
-          event.stopPropagation();
-
-          showEditPost(
-            button.dataset.editPost
-          );
-        }
-      );
-    });
-
-  root
-    .querySelectorAll("[data-delete-post]")
-    .forEach(button => {
-      button.addEventListener(
-        "click",
-        event => {
-          event.stopPropagation();
-
-          showDeletePostConfirmation(
-            button.dataset.deletePost
-          );
-        }
-      );
-    });
-
-  root
-    .querySelectorAll("[data-menu-post]")
-    .forEach(button => {
-      button.addEventListener(
-        "click",
-        event => {
-          event.stopPropagation();
-
-          const id =
-            button.dataset.menuPost;
-
-          const menu =
-            document.getElementById(
-              `postMenu-${id}`
-            );
-
-          if (!menu) {
-            return;
-          }
-
-          document
-            .querySelectorAll(
-              ".dropdown-menu"
-            )
-            .forEach(other => {
-              if (other !== menu) {
-                other.classList.add(
-                  "hidden"
-                );
+            <div class="small">
+              ${escapeHtml(formatDate(post.createdAt))}
+              ${
+                expiryLabel
+                  ? ` · ${escapeHtml(expiryLabel)}`
+                  : ""
               }
-            });
+            </div>
+          </div>
+        </div>
 
-          menu.classList.toggle(
-            "hidden"
-          );
+        ${
+          isOwner
+            ? `
+              <div
+                class="dropdown-container"
+                style="position:relative;"
+              >
+                <button
+                  class="icon-btn"
+                  type="button"
+                  data-menu-post="${cssEscape(post.id)}"
+                  aria-label="Post menu"
+                  title="Post menu"
+                >
+                  ⋮
+                </button>
+
+                <div
+                  class="dropdown-menu hidden"
+                  id="postMenu-${cssEscape(post.id)}"
+                  style="
+                    position:absolute;
+                    right:0;
+                    top:46px;
+                    z-index:20;
+                    min-width:150px;
+                  "
+                >
+                  <button
+                    type="button"
+                    data-edit-post="${cssEscape(post.id)}"
+                  >
+                    Edit
+                  </button>
+
+                  <button
+                    type="button"
+                    data-delete-post="${cssEscape(post.id)}"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            `
+            : ""
         }
-      );
-    });
+      </div>
+
+      <div
+        style="
+          margin-top:16px;
+          line-height:1.65;
+          white-space:pre-wrap;
+          overflow-wrap:anywhere;
+        "
+      >
+        ${escapeHtml(post.text || "")}
+      </div>
+
+      <div
+        style="
+          display:flex;
+          gap:8px;
+          flex-wrap:wrap;
+          margin-top:18px;
+        "
+      >
+        <button
+          class="btn btn-ghost ${liked ? "active" : ""}"
+          type="button"
+          data-like="${cssEscape(post.id)}"
+        >
+          ${liked ? "❤️" : "♡"} ${Number(post.likes || 0)}
+        </button>
+
+        <button
+          class="btn btn-ghost"
+          type="button"
+          data-comment="${cssEscape(post.id)}"
+        >
+          💬 ${Number(post.comments || 0)}
+        </button>
+
+        <button
+          class="btn btn-ghost ${saved ? "active" : ""}"
+          type="button"
+          data-save="${cssEscape(post.id)}"
+        >
+          ${saved ? "🔖 Saved" : "🔖 Save"}
+        </button>
+
+        <button
+          class="btn btn-ghost"
+          type="button"
+          data-share="${cssEscape(post.id)}"
+        >
+          ↗️ Share
+        </button>
+      </div>
+    </article>
+  `;
 }
 
+export function renderHome() {
+  const visiblePosts =
+    getVisiblePosts();
+
+  const sortedPosts =
+    [...visiblePosts].sort(
+      (a, b) => {
+
+        const aTime =
+          timestampToDate(
+            a.createdAt
+          )?.getTime() || 0;
+
+        const bTime =
+          timestampToDate(
+            b.createdAt
+          )?.getTime() || 0;
+
+        return bTime - aTime;
+      }
+    );
+
+  const showDiscovery =
+    shouldShowDiscovery();
+
+  return `
+    <main
+      class="page"
+      style="
+        max-width:980px;
+        margin:0 auto;
+        padding:22px 16px 50px;
+      "
+    >
+      ${
+        showDiscovery
+          ? renderDiscoveryBanner()
+          : ""
+      }
+
+      <section
+        class="card"
+        style="
+          padding:22px;
+          margin-bottom:20px;
+        "
+      >
+        <div
+          style="
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            gap:14px;
+            flex-wrap:wrap;
+          "
+        >
+          <div>
+            <div class="small">
+              COMMUNITY FEED
+            </div>
+
+            <h1
+              style="
+                margin:4px 0 0;
+                font-size:clamp(25px,5vw,36px);
+              "
+            >
+              What's happening?
+            </h1>
+          </div>
+
+          <button
+            class="btn btn-primary"
+            type="button"
+            id="createPostBtn"
+          >
+            ＋ Create Post
+          </button>
+        </div>
+
+        <div
+          style="
+            display:flex;
+            gap:10px;
+            margin-top:18px;
+            flex-wrap:wrap;
+          "
+        >
+          <input
+            id="communityFeedSearch"
+            class="input"
+            type="search"
+            placeholder="Search the community feed…"
+            autocomplete="off"
+            style="
+              flex:1;
+              min-width:220px;
+            "
+          >
+
+          <button
+            class="btn btn-ghost"
+            type="button"
+            id="youtubeLiveSearchBtn"
+          >
+            ▶️ YouTube Live
+          </button>
+        </div>
+      </section>
+
+      ${
+        sortedPosts.length
+          ? `
+            <section id="communityFeed">
+              ${sortedPosts.map(renderPost).join("")}
+            </section>
+          `
+          : `
+            <section
+              class="card empty"
+              style="
+                padding:38px 22px;
+                text-align:center;
+              "
+            >
+              <div style="font-size:42px;">
+                ✨
+              </div>
+
+              <h3>
+                Your community feed is quiet.
+              </h3>
+
+              <p class="small">
+                Be the first to start a conversation.
+              </p>
+
+              <button
+                class="btn btn-primary"
+                type="button"
+                id="emptyCreatePost"
+              >
+                Create the first post
+              </button>
+            </section>
+          `
+      }
+
+      <section
+        class="card"
+        style="
+          margin-top:20px;
+          padding:22px;
+        "
+      >
+        <div class="small">
+          QUICK ACCESS
+        </div>
+
+        <div
+          style="
+            display:grid;
+            grid-template-columns:
+              repeat(auto-fit,minmax(150px,1fr));
+            gap:10px;
+            margin-top:12px;
+          "
+        >
+          <button
+            class="btn btn-ghost"
+            type="button"
+            data-quick="post"
+          >
+            ✍️ Post
+          </button>
+
+          <button
+            class="btn btn-ghost"
+            type="button"
+            data-quick="chat"
+          >
+            💬 Chat
+          </button>
+
+          <button
+            class="btn btn-ghost"
+            type="button"
+            data-quick="timetrust"
+          >
+            ⏱️ TimeTrust
+          </button>
+
+          <button
+            class="btn btn-ghost"
+            type="button"
+            data-quick="market"
+          >
+            🛍️ Market
+          </button>
+        </div>
+      </section>
+    </main>
+  `;
+}
 
 export function showCreatePost() {
+  const expiryOptions =
+    POST_EXPIRY_OPTIONS.map(
+      option => `
+        <option value="${option.value}">
+          ${escapeHtml(option.label)}
+        </option>
+      `
+    ).join("");
+
   showModal(
-    "Create a community post",
+    "Create Post",
     `
-      <div class="field">
+      <textarea
+        id="postText"
+        class="textarea"
+        placeholder="Share something with the community…"
+        maxlength="1000"
+        rows="7"
+      ></textarea>
 
-        <label>
-          What's happening?
-        </label>
+      <div style="height:12px"></div>
 
-        <textarea
-          class="textarea"
-          id="postText"
-          maxlength="1000"
-          rows="5"
-          placeholder="Share an idea, question, achievement or opportunity…"
-        ></textarea>
+      <label class="small" for="postExpiry">
+        Post visibility duration
+      </label>
 
-      </div>
+      <select
+        id="postExpiry"
+        class="input"
+        style="margin-top:6px;"
+      >
+        ${expiryOptions}
+      </select>
 
-
-      <div class="field">
-
-        <label>
-          Post duration
-        </label>
-
-        <select
-          class="select"
-          id="postExpiry"
-        >
-
-          <option value="">
-            No expiry
-          </option>
-
-          ${POST_EXPIRY_OPTIONS.map(
-            option => `
-              <option value="${option.value}">
-                ${escapeHtml(
-                  option.label
-                )}
-              </option>
-            `
-          ).join("")}
-
-        </select>
-
-      </div>
-
+      <div style="height:16px"></div>
 
       <button
+        id="submitPost"
         class="btn btn-primary btn-block"
-        id="publishPost"
         type="button"
       >
-        Publish 🚀
+        Publish Post
       </button>
     `
   );
 
   document
-    .getElementById(
-      "publishPost"
-    )
+    .getElementById("submitPost")
     ?.addEventListener(
       "click",
       async () => {
         const input =
-          document.getElementById(
-            "postText"
-          );
+          document.getElementById("postText");
 
-        const expiryInput =
-          document.getElementById(
-            "postExpiry"
-          );
+        const expiry =
+          document.getElementById("postExpiry");
+
+        const button =
+          document.getElementById("submitPost");
+
+        if (!input || !button) {
+          return;
+        }
 
         const text =
-          input?.value.trim() || "";
+          input.value.trim();
 
         if (!text) {
           toast(
-            "Write something first."
+            "Write something before publishing."
           );
+          return;
+        }
 
-          input?.focus();
-
+        if (!state.user) {
+          toast(
+            "Please sign in first."
+          );
           return;
         }
 
@@ -1360,160 +1096,142 @@ export function showCreatePost() {
           toast(
             "Posts can contain up to 1000 characters."
           );
-
           return;
         }
 
-        const button =
-          document.getElementById(
-            "publishPost"
-          );
-
-        if (button) {
-          button.disabled = true;
-          button.textContent =
-            "Publishing…";
-        }
+        button.disabled = true;
+        button.textContent =
+          "Publishing…";
 
         try {
           const expiresAt =
             getPostExpiryDate(
-              expiryInput?.value
+              expiry?.value || "1d"
             );
 
-          const data = {
-            uid:
-              state.user.uid,
-
-            username:
-              getCurrentUserName(),
-
-            text,
-
-            likes: 0,
-
-            comments: 0,
-
-            likedBy: [],
-
-            createdAt:
-              serverTimestamp()
-          };
-
-          if (expiresAt) {
-            data.expiresAt =
-              expiresAt;
-          }
-
-          const reference =
+          const postRef =
             await addDoc(
               collection(
                 db,
                 "posts"
               ),
-              data
+              {
+                uid:
+                  state.user.uid,
+                username:
+                  getCurrentUserName(),
+                text,
+                likes: 0,
+                comments: 0,
+                likedBy: [],
+                createdAt:
+                  serverTimestamp(),
+                expiresAt
+              }
             );
 
-          const localPost = {
-            id:
-              reference.id,
-
-            ...data,
-
-            createdAt:
-              new Date(),
-
-            ...(expiresAt
-              ? {
-                  expiresAt
-                }
-              : {})
-          };
-
           state.posts = [
-            localPost,
-            ...(Array.isArray(
-              state.posts
-            )
+            {
+              id: postRef.id,
+              uid: state.user.uid,
+              username:
+                getCurrentUserName(),
+              text,
+              likes: 0,
+              comments: 0,
+              likedBy: [],
+              createdAt: new Date(),
+              expiresAt
+            },
+            ...(Array.isArray(state.posts)
               ? state.posts
               : [])
           ];
 
+          markHomeActivity();
           closeModal();
-
-          toast(
-            "Posted successfully 🚀"
-          );
-
-          document
-            .querySelector(
-              ".app-content"
-            )
-            ?.scrollTo({
-              top: 0,
-              behavior: "smooth"
-            });
+          toast("Post published ✨");
         } catch (error) {
           console.error(
-            "[Home] Create post failed:",
-            error
+            "Create post failed:",
+            {
+              code: error?.code,
+              error
+            }
           );
 
           toast(
             friendly(error)
           );
 
-          if (button) {
-            button.disabled = false;
-            button.textContent =
-              "Publish 🚀";
-          }
+          button.disabled = false;
+          button.textContent =
+            "Publish Post";
         }
       }
     );
 }
 
-
-export async function showEditPost(id) {
+export function showEditPost(id) {
   const post =
-    await getPostById(id);
-
-  if (
-    !post ||
-    post.uid !==
-      state.user?.uid
-  ) {
-    toast(
-      "You can only edit your own post."
+    state.posts.find(
+      item => item.id === id
     );
 
+  if (!post || !state.user) {
     return;
   }
 
+  if (post.uid !== state.user.uid) {
+    toast(
+      "You can only edit your own posts."
+    );
+    return;
+  }
+
+  const expiryOptions =
+    POST_EXPIRY_OPTIONS.map(
+      option => `
+        <option
+          value="${option.value}"
+        >
+          ${escapeHtml(option.label)}
+        </option>
+      `
+    ).join("");
+
   showModal(
-    "Edit post",
+    "Edit Post",
     `
-      <div class="field">
+      <textarea
+        id="editPostText"
+        class="textarea"
+        maxlength="1000"
+        rows="7"
+      >${escapeHtml(post.text || "")}</textarea>
 
-        <label>
-          Edit your post
-        </label>
+      <div style="height:12px"></div>
 
-        <textarea
-          class="textarea"
-          id="editPostText"
-          maxlength="1000"
-          rows="5"
-        >${escapeHtml(
-          post.text || ""
-        )}</textarea>
+      <label
+        class="small"
+        for="editPostExpiry"
+      >
+        Post visibility duration
+      </label>
 
-      </div>
+      <select
+        id="editPostExpiry"
+        class="input"
+        style="margin-top:6px;"
+      >
+        ${expiryOptions}
+      </select>
 
+      <div style="height:16px"></div>
 
       <button
+        id="saveEditedPost"
         class="btn btn-primary btn-block"
-        id="saveEditPost"
         type="button"
       >
         Save Changes
@@ -1522,9 +1240,7 @@ export async function showEditPost(id) {
   );
 
   document
-    .getElementById(
-      "saveEditPost"
-    )
+    .getElementById("saveEditedPost")
     ?.addEventListener(
       "click",
       async () => {
@@ -1533,14 +1249,27 @@ export async function showEditPost(id) {
             "editPostText"
           );
 
+        const expiry =
+          document.getElementById(
+            "editPostExpiry"
+          );
+
+        const button =
+          document.getElementById(
+            "saveEditedPost"
+          );
+
+        if (!input || !button) {
+          return;
+        }
+
         const text =
-          input?.value.trim() || "";
+          input.value.trim();
 
         if (!text) {
           toast(
-            "Post cannot be empty."
+            "Post text cannot be empty."
           );
-
           return;
         }
 
@@ -1548,22 +1277,19 @@ export async function showEditPost(id) {
           toast(
             "Posts can contain up to 1000 characters."
           );
-
           return;
         }
 
-        const button =
-          document.getElementById(
-            "saveEditPost"
-          );
-
-        if (button) {
-          button.disabled = true;
-          button.textContent =
-            "Saving…";
-        }
+        button.disabled = true;
+        button.textContent =
+          "Saving…";
 
         try {
+          const expiresAt =
+            getPostExpiryDate(
+              expiry?.value || "1d"
+            );
+
           await updateDoc(
             doc(
               db,
@@ -1572,8 +1298,7 @@ export async function showEditPost(id) {
             ),
             {
               text,
-              editedAt:
-                serverTimestamp()
+              expiresAt
             }
           );
 
@@ -1584,101 +1309,98 @@ export async function showEditPost(id) {
                   ? {
                       ...item,
                       text,
-                      editedAt:
-                        new Date()
+                      expiresAt
                     }
                   : item
             );
 
+          markHomeActivity();
           closeModal();
-
           toast(
-            "Post updated ✓"
+            "Post updated."
           );
         } catch (error) {
+          console.error(
+            "Edit post failed:",
+            {
+              postId: id,
+              code: error?.code,
+              error
+            }
+          );
+
           toast(
             friendly(error)
           );
 
-          if (button) {
-            button.disabled = false;
-            button.textContent =
-              "Save Changes";
-          }
+          button.disabled = false;
+          button.textContent =
+            "Save Changes";
         }
       }
     );
 }
 
-
-export async function showDeletePostConfirmation(
-  id
-) {
+export function showDeletePostConfirmation(id) {
   const post =
-    await getPostById(id);
-
-  if (
-    !post ||
-    post.uid !==
-      state.user?.uid
-  ) {
-    toast(
-      "You can only delete your own post."
+    state.posts.find(
+      item => item.id === id
     );
 
+  if (!post || !state.user) {
+    return;
+  }
+
+  if (post.uid !== state.user.uid) {
+    toast(
+      "You can only delete your own posts."
+    );
     return;
   }
 
   showModal(
-    "Delete this post?",
+    "Delete Post",
     `
-      <p class="small">
-        This action cannot be undone.
+      <p>
+        Are you sure you want to delete this post?
       </p>
 
       <div
         style="
           display:flex;
-          gap:8px;
-          margin-top:15px;
+          gap:10px;
+          justify-content:flex-end;
+          margin-top:18px;
         "
       >
-
         <button
-          class="btn btn-ghost"
           id="cancelDeletePost"
+          class="btn btn-ghost"
           type="button"
-          style="flex:1;"
         >
           Cancel
         </button>
 
         <button
-          class="btn btn-danger"
           id="confirmDeletePost"
+          class="btn btn-primary"
           type="button"
-          style="flex:1;"
         >
           Delete
         </button>
-
       </div>
     `
   );
 
   document
-    .getElementById(
-      "cancelDeletePost"
-    )
+    .getElementById("cancelDeletePost")
     ?.addEventListener(
       "click",
       closeModal
     );
 
   document
-    .getElementById(
-      "confirmDeletePost"
-    )
+    .getElementById("confirmDeletePost")
     ?.addEventListener(
       "click",
       async () => {
@@ -1708,11 +1430,19 @@ export async function showDeletePostConfirmation(
             );
 
           closeModal();
-
           toast(
             "Post deleted."
           );
         } catch (error) {
+          console.error(
+            "Delete post failed:",
+            {
+              postId: id,
+              code: error?.code,
+              error
+            }
+          );
+
           toast(
             friendly(error)
           );
@@ -1727,90 +1457,499 @@ export async function showDeletePostConfirmation(
     );
 }
 
-
-export async function sharePost(id) {
+export async function toggleLike(id) {
+  const user = state.user;
   const post =
-    await getPostById(id);
-
-  if (!post) {
-    toast(
-      "Post not found."
+    state.posts.find(
+      item => item.id === id
     );
 
+  if (
+    !user ||
+    !post ||
+    pendingLikeIds.has(id)
+  ) {
     return;
   }
 
-  const author =
-    post.username ||
-    post.displayName ||
-    "Someone";
+  const liked =
+    Array.isArray(post.likedBy) &&
+    post.likedBy.includes(
+      user.uid
+    );
+
+  pendingLikeIds.add(id);
+
+  const button =
+    document.querySelector(
+      `[data-like="${cssEscape(id)}"]`
+    );
+
+  if (button) {
+    button.disabled = true;
+  }
+
+  try {
+    await updateDoc(
+      doc(
+        db,
+        "posts",
+        id
+      ),
+      {
+        likes:
+          increment(
+            liked ? -1 : 1
+          ),
+        likedBy:
+          liked
+            ? arrayRemove(user.uid)
+            : arrayUnion(user.uid)
+      }
+    );
+
+    const nextLikedBy =
+      liked
+        ? (
+            Array.isArray(
+              post.likedBy
+            )
+              ? post.likedBy.filter(
+                  uid =>
+                    uid !== user.uid
+                )
+              : []
+          )
+        : Array.from(
+            new Set([
+              ...(Array.isArray(
+                post.likedBy
+              )
+                ? post.likedBy
+                : []),
+              user.uid
+            ])
+          );
+
+    state.posts =
+      state.posts.map(
+        item =>
+          item.id === id
+            ? {
+                ...item,
+                likes:
+                  Math.max(
+                    0,
+                    Number(
+                      item.likes || 0
+                    ) +
+                      (
+                        liked
+                          ? -1
+                          : 1
+                      )
+                  ),
+                likedBy:
+                  nextLikedBy
+              }
+            : item
+      );
+
+    updateLikeButton(id);
+
+    if (
+      !liked &&
+      post.uid &&
+      post.uid !== user.uid
+    ) {
+      addDoc(
+        collection(
+          db,
+          "users",
+          post.uid,
+          "notifications"
+        ),
+        {
+          type: "like",
+          actorUid:
+            user.uid,
+          actorName:
+            getCurrentUserName(),
+          targetId:
+            id,
+          text:
+            `${getCurrentUserName()} liked your post.`,
+          read: false,
+          createdAt:
+            serverTimestamp()
+        }
+      ).catch(
+        notificationError => {
+          console.warn(
+            "Like notification failed",
+            {
+              postId: id,
+              code:
+                notificationError?.code,
+              error:
+                notificationError
+            }
+          );
+        }
+      );
+    }
+  } catch (error) {
+    console.error(
+      "Like operation failed",
+      {
+        operation:
+          liked
+            ? "unlike"
+            : "like",
+        postId:
+          id,
+        path:
+          `posts/${id}`,
+        uid:
+          user.uid,
+        code:
+          error?.code,
+        error
+      }
+    );
+
+    if (error?.code === "permission-denied") {
+      toast(
+        "Like was rejected by Firestore for this post. Your account is still safe; no changes were made."
+      );
+    } else {
+      toast(friendly(error));
+    }
+  } finally {
+    pendingLikeIds.delete(id);
+    updateLikeButton(id);
+  }
+}
+
+function updateLikeButton(id) {
+  const post =
+    state.posts.find(
+      item => item.id === id
+    );
+
+  const button =
+    document.querySelector(
+      `[data-like="${cssEscape(id)}"]`
+    );
+
+  if (!post || !button) {
+    return;
+  }
+
+  const currentUid =
+    state.user?.uid;
+
+  if (!currentUid) {
+    return;
+  }
+
+  const liked =
+    Array.isArray(post.likedBy) &&
+    post.likedBy.includes(
+      currentUid
+    );
+
+  button.classList.toggle(
+    "active",
+    liked
+  );
+
+  button.innerHTML =
+    `${liked ? "❤️" : "♡"} ${Number(
+      post.likes || 0
+    )}`;
+
+  button.disabled =
+    pendingLikeIds.has(id);
+}
+
+async function loadSavedPostIds() {
+  const user = state.user;
+
+  if (!user) {
+    return;
+  }
+
+  if (savedPostsLoadedForUid === user.uid) {
+    return;
+  }
+
+  if (savedPostsLoadPromise && savedPostsLoadingUid === user.uid) {
+    return savedPostsLoadPromise;
+  }
+
+  savedPostsLoadingUid = user.uid;
+  savedPostsLoadPromise = (async () => {
+    try {
+      const snap =
+        await getDocs(
+          collection(
+            db,
+            "users",
+            user.uid,
+            "savedPosts"
+          )
+        );
+
+      savedPostIds = new Set();
+
+      snap.forEach(savedDoc => {
+        savedPostIds.add(savedDoc.id);
+      });
+
+      savedPostsLoadedForUid = user.uid;
+
+      if (state.page === "home") {
+        const posts =
+          Array.isArray(state.posts)
+            ? state.posts
+            : [];
+
+        posts.forEach(post => updateSaveButton(post.id));
+      }
+    } catch (error) {
+      console.error(
+        "Saved posts load failed",
+        {
+          path: `users/${user.uid}/savedPosts`,
+          uid: user.uid,
+          code: error?.code,
+          error
+        }
+      );
+    } finally {
+      savedPostsLoadPromise = null;
+      savedPostsLoadingUid = null;
+    }
+  })();
+
+  return savedPostsLoadPromise;
+}
+
+export async function savePost(id) {
+  const user = state.user;
+  const post =
+    state.posts.find(
+      item => item.id === id
+    );
+
+  if (
+    !user ||
+    !post ||
+    pendingSaveIds.has(id)
+  ) {
+    return;
+  }
+
+  const saved =
+    savedPostIds.has(id) ||
+    (
+      Array.isArray(
+        post.savedBy
+      ) &&
+      post.savedBy.includes(
+        user.uid
+      )
+    );
+
+  pendingSaveIds.add(id);
+
+  const button =
+    document.querySelector(
+      `[data-save="${cssEscape(id)}"]`
+    );
+
+  if (button) {
+    button.disabled = true;
+  }
+
+  try {
+    const savedRef =
+      doc(
+        db,
+        "users",
+        user.uid,
+        "savedPosts",
+        id
+      );
+
+    if (saved) {
+      await deleteDoc(
+        savedRef
+      );
+
+      savedPostIds.delete(id);
+    } else {
+      await setDoc(
+        savedRef,
+        {
+          postId:
+            id,
+          uid:
+            user.uid,
+          createdAt:
+            serverTimestamp()
+        }
+      );
+
+      savedPostIds.add(id);
+    }
+
+    updateSaveButton(id);
+
+    markHomeActivity();
+
+    toast(
+      saved
+        ? "Removed from saved posts."
+        : "Saved to your vault 🔖"
+    );
+  } catch (error) {
+    console.error(
+      "Save operation failed",
+      {
+        operation:
+          saved
+            ? "unsave"
+            : "save",
+        postId:
+          id,
+        path:
+          `users/${user.uid}/savedPosts/${id}`,
+        uid:
+          user.uid,
+        code:
+          error?.code,
+        error
+      }
+    );
+
+    if (error?.code === "permission-denied") {
+      toast(
+        "Save was rejected by Firestore. No changes were made to your account."
+      );
+    } else {
+      toast(friendly(error));
+    }
+  } finally {
+    pendingSaveIds.delete(id);
+    updateSaveButton(id);
+  }
+}
+
+function updateSaveButton(id) {
+  const button =
+    document.querySelector(
+      `[data-save="${cssEscape(id)}"]`
+    );
+
+  if (!button) {
+    return;
+  }
+
+  const saved =
+    savedPostIds.has(id);
+
+  button.classList.toggle(
+    "active",
+    saved
+  );
+
+  button.textContent =
+    saved
+      ? "🔖 Saved"
+      : "🔖 Save";
+
+  button.disabled =
+    pendingSaveIds.has(id);
+}
+
+export async function sharePost(id) {
+  const post =
+    state.posts.find(
+      item => item.id === id
+    );
+
+  if (!post) {
+    return;
+  }
 
   const text =
-    post.text ||
-    post.content ||
-    "";
-
-  const shareText =
-    `${author} on Marvel Chat:\n\n${text}`;
+    `${post.username || "User"}: ${post.text || ""}`;
 
   try {
     if (
+      navigator.share &&
       typeof navigator.share ===
-      "function"
+        "function"
     ) {
       await navigator.share({
         title:
-          "Marvel Chat",
-        text:
-          shareText
+          "MARVEL CHAT",
+        text
       });
-
-      return;
-    }
-
-    if (
-      navigator.clipboard?.writeText
+    } else if (
+      navigator.clipboard &&
+      typeof navigator.clipboard.writeText ===
+        "function"
     ) {
       await navigator.clipboard.writeText(
-        shareText
+        text
       );
 
       toast(
         "Post copied to clipboard 📋"
       );
-
-      return;
+    } else {
+      toast(
+        "Sharing is not available on this device."
+      );
     }
 
-    toast(
-      "Sharing is not available on this device."
-    );
-  } catch (error) {
+    markHomeActivity();
+  } catch (e) {
     if (
-      error?.name ===
+      e?.name !==
       "AbortError"
     ) {
-      return;
+      toast(
+        "Could not share this post."
+      );
     }
-
-    toast(
-      friendly(error)
-    );
   }
 }
 
+function openYouTubeLiveSearch() {
+  const queryText =
+    "YouTube Live community";
+
+  const url =
+    `https://www.youtube.com/results?search_query=${encodeURIComponent(
+      queryText
+    )}&sp=EgJAAQ%253D%253D`;
+
+  window.open(
+    url,
+    "_blank",
+    "noopener,noreferrer"
+  );
+}
 
 export async function showComments(id) {
   const post =
-    await getPostById(id);
-
-  if (!post) {
-    toast(
-      "Post not found."
+    state.posts.find(
+      item => item.id === id
     );
-
-    return;
-  }
 
   showModal(
     "Comments",
@@ -1824,24 +1963,19 @@ export async function showComments(id) {
         </div>
       </div>
 
-
-      <div style="height:14px;"></div>
-
+      <div style="height:14px"></div>
 
       <textarea
         class="textarea"
         id="commentText"
-        maxlength="1000"
-        rows="4"
         placeholder="Write a comment…"
       ></textarea>
-
 
       <button
         class="btn btn-primary btn-block"
         id="addComment"
+        style="margin-top:8px"
         type="button"
-        style="margin-top:8px;"
       >
         Add comment
       </button>
@@ -1849,7 +1983,7 @@ export async function showComments(id) {
   );
 
   try {
-    const snapshot =
+    const snap =
       await getDocs(
         query(
           collection(
@@ -1867,10 +2001,11 @@ export async function showComments(id) {
       );
 
     const comments =
-      snapshot.docs.map(
-        item => ({
-          id: item.id,
-          ...item.data()
+      snap.docs.map(
+        d => ({
+          id:
+            d.id,
+          ...d.data()
         })
       );
 
@@ -1887,60 +2022,55 @@ export async function showComments(id) {
 
       list.innerHTML =
         comments.length
-          ? comments.map(
-              comment => `
-                <div class="list-item">
+          ? comments
+              .map(
+                c => `
+                  <div class="list-item">
 
-                  <strong>
-                    ${escapeHtml(
-                      comment.username ||
-                      "User"
-                    )}
-                  </strong>
+                    <strong>
+                      ${escapeHtml(
+                        c.username ||
+                        "User"
+                      )}
+                    </strong>
 
-                  <div>
-                    ${escapeHtml(
-                      comment.text || ""
-                    )}
+                    <div>
+                      ${escapeHtml(
+                        c.text ||
+                        ""
+                      )}
+                    </div>
+
+                    <div class="small">
+                      ${escapeHtml(
+                        formatDate(
+                          c.createdAt
+                        )
+                      )}
+                    </div>
+
                   </div>
-
-                  <div class="small">
-                    ${escapeHtml(
-                      formatDate(
-                        comment.createdAt
-                      )
-                    )}
-                  </div>
-
-                </div>
-              `
-            ).join("")
-          : `
-            No comments yet.
-            Start the conversation.
-          `;
+                `
+              )
+              .join("")
+          : "No comments yet. Start the conversation.";
     }
-  } catch (error) {
+  } catch (e) {
     const list =
       document.getElementById(
         "commentsList"
       );
 
     if (list) {
-      list.innerHTML = `
-        <div class="status error">
-          ${escapeHtml(
-            friendly(error)
-          )}
-        </div>
-      `;
+      list.innerHTML =
+        `<div class="status error">${escapeHtml(
+          friendly(e)
+        )}</div>`;
     }
   }
 
   document
-    .getElementById(
-      "addComment"
-    )
+    .getElementById("addComment")
     ?.addEventListener(
       "click",
       async () => {
@@ -1949,25 +2079,35 @@ export async function showComments(id) {
             "commentText"
           );
 
+        if (!input) {
+          return;
+        }
+
         const text =
-          input?.value.trim() || "";
+          input.value.trim();
 
         if (!text) {
           toast(
             "Write a comment first."
           );
-
           return;
         }
 
-        const button =
+        if (!state.user) {
+          toast(
+            "Please sign in first."
+          );
+          return;
+        }
+
+        const btn =
           document.getElementById(
             "addComment"
           );
 
-        if (button) {
-          button.disabled = true;
-          button.textContent =
+        if (btn) {
+          btn.disabled = true;
+          btn.textContent =
             "Adding…";
         }
 
@@ -1975,8 +2115,7 @@ export async function showComments(id) {
           const actorName =
             getCurrentUserName();
 
-          const commentRef =
-            await addDoc(
+          await addDoc(
               collection(
                 db,
                 "posts",
@@ -1986,12 +2125,9 @@ export async function showComments(id) {
               {
                 uid:
                   state.user.uid,
-
                 username:
                   actorName,
-
                 text,
-
                 createdAt:
                   serverTimestamp()
               }
@@ -2009,7 +2145,25 @@ export async function showComments(id) {
             }
           );
 
+          /*
+           * Do not immediately call showComments() again.
+           * The comment was just written successfully, so re-reading
+           * the entire comments collection would spend another batch
+           * of reads for no user-visible benefit.
+           */
+          const currentPost =
+            state.posts.find(item => item.id === id);
+
+          if (currentPost) {
+            currentPost.comments =
+              Math.max(
+                0,
+                Number(currentPost.comments || 0) + 1
+              );
+          }
+
           if (
+            post &&
             post.uid &&
             post.uid !==
               state.user.uid
@@ -2025,60 +2179,83 @@ export async function showComments(id) {
                 {
                   type:
                     "comment",
-
                   actorUid:
                     state.user.uid,
-
                   actorName,
-
                   targetId:
                     id,
-
                   text:
                     `${actorName} commented on your post.`,
-
-                  read:
-                    false,
-
+                  read: false,
                   createdAt:
                     serverTimestamp()
                 }
               );
-            } catch (notificationError) {
+            } catch (notifErr) {
               console.warn(
-                "[Home] Comment notification failed:",
-                notificationError
+                "Could not create comment notification:",
+                notifErr
               );
             }
           }
 
-          state.posts =
-            state.posts.map(
-              item =>
-                item.id === id
-                  ? {
-                      ...item,
-                      comments:
-                        Number(
-                          item.comments || 0
-                        ) + 1
-                    }
-                  : item
-            );
+          input.value = "";
+
+          markHomeActivity();
 
           toast(
             "Comment added 💬"
           );
 
-          showComments(id);
-        } catch (error) {
+          const list =
+            document.getElementById("commentsList");
+
+          if (list) {
+            const emptyMessage =
+              list.classList.contains("empty") ||
+              list.textContent.includes("No comments yet");
+
+            const itemHtml = `
+              <div class="list-item">
+                <strong>${escapeHtml(actorName)}</strong>
+                <div>${escapeHtml(text)}</div>
+                <div class="small">Just now</div>
+              </div>
+            `;
+
+            if (emptyMessage) {
+              list.className = "list";
+              list.innerHTML = itemHtml;
+            } else {
+              list.insertAdjacentHTML("beforeend", itemHtml);
+            }
+          }
+
+          const postCard =
+            document.querySelector(
+              `[data-post-card="${cssEscape(id)}"]`
+            );
+
+          if (postCard) {
+            const commentButton =
+              postCard.querySelector(
+                `[data-comment="${cssEscape(id)}"]`
+              );
+
+            if (commentButton) {
+              commentButton.textContent =
+                `💬 ${Number(currentPost?.comments || 0)}`;
+            }
+          }
+        } catch (e) {
           toast(
-            friendly(error)
+            friendly(e)
           );
 
-          if (button) {
-            button.disabled = false;
-            button.textContent =
+          if (btn) {
+            btn.disabled =
+              false;
+            btn.textContent =
               "Add comment";
           }
         }
@@ -2086,94 +2263,95 @@ export async function showComments(id) {
     );
 }
 
-
-async function cleanupExpiredPosts() {
-  if (!state.user) {
-    return;
-  }
-
-  const expired =
-    (state.posts || []).filter(
-      post =>
-        post.uid ===
-          state.user.uid &&
-        isPostExpired(post)
-    );
-
-  for (const post of expired) {
-    try {
-      await deleteDoc(
-        doc(
-          db,
-          "posts",
-          post.id
-        )
-      );
-
-      state.posts =
-        state.posts.filter(
-          item =>
-            item.id !== post.id
-        );
-    } catch (error) {
-      console.warn(
-        "[Home] Could not clean up expired post:",
-        error
-      );
-    }
-  }
-}
-
-
 export function attachHomeEvents(
   renderApp
 ) {
+  const discoveryBanner =
+    document.getElementById(
+      "discoveryBanner"
+    );
+
+  if (discoveryBanner) {
+    startDiscoveryCountdown();
+  }
+
   loadSavedPostIds();
+
+  document
+    .getElementById("discoveryClose")
+    ?.addEventListener(
+      "click",
+      () => {
+        dismissDiscovery();
+      }
+    );
+
+  document
+    .querySelectorAll(
+      "[data-discovery-nav]"
+    )
+    .forEach(
+      button => {
+        button.addEventListener(
+          "click",
+          () => {
+            openDiscoveryDestination(
+              button.dataset
+                .discoveryNav,
+              renderApp
+            );
+          }
+        );
+      }
+    );
 
   document
     .querySelectorAll(
       "[data-quick]"
     )
-    .forEach(button => {
-      button.addEventListener(
-        "click",
-        () => {
-          const action =
-            button.dataset.quick;
+    .forEach(
+      button => {
+        button.addEventListener(
+          "click",
+          () => {
+            markHomeActivity();
 
-          if (action === "post") {
-            showCreatePost();
-            return;
+            const action =
+              button.dataset.quick;
+
+            if (
+              action ===
+              "post"
+            ) {
+              showCreatePost();
+            } else if (
+              action ===
+              "chat"
+            ) {
+              state.page =
+                "chat";
+              renderApp();
+            } else if (
+              action ===
+              "timetrust"
+            ) {
+              state.page =
+                "timetrust";
+              renderApp();
+            } else if (
+              action ===
+              "market"
+            ) {
+              state.marketBrowseMode =
+                false;
+              state.page =
+                "market";
+              renderApp();
+            }
           }
-
-          if (action === "chat") {
-            state.page = "chat";
-            renderApp();
-            return;
-          }
-
-          if (action === "timetrust") {
-            state.page =
-              "timetrust";
-
-            renderApp();
-
-            return;
-          }
-
-          if (action === "market") {
-            state.marketBrowseMode =
-              false;
-
-            state.page =
-              "market";
-
-            renderApp();
-          }
-        }
-      );
-    });
-
+        );
+      }
+    );
 
   document
     .getElementById(
@@ -2182,12 +2360,25 @@ export function attachHomeEvents(
     ?.addEventListener(
       "input",
       event => {
+        markHomeActivity();
+
         filterRenderedPosts(
           event.target.value
         );
       }
     );
 
+  document
+    .getElementById(
+      "youtubeLiveSearchBtn"
+    )
+    ?.addEventListener(
+      "click",
+      () => {
+        markHomeActivity();
+        openYouTubeLiveSearch();
+      }
+    );
 
   document
     .getElementById(
@@ -2198,7 +2389,6 @@ export function attachHomeEvents(
       showCreatePost
     );
 
-
   document
     .getElementById(
       "emptyCreatePost"
@@ -2208,153 +2398,184 @@ export function attachHomeEvents(
       showCreatePost
     );
 
-
   document
     .querySelectorAll(
       "[data-menu-post]"
     )
-    .forEach(button => {
-      button.addEventListener(
-        "click",
-        event => {
-          event.stopPropagation();
+    .forEach(
+      button => {
+        button.addEventListener(
+          "click",
+          event => {
+            event.stopPropagation();
 
-          const id =
-            button.dataset.menuPost;
+            const postId =
+              button.dataset
+                .menuPost;
 
-          const menu =
-            document.getElementById(
-              `postMenu-${id}`
+            const menu =
+              document.getElementById(
+                `postMenu-${postId}`
+              );
+
+            if (!menu) {
+              return;
+            }
+
+            document
+              .querySelectorAll(
+                ".dropdown-menu"
+              )
+              .forEach(
+                other => {
+                  if (
+                    other !==
+                    menu
+                  ) {
+                    other.classList.add(
+                      "hidden"
+                    );
+                  }
+                }
+              );
+
+            menu.classList.toggle(
+              "hidden"
             );
-
-          if (!menu) {
-            return;
           }
-
-          document
-            .querySelectorAll(
-              ".dropdown-menu"
-            )
-            .forEach(other => {
-              if (other !== menu) {
-                other.classList.add(
-                  "hidden"
-                );
-              }
-            });
-
-          menu.classList.toggle(
-            "hidden"
-          );
-        }
-      );
-    });
-
+        );
+      }
+    );
 
   document
     .querySelectorAll(
       "[data-edit-post]"
     )
-    .forEach(button => {
-      button.addEventListener(
-        "click",
-        event => {
-          event.stopPropagation();
+    .forEach(
+      button => {
+        button.addEventListener(
+          "click",
+          event => {
+            event.stopPropagation();
 
-          showEditPost(
-            button.dataset.editPost
-          );
-        }
-      );
-    });
+            const postId =
+              button.dataset
+                .editPost;
 
+            showEditPost(
+              postId
+            );
+          }
+        );
+      }
+    );
 
   document
     .querySelectorAll(
       "[data-delete-post]"
     )
-    .forEach(button => {
-      button.addEventListener(
-        "click",
-        event => {
-          event.stopPropagation();
+    .forEach(
+      button => {
+        button.addEventListener(
+          "click",
+          event => {
+            event.stopPropagation();
 
-          showDeletePostConfirmation(
-            button.dataset.deletePost
-          );
-        }
-      );
-    });
+            const postId =
+              button.dataset
+                .deletePost;
 
+            showDeletePostConfirmation(
+              postId
+            );
+          }
+        );
+      }
+    );
 
   document
     .querySelectorAll(
       "[data-like]"
     )
-    .forEach(button => {
-      button.addEventListener(
-        "click",
-        () =>
-          toggleLike(
-            button.dataset.like
-          )
-      );
-    });
-
+    .forEach(
+      button => {
+        button.addEventListener(
+          "click",
+          () => {
+            toggleLike(
+              button.dataset
+                .like
+            );
+          }
+        );
+      }
+    );
 
   document
     .querySelectorAll(
       "[data-save]"
     )
-    .forEach(button => {
-      button.addEventListener(
-        "click",
-        () =>
-          savePost(
-            button.dataset.save
-          )
-      );
-    });
-
+    .forEach(
+      button => {
+        button.addEventListener(
+          "click",
+          () => {
+            savePost(
+              button.dataset
+                .save
+            );
+          }
+        );
+      }
+    );
 
   document
     .querySelectorAll(
       "[data-share]"
     )
-    .forEach(button => {
-      button.addEventListener(
-        "click",
-        () =>
-          sharePost(
-            button.dataset.share
-          )
-      );
-    });
-
+    .forEach(
+      button => {
+        button.addEventListener(
+          "click",
+          () => {
+            sharePost(
+              button.dataset
+                .share
+            );
+          }
+        );
+      }
+    );
 
   document
     .querySelectorAll(
       "[data-comment]"
     )
-    .forEach(button => {
-      button.addEventListener(
-        "click",
-        () =>
-          showComments(
-            button.dataset.comment
-          )
-      );
-    });
+    .forEach(
+      button => {
+        button.addEventListener(
+          "click",
+          () => {
+            showComments(
+              button.dataset
+                .comment
+            );
+          }
+        );
+      }
+    );
 
-
-  if (!homeDocumentClickHandler) {
+  if (
+    !homeDocumentClickHandler
+  ) {
     homeDocumentClickHandler =
       event => {
-        if (
+        const insideMenu =
           event.target.closest(
             ".dropdown-container"
-          )
-        ) {
+          );
+
+        if (insideMenu) {
           return;
         }
 
@@ -2362,11 +2583,13 @@ export function attachHomeEvents(
           .querySelectorAll(
             ".dropdown-menu"
           )
-          .forEach(menu => {
-            menu.classList.add(
-              "hidden"
-            );
-          });
+          .forEach(
+            menu => {
+              menu.classList.add(
+                "hidden"
+              );
+            }
+          );
       };
 
     document.addEventListener(
@@ -2375,11 +2598,10 @@ export function attachHomeEvents(
     );
   }
 
-
   cleanupExpiredPosts().catch(
     error => {
       console.warn(
-        "[Home] Expired post cleanup failed:",
+        "Expired post cleanup failed:",
         error
       );
     }
