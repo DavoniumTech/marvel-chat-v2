@@ -4724,6 +4724,16 @@ export function showEditPost(
     );
   }
 
+  const existingMedia =
+    getPostMedia(post);
+
+  // Local edit-session state for the photo attached to this post.
+  // `removeExisting` tracks an explicit "Remove photo" click.
+  // `newFile` / `newPreviewUrl` track a chosen replacement photo.
+  let editRemoveExistingPhoto = false;
+  let editNewPhotoFile = null;
+  let editNewPhotoPreviewUrl = "";
+
   showHomeModal(`
     <div
       class="modal-content"
@@ -4757,6 +4767,68 @@ export function showEditPost(
         >${escapeHtml(
           getPostText(post)
         )}</textarea>
+
+        <div
+          id="editPostPhotoSection"
+          style="
+            margin-top:12px;
+            padding:12px;
+            border:1px solid var(--border);
+            border-radius:15px;
+            background:var(--surface);
+          "
+        >
+          <div
+            id="editPostPhotoPreviewHolder"
+          ></div>
+
+          <div
+            style="
+              display:flex;
+              align-items:center;
+              gap:10px;
+              flex-wrap:wrap;
+              margin-top:8px;
+            "
+          >
+            <button
+              type="button"
+              class="btn secondary"
+              id="editPostChoosePhoto"
+              style="padding:7px 10px;"
+            >
+              ${
+                existingMedia
+                  ? "Replace photo"
+                  : "Add a photo"
+              }
+            </button>
+
+            <button
+              type="button"
+              class="btn secondary"
+              id="editPostRemovePhoto"
+              style="
+                padding:7px 10px;
+                ${
+                  existingMedia
+                    ? ""
+                    : "display:none;"
+                }
+              "
+            >
+              Remove photo
+            </button>
+          </div>
+
+          <input
+            id="editPostPhotoInput"
+            type="file"
+            accept="image/*"
+            style="display:none;"
+            aria-label="Choose a replacement photo"
+          >
+        </div>
       </div>
 
       <div
@@ -4791,7 +4863,144 @@ export function showEditPost(
       "submitEditPost"
     );
 
+  const choosePhotoButton =
+    document.getElementById(
+      "editPostChoosePhoto"
+    );
+
+  const removePhotoButton =
+    document.getElementById(
+      "editPostRemovePhoto"
+    );
+
+  const photoFileInput =
+    document.getElementById(
+      "editPostPhotoInput"
+    );
+
+  function renderEditPostPhotoPreview() {
+    const holder =
+      document.getElementById(
+        "editPostPhotoPreviewHolder"
+      );
+
+    if (!holder) return;
+
+    if (
+      editNewPhotoPreviewUrl
+    ) {
+      holder.innerHTML = `
+        <img
+          src="${escapeHtml(
+            editNewPhotoPreviewUrl
+          )}"
+          alt="New photo preview"
+          style="
+            display:block;
+            width:100%;
+            max-height:280px;
+            object-fit:cover;
+            border-radius:11px;
+          "
+        >
+      `;
+      return;
+    }
+
+    if (
+      existingMedia &&
+      !editRemoveExistingPhoto
+    ) {
+      holder.innerHTML = `
+        <img
+          src="${escapeHtml(
+            existingMedia.url
+          )}"
+          alt="Current post photo"
+          style="
+            display:block;
+            width:100%;
+            max-height:280px;
+            object-fit:cover;
+            border-radius:11px;
+          "
+        >
+      `;
+      return;
+    }
+
+    holder.innerHTML = "";
+  }
+
+  renderEditPostPhotoPreview();
+
   input?.focus();
+
+  choosePhotoButton?.addEventListener(
+    "click",
+    () => {
+      photoFileInput?.click();
+    }
+  );
+
+  photoFileInput?.addEventListener(
+    "change",
+    () => {
+      const file =
+        photoFileInput.files?.[0] ||
+        null;
+
+      if (!file) return;
+
+      if (
+        editNewPhotoPreviewUrl
+      ) {
+        URL.revokeObjectURL(
+          editNewPhotoPreviewUrl
+        );
+      }
+
+      editNewPhotoFile = file;
+
+      editNewPhotoPreviewUrl =
+        URL.createObjectURL(
+          file
+        );
+
+      editRemoveExistingPhoto =
+        false;
+
+      if (removePhotoButton) {
+        removePhotoButton.style.display =
+          "";
+      }
+
+      renderEditPostPhotoPreview();
+    }
+  );
+
+  removePhotoButton?.addEventListener(
+    "click",
+    () => {
+      if (
+        editNewPhotoPreviewUrl
+      ) {
+        URL.revokeObjectURL(
+          editNewPhotoPreviewUrl
+        );
+      }
+
+      editNewPhotoFile = null;
+      editNewPhotoPreviewUrl = "";
+      editRemoveExistingPhoto = true;
+
+      if (photoFileInput) {
+        photoFileInput.value = "";
+      }
+
+      renderEditPostPhotoPreview();
+    }
+  );
 
   button?.addEventListener(
     "click",
@@ -4802,12 +5011,6 @@ export function showEditPost(
           ""
         ).trim();
 
-      if (!text) {
-        return toast(
-          "Post text cannot be empty."
-        );
-      }
-
       if (
         text.length >
         1000
@@ -4817,26 +5020,79 @@ export function showEditPost(
         );
       }
 
+      // A post keeps its photo unless the user explicitly
+      // removed it or is replacing it with a new one.
+      const willHavePhoto =
+        Boolean(
+          editNewPhotoFile
+        ) ||
+        (
+          Boolean(existingMedia) &&
+          !editRemoveExistingPhoto
+        );
+
+      if (!text && !willHavePhoto) {
+        return toast(
+          "Write something or keep a photo before saving."
+        );
+      }
+
       button.disabled =
         true;
 
       button.textContent =
-        "Saving...";
+        editNewPhotoFile
+          ? "Uploading photo..."
+          : "Saving...";
 
       try {
+        const updatePayload = {
+          text:
+            text,
+
+          editedAt:
+            serverTimestamp()
+        };
+
+        let newMediaForState =
+          post.media ||
+          post.attachment ||
+          null;
+
+        if (
+          editNewPhotoFile
+        ) {
+          // Upload the replacement BEFORE touching Firestore,
+          // so we never lose the old image on a failed upload.
+          const upload =
+            await uploadHomeImageToCloudinary(
+              editNewPhotoFile
+            );
+
+          updatePayload.media =
+            upload.media;
+
+          newMediaForState =
+            upload.media;
+
+          button.textContent =
+            "Saving...";
+        } else if (
+          editRemoveExistingPhoto
+        ) {
+          updatePayload.media =
+            null;
+
+          newMediaForState = null;
+        }
+
         await updateDoc(
           doc(
             db,
             "posts",
             postId(id)
           ),
-          {
-            text:
-              text,
-
-            editedAt:
-              serverTimestamp()
-          }
+          updatePayload
         );
 
         state.posts =
@@ -4848,6 +5104,8 @@ export function showEditPost(
                     ...item,
                     text:
                       text,
+                    media:
+                      newMediaForState,
                     editedAt:
                       new Date()
                   }
@@ -4868,11 +5126,21 @@ export function showEditPost(
                       ...item,
                       text:
                         text,
+                      media:
+                        newMediaForState,
                       editedAt:
                         new Date()
                     }
                   : item
             );
+        }
+
+        if (
+          editNewPhotoPreviewUrl
+        ) {
+          URL.revokeObjectURL(
+            editNewPhotoPreviewUrl
+          );
         }
 
         closeHomeModal();
@@ -6322,4 +6590,3 @@ export function attachHomeEvents(
 
   markHomeActivity();
 }
-
