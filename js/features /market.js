@@ -90,6 +90,278 @@ const MARKET_INTRO_STORAGE_KEY =
 
 
 /* =========================================================
+   MARKET PHOTOS — CLOUDINARY (UNSIGNED UPLOAD ONLY)
+   ========================================================= */
+
+/*
+ * Existing Home.js Cloudinary account.
+ *
+ * Unsigned upload only. There is no API secret
+ * available (or safe to place) in frontend code,
+ * so Market.js never attempts authenticated
+ * Cloudinary deletion.
+ */
+const MARKET_CLOUDINARY_CLOUD_NAME =
+  "rzfgrd6q";
+
+const MARKET_CLOUDINARY_UPLOAD_PRESET =
+  "marvel_chat_images";
+
+const MARKET_MAX_PHOTOS = 5;
+
+const MARKET_PHOTO_MAX_DIMENSION = 1600;
+
+const MARKET_PHOTO_JPEG_QUALITY = 0.82;
+
+function getListingPhotos(
+  listing
+) {
+
+  return Array.isArray(
+    listing?.photos
+  )
+    ? listing.photos
+    : [];
+}
+
+function getListingPrimaryPhotoUrl(
+  listing
+) {
+
+  const photos =
+    getListingPhotos(
+      listing
+    );
+
+  return (
+    photos[0]
+      ?.url ||
+    null
+  );
+}
+
+/*
+ * Resize + compress a selected image file
+ * before it is uploaded, so we never send
+ * an unnecessarily large original phone
+ * photo to Cloudinary.
+ */
+function compressMarketImage(
+  file
+) {
+
+  return new Promise(
+    (resolve, reject) => {
+
+      const img =
+        new Image();
+
+      const objectUrl =
+        URL.createObjectURL(
+          file
+        );
+
+      img.onload =
+        () => {
+
+          try {
+
+            let {
+              width,
+              height
+            } = img;
+
+            const largestSide =
+              Math.max(
+                width,
+                height
+              );
+
+            if (
+              largestSide >
+              MARKET_PHOTO_MAX_DIMENSION
+            ) {
+
+              const scale =
+                MARKET_PHOTO_MAX_DIMENSION /
+                largestSide;
+
+              width =
+                Math.round(
+                  width * scale
+                );
+
+              height =
+                Math.round(
+                  height * scale
+                );
+            }
+
+            const canvas =
+              document.createElement(
+                "canvas"
+              );
+
+            canvas.width =
+              width;
+
+            canvas.height =
+              height;
+
+            const ctx =
+              canvas.getContext(
+                "2d"
+              );
+
+            ctx.drawImage(
+              img,
+              0,
+              0,
+              width,
+              height
+            );
+
+            canvas.toBlob(
+              blob => {
+
+                URL.revokeObjectURL(
+                  objectUrl
+                );
+
+                if (!blob) {
+
+                  reject(
+                    new Error(
+                      "Could not process that image."
+                    )
+                  );
+
+                  return;
+                }
+
+                resolve({
+                  blob,
+                  width,
+                  height
+                });
+
+              },
+              "image/jpeg",
+              MARKET_PHOTO_JPEG_QUALITY
+            );
+
+          } catch (error) {
+
+            URL.revokeObjectURL(
+              objectUrl
+            );
+
+            reject(
+              error
+            );
+          }
+
+        };
+
+      img.onerror =
+        () => {
+
+          URL.revokeObjectURL(
+            objectUrl
+          );
+
+          reject(
+            new Error(
+              "That file could not be read as an image."
+            )
+          );
+        };
+
+      img.src =
+        objectUrl;
+    }
+  );
+}
+
+/*
+ * Uploads a single prepared image to the
+ * existing (unsigned) Cloudinary account,
+ * inside a Market-specific folder.
+ */
+async function uploadMarketPhoto(
+  file,
+  uid
+) {
+
+  const {
+    blob,
+    width,
+    height
+  } = await compressMarketImage(
+    file
+  );
+
+  const formData =
+    new FormData();
+
+  formData.append(
+    "file",
+    blob
+  );
+
+  formData.append(
+    "upload_preset",
+    MARKET_CLOUDINARY_UPLOAD_PRESET
+  );
+
+  formData.append(
+    "folder",
+    `marvel-chat/market/${uid || "unknown"}`
+  );
+
+  const response =
+    await fetch(
+      `https://api.cloudinary.com/v1_1/${MARKET_CLOUDINARY_CLOUD_NAME}/image/upload`,
+      {
+        method: "POST",
+        body: formData
+      }
+    );
+
+  if (!response.ok) {
+
+    throw new Error(
+      "Photo upload failed. Please try again."
+    );
+  }
+
+  const data =
+    await response.json();
+
+  return {
+    type: "image",
+    url: data.secure_url ||
+      data.url,
+    publicId: data.public_id ||
+      null,
+    width: data.width ||
+      width ||
+      null,
+    height: data.height ||
+      height ||
+      null,
+    format: data.format ||
+      null,
+    bytes: data.bytes ||
+      blob.size ||
+      null,
+    resourceType: data.resource_type ||
+      "image"
+  };
+}
+
+
+/* =========================================================
    BASIC HELPERS
    ========================================================= */
 
@@ -2649,6 +2921,12 @@ export function renderMarket(
                               );
 
 
+                        const shopThumbnailUrl =
+                          getListingPrimaryPhotoUrl(
+                            latest
+                          );
+
+
                         return `
 
                           <div
@@ -2677,15 +2955,34 @@ export function renderMarket(
                               "
                             >
 
-                              <div
-                                class="avatar"
-                                style="
-                                  font-size:18px;
-                                  flex-shrink:0;
-                                "
-                              >
-                                🛍️
-                              </div>
+                              ${
+                                shopThumbnailUrl
+                                  ? `
+                                    <img
+                                      src="${escapeHtml(
+                                        shopThumbnailUrl
+                                      )}"
+                                      style="
+                                        width:44px;
+                                        height:44px;
+                                        border-radius:12px;
+                                        object-fit:cover;
+                                        flex-shrink:0;
+                                      "
+                                    >
+                                  `
+                                  : `
+                                    <div
+                                      class="avatar"
+                                      style="
+                                        font-size:18px;
+                                        flex-shrink:0;
+                                      "
+                                    >
+                                      🛍️
+                                    </div>
+                                  `
+                              }
 
 
                               <div
@@ -3286,6 +3583,55 @@ export function showSellModal(
         </div>
 
 
+        <div class="field">
+
+          <label>
+            Photos
+            (<span id="listingPhotosCounter">0/${MARKET_MAX_PHOTOS}</span>)
+          </label>
+
+          <div
+            id="listingPhotosPreview"
+            style="
+              display:flex;
+              flex-wrap:wrap;
+              gap:8px;
+              margin-bottom:8px;
+            "
+          ></div>
+
+          <input
+            type="file"
+            id="listingPhotosInput"
+            accept="image/*"
+            multiple
+            style="display:none;"
+          >
+
+          <button
+            class="btn btn-ghost"
+            id="addListingPhotosBtn"
+            type="button"
+            style="
+              font-size:13px;
+            "
+          >
+            📷 Add photos
+          </button>
+
+          <div
+            class="small"
+            style="
+              margin-top:5px;
+            "
+          >
+            Up to ${MARKET_MAX_PHOTOS} photos. The first photo is used
+            as the primary photo shown on your listing card.
+          </div>
+
+        </div>
+
+
         <div
           class="card"
           style="
@@ -3473,6 +3819,300 @@ export function showSellModal(
       </div>
     `
   );
+
+
+  /* =======================================================
+     PHOTO STATE (MODAL-LOCAL)
+     =======================================================
+     Each item is either:
+       { kind: "existing", url, publicId, width, height, format, bytes, resourceType }
+       { kind: "new", file, previewUrl }
+  */
+
+  let sellModalPhotos =
+    getListingPhotos(
+      existingListing
+    ).map(
+      photo => ({
+        kind: "existing",
+        ...photo
+      })
+    );
+
+
+  function renderSellModalPhotos() {
+
+    const counterEl =
+      document.getElementById(
+        "listingPhotosCounter"
+      );
+
+    const gridEl =
+      document.getElementById(
+        "listingPhotosPreview"
+      );
+
+    const addBtn =
+      document.getElementById(
+        "addListingPhotosBtn"
+      );
+
+    if (counterEl) {
+
+      counterEl.textContent =
+        `${sellModalPhotos.length}/${MARKET_MAX_PHOTOS}`;
+    }
+
+    if (addBtn) {
+
+      addBtn.disabled =
+        sellModalPhotos.length >=
+        MARKET_MAX_PHOTOS;
+    }
+
+    if (!gridEl) {
+      return;
+    }
+
+    gridEl.innerHTML =
+      sellModalPhotos
+        .map(
+          (photo, index) => {
+
+            const src =
+              photo.kind ===
+              "new"
+                ? photo.previewUrl
+                : photo.url;
+
+            return `
+
+              <div
+                data-photo-slot="${index}"
+                style="
+                  position:relative;
+                  width:72px;
+                  height:72px;
+                "
+              >
+
+                <img
+                  src="${escapeHtml(
+                    src ||
+                    ""
+                  )}"
+                  style="
+                    width:100%;
+                    height:100%;
+                    object-fit:cover;
+                    border-radius:10px;
+                    border:
+                      ${
+                        index === 0
+                          ? "2px solid var(--primary)"
+                          : "1px solid var(--surface2)"
+                      };
+                  "
+                >
+
+                ${
+                  index === 0
+                    ? `
+                      <span
+                        class="badge"
+                        style="
+                          position:absolute;
+                          bottom:-6px;
+                          left:2px;
+                          font-size:9px;
+                          padding:1px 5px;
+                        "
+                      >
+                        Primary
+                      </span>
+                    `
+                    : ""
+                }
+
+                <button
+                  type="button"
+                  data-remove-photo="${index}"
+                  aria-label="Remove photo"
+                  style="
+                    position:absolute;
+                    top:-6px;
+                    right:-6px;
+                    width:20px;
+                    height:20px;
+                    border-radius:50%;
+                    border:none;
+                    background:
+                      var(--danger);
+                    color:#fff;
+                    font-size:12px;
+                    line-height:1;
+                    cursor:pointer;
+                  "
+                >
+                  ✕
+                </button>
+
+              </div>
+
+            `;
+          }
+        )
+        .join("");
+
+
+    gridEl
+      .querySelectorAll(
+        "[data-remove-photo]"
+      )
+      .forEach(
+        btn => {
+
+          btn.addEventListener(
+            "click",
+            () => {
+
+              const index =
+                Number(
+                  btn.dataset
+                    .removePhoto
+                );
+
+              const removed =
+                sellModalPhotos[
+                  index
+                ];
+
+              if (
+                removed?.kind ===
+                "new" &&
+                removed.previewUrl
+              ) {
+
+                URL.revokeObjectURL(
+                  removed.previewUrl
+                );
+              }
+
+              sellModalPhotos =
+                sellModalPhotos.filter(
+                  (_, i) =>
+                    i !== index
+                );
+
+              renderSellModalPhotos();
+
+            }
+          );
+
+        }
+      );
+  }
+
+
+  renderSellModalPhotos();
+
+
+  document
+    .getElementById(
+      "addListingPhotosBtn"
+    )
+    ?.addEventListener(
+      "click",
+      () => {
+
+        document
+          .getElementById(
+            "listingPhotosInput"
+          )
+          ?.click();
+      }
+    );
+
+
+  document
+    .getElementById(
+      "listingPhotosInput"
+    )
+    ?.addEventListener(
+      "change",
+      event => {
+
+        const files =
+          Array.from(
+            event.target
+              ?.files ||
+            []
+          );
+
+        event.target.value =
+          "";
+
+        if (!files.length) {
+          return;
+        }
+
+        const remainingSlots =
+          MARKET_MAX_PHOTOS -
+          sellModalPhotos.length;
+
+        if (
+          remainingSlots <=
+          0
+        ) {
+
+          toast(
+            `You can add up to ${MARKET_MAX_PHOTOS} photos.`
+          );
+
+          return;
+        }
+
+        const accepted =
+          files
+            .filter(
+              file =>
+                file.type
+                  ?.startsWith(
+                    "image/"
+                  )
+            )
+            .slice(
+              0,
+              remainingSlots
+            );
+
+        if (
+          files.length >
+          accepted.length
+        ) {
+
+          toast(
+            `Only image files were added, up to ${MARKET_MAX_PHOTOS} photos total.`
+          );
+        }
+
+        accepted.forEach(
+          file => {
+
+            sellModalPhotos.push({
+              kind: "new",
+              file,
+              previewUrl:
+                URL.createObjectURL(
+                  file
+                )
+            });
+          }
+        );
+
+        renderSellModalPhotos();
+      }
+    );
 
 
   document
@@ -3760,6 +4400,92 @@ export function showSellModal(
 
         try {
 
+          const uploadedPhotos =
+            [];
+
+          const newPhotoCount =
+            sellModalPhotos.filter(
+              photo =>
+                photo.kind ===
+                "new"
+            ).length;
+
+          let uploadedSoFar =
+            0;
+
+          for (
+            const photo of sellModalPhotos
+          ) {
+
+            if (
+              photo.kind ===
+              "existing"
+            ) {
+
+              uploadedPhotos.push({
+                type: "image",
+                url: photo.url,
+                publicId:
+                  photo.publicId ||
+                  null,
+                width:
+                  photo.width ||
+                  null,
+                height:
+                  photo.height ||
+                  null,
+                format:
+                  photo.format ||
+                  null,
+                bytes:
+                  photo.bytes ||
+                  null,
+                resourceType:
+                  photo.resourceType ||
+                  "image"
+              });
+
+              continue;
+            }
+
+            uploadedSoFar +=
+              1;
+
+            button.textContent =
+              `Uploading photo ${uploadedSoFar}/${newPhotoCount}...`;
+
+            const uploaded =
+              await uploadMarketPhoto(
+                photo.file,
+                state.user
+                  ?.uid
+              );
+
+            uploadedPhotos.push(
+              uploaded
+            );
+          }
+
+          sellModalPhotos
+            .filter(
+              photo =>
+                photo.kind ===
+                "new" &&
+                photo.previewUrl
+            )
+            .forEach(
+              photo =>
+                URL.revokeObjectURL(
+                  photo.previewUrl
+                )
+            );
+
+          button.textContent =
+            editing
+              ? "Saving..."
+              : "Publishing...";
+
+
           const expiresAt =
             new Date(
               Date.now() +
@@ -3833,6 +4559,9 @@ export function showSellModal(
 
                 location,
 
+                photos:
+                  uploadedPhotos,
+
                 expiryDurationHours,
 
                 expiresAt,
@@ -3886,6 +4615,9 @@ export function showSellModal(
                 country,
 
                 location,
+
+                photos:
+                  uploadedPhotos,
 
                 expiryDurationHours,
 
@@ -4591,6 +5323,12 @@ async function showShopDetails(
                           "sold";
 
 
+                        const productThumbnailUrl =
+                          getListingPrimaryPhotoUrl(
+                            product
+                          );
+
+
                         return `
 
                           <button
@@ -4627,6 +5365,43 @@ async function showShopDetails(
                                 width:100%;
                               "
                             >
+
+                              ${
+                                productThumbnailUrl
+                                  ? `
+                                    <img
+                                      src="${escapeHtml(
+                                        productThumbnailUrl
+                                      )}"
+                                      style="
+                                        width:56px;
+                                        height:56px;
+                                        border-radius:10px;
+                                        object-fit:cover;
+                                        flex-shrink:0;
+                                      "
+                                    >
+                                  `
+                                  : `
+                                    <div
+                                      style="
+                                        width:56px;
+                                        height:56px;
+                                        border-radius:10px;
+                                        background:
+                                          var(--surface2);
+                                        display:flex;
+                                        align-items:center;
+                                        justify-content:center;
+                                        font-size:20px;
+                                        flex-shrink:0;
+                                      "
+                                    >
+                                      🛍️
+                                    </div>
+                                  `
+                              }
+
 
                               <div
                                 style="
@@ -5452,6 +6227,12 @@ async function showSingleListingDetails(
     "sold";
 
 
+  const listingPhotos =
+    getListingPhotos(
+      listing
+    );
+
+
   showModal(
     listing.title ||
       "Product Details",
@@ -5572,6 +6353,82 @@ async function showSingleListingDetails(
           </div>
 
         </div>
+
+
+        ${
+          listingPhotos.length
+            ? `
+              <div>
+
+                <img
+                  id="listingGalleryMainImage"
+                  src="${escapeHtml(
+                    listingPhotos[0]
+                      .url ||
+                    ""
+                  )}"
+                  style="
+                    width:100%;
+                    max-height:340px;
+                    object-fit:cover;
+                    border-radius:16px;
+                    display:block;
+                  "
+                >
+
+
+                ${
+                  listingPhotos.length >
+                  1
+                    ? `
+                      <div
+                        style="
+                          display:flex;
+                          gap:7px;
+                          margin-top:8px;
+                          overflow-x:auto;
+                        "
+                      >
+
+                        ${listingPhotos
+                          .map(
+                            (photo, index) => `
+
+                              <img
+                                data-gallery-thumb="${index}"
+                                src="${escapeHtml(
+                                  photo.url ||
+                                  ""
+                                )}"
+                                style="
+                                  width:56px;
+                                  height:56px;
+                                  border-radius:9px;
+                                  object-fit:cover;
+                                  cursor:pointer;
+                                  flex-shrink:0;
+                                  border:
+                                    ${
+                                      index === 0
+                                        ? "2px solid var(--primary)"
+                                        : "1px solid var(--surface2)"
+                                    };
+                                "
+                              >
+
+                            `
+                          )
+                          .join("")}
+
+                      </div>
+                    `
+                    : ""
+                }
+
+              </div>
+            `
+            : ""
+        }
 
 
         <div
@@ -6016,6 +6873,76 @@ async function showSingleListingDetails(
       </div>
     `
   );
+
+
+  /* =======================================================
+     PHOTO GALLERY
+     ======================================================= */
+
+  if (
+    listingPhotos.length >
+    1
+  ) {
+
+    document
+      .querySelectorAll(
+        "[data-gallery-thumb]"
+      )
+      .forEach(
+        thumb => {
+
+          thumb.addEventListener(
+            "click",
+            () => {
+
+              const index =
+                Number(
+                  thumb.dataset
+                    .galleryThumb
+                );
+
+              const mainImage =
+                document.getElementById(
+                  "listingGalleryMainImage"
+                );
+
+              const photo =
+                listingPhotos[
+                  index
+                ];
+
+              if (
+                mainImage &&
+                photo?.url
+              ) {
+
+                mainImage.src =
+                  photo.url;
+              }
+
+              document
+                .querySelectorAll(
+                  "[data-gallery-thumb]"
+                )
+                .forEach(
+                  otherThumb => {
+
+                    otherThumb.style.border =
+                      Number(
+                        otherThumb.dataset
+                          .galleryThumb
+                      ) === index
+                        ? "2px solid var(--primary)"
+                        : "1px solid var(--surface2)";
+                  }
+                );
+
+            }
+          );
+
+        }
+      );
+  }
 
 
   /* =======================================================
