@@ -13,7 +13,6 @@ import {
 import {
   db,
   doc,
-  getDoc,
   updateDoc
 } from "../firebase/firestore.js";
 
@@ -38,52 +37,6 @@ import {
   hasTimeTrustAccount,
   showTimeTrustAccountModal
 } from "./timetrust.js";
-
-
-/* =========================================================
-   PROFILE STATE
-   =========================================================
-
-   IMPORTANT — SAVED POST COUNT ARCHITECTURE (updated):
-
-   The Profile page no longer reads the
-   users/{uid}/savedPosts subcollection at all.
-
-   The saved-post count now lives directly on the user's
-   own profile document:
-
-     users/{uid}
-         savedPostCount: number
-
-   That document is already loaded into state.profile by
-   the rest of the app (sign-in / profile load), so
-   displaying the count costs ZERO additional Firestore
-   reads in the common case — we just read
-   state.profile.savedPostCount.
-
-   NOTE FOR THE SAVE/UNSAVE IMPLEMENTATION (in Home.js,
-   which is out of scope for this change):
-
-   Whatever code currently writes to
-   users/{uid}/savedPosts/{postId} on save/unsave should
-   ALSO atomically increment/decrement
-   users/{uid}.savedPostCount, e.g.:
-
-     await updateDoc(doc(db, "users", uid), {
-       savedPostCount: increment(1)   // on save
-     });
-
-     await updateDoc(doc(db, "users", uid), {
-       savedPostCount: increment(-1)  // on unsave
-     });
-
-   savedPostCount must never be allowed to go negative;
-   Home.js should guard against decrementing below 0
-   (e.g. only decrement if a locally-known saved state was
-   true, or clamp with a transaction).
-   ========================================================= */
-
-let profileSavedCountRefreshing = false;
 
 
 /* =========================================================
@@ -168,20 +121,28 @@ function getMyPostCount() {
    SAVED POSTS COUNT
    =========================================================
 
-   Reads ONLY the already-loaded profile field. No
-   Firestore reads happen here.
+   IMPORTANT:
+   This only changes the COUNT logic.
+
+   The count is read from the already-loaded user profile:
+
+     state.profile.savedPostCount
+
+   This preserves the rest of the Profile page and does not
+   read users/{uid}/savedPosts or scan any subcollection.
    ========================================================= */
 
 function getSavedPostCount() {
   const profile = getProfile();
 
-  const count = profile.savedPostCount;
+  const count =
+    Number(profile.savedPostCount);
 
   if (
-    typeof count === "number" &&
-    Number.isFinite(count)
+    Number.isFinite(count) &&
+    count > 0
   ) {
-    return Math.max(0, count);
+    return Math.floor(count);
   }
 
   return 0;
@@ -424,10 +385,6 @@ function showEditProfile(
           }
 
 
-          /*
-           * Keep Firebase Authentication displayName
-           * synchronized with the Firestore profile.
-           */
           await updateProfile(
             user,
             {
@@ -458,11 +415,6 @@ function showEditProfile(
           };
 
 
-          /*
-           * Keep the local auth user reference current
-           * when the object is mutable in the current
-           * Firebase implementation.
-           */
           try {
             user.displayName =
               displayName;
@@ -676,29 +628,11 @@ export function renderProfile(
   const savedPostCount =
     getSavedPostCount();
 
-
   const timeTrustActive =
     hasTimeTrustAccount();
 
-
   const marketActive =
     hasMarketAccount();
-
-
-  /*
-   * NOTE:
-   *
-   * There is intentionally NO Firestore read triggered
-   * here. savedPostCount comes straight from the profile
-   * document already held in state.profile.
-   *
-   * The Profile page ALSO intentionally does not expose:
-   *   - a Saved Posts list/viewer
-   *   - a My Posts list/viewer
-   *   - a My Listings list/viewer
-   *
-   * Only the numeric counts are shown.
-   */
 
 
   return `
@@ -1286,68 +1220,4 @@ export function attachProfileEvents(
         );
       }
     );
-}
-
-
-/* =========================================================
-   OPTIONAL PROFILE REFRESH
-   =========================================================
-
-   Other modules (e.g. Home.js, after a save/unsave write)
-   can call this to force a single fresh read of the user's
-   OWN profile document (not the savedPosts subcollection)
-   and re-render Profile with the up-to-date count.
-
-   This is a single-document getDoc — never a subcollection
-   scan — and is only needed if the rest of the app does not
-   already keep state.profile in sync via a live listener.
-   ========================================================= */
-
-export async function refreshProfileSavedPostCount(
-  renderApp
-) {
-  const uid =
-    getCurrentUid();
-
-  if (!uid) {
-    return;
-  }
-
-  if (profileSavedCountRefreshing) {
-    return;
-  }
-
-  profileSavedCountRefreshing = true;
-
-  try {
-    const snap =
-      await getDoc(
-        doc(
-          db,
-          "users",
-          uid
-        )
-      );
-
-    if (snap.exists()) {
-      state.profile = {
-        ...state.profile,
-        ...snap.data()
-      };
-    }
-
-    if (
-      typeof renderApp ===
-      "function"
-    ) {
-      renderApp();
-    }
-  } catch (error) {
-    console.warn(
-      "[Profile] Could not refresh saved post count:",
-      error
-    );
-  } finally {
-    profileSavedCountRefreshing = false;
-  }
 }
