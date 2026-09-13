@@ -3,20 +3,13 @@ import {
   countries,
   escapeHtml,
   initials,
-  friendly,
-  formatDate
+  friendly
 } from "../state.js";
 
 import {
   db,
-  collection,
   doc,
-  updateDoc,
-  getDocs,
-  getDoc,
-  query,
-  where,
-  limit
+  updateDoc
 } from "../firebase/firestore.js";
 
 import { updateProfile, signOut } from "../firebase/auth.js";
@@ -29,17 +22,8 @@ import {
 import { toast } from "../components/toast.js";
 
 import {
-  showEditPost,
-  showDeletePostConfirmation,
-  savePost,
-  sharePost,
-  showComments
-} from "./home.js";
-
-import {
   hasMarketAccount,
-  showMarketAccountModal,
-  showListingDetails
+  showMarketAccountModal
 } from "./market.js";
 
 import {
@@ -48,69 +32,10 @@ import {
 } from "./timetrust.js";
 
 
-let savedPostIds = new Set();
-let savedPostsLoadedForUid = null;
-
-
-async function loadProfileSavedPostIds(renderApp) {
-  const uid = state.user?.uid;
-
-  if (!uid) {
-    savedPostIds = new Set();
-    savedPostsLoadedForUid = null;
-    state.savedPostCount = null;
-    return;
-  }
-
-  if (
-    savedPostsLoadedForUid === uid &&
-    state.savedPostCount !== null &&
-    state.savedPostCount !== undefined
-  ) {
-    return;
-  }
-
-  savedPostsLoadedForUid = uid;
-  savedPostIds = new Set();
-  state.savedPostCount = null;
-
-  try {
-    const snapshot = await getDocs(
-      collection(
-        db,
-        "users",
-        uid,
-        "savedPosts"
-      )
-    );
-
-    snapshot.forEach(savedDoc => {
-      if (savedDoc.id) {
-        savedPostIds.add(savedDoc.id);
-      }
-    });
-
-    state.savedPostCount = savedPostIds.size;
-
-    if (state.page === "profile") {
-      renderApp?.();
-    }
-  } catch (error) {
-    savedPostsLoadedForUid = null;
-    state.savedPostCount = null;
-
-    console.error(
-      "[Profile] Saved posts load error:",
-      error
-    );
-  }
-}
-
-
 export function renderProfile(renderApp) {
-  loadProfileSavedPostIds(renderApp);
 
-  const profile = state.profile || {};
+  const profile =
+    state.profile || {};
 
   const name =
     profile.displayName ||
@@ -123,18 +48,25 @@ export function renderProfile(renderApp) {
   const marketActive =
     hasMarketAccount();
 
-  const ownListings =
-    (state.listings || []).filter(
-      listing =>
-        listing.uid ===
-        state.user?.uid
-    );
-
+  /*
+   * IMPORTANT:
+   *
+   * Profile no longer loads the savedPosts subcollection.
+   *
+   * The Saved number shown here must come from state/profile
+   * if another existing part of the application already provides it.
+   *
+   * We intentionally do NOT perform another Firestore read here.
+   */
   const savedCount =
-    state.savedPostCount === null ||
-    state.savedPostCount === undefined
-      ? "…"
-      : state.savedPostCount;
+    state.savedPostCount !== null &&
+    state.savedPostCount !== undefined
+      ? state.savedPostCount
+      : profile.savedPostCount !== null &&
+        profile.savedPostCount !== undefined
+        ? profile.savedPostCount
+        : "—";
+
 
   return `
     <div class="page">
@@ -381,31 +313,6 @@ export function renderProfile(renderApp) {
 
 
       <div class="section-title">
-        <h2>My Posts</h2>
-      </div>
-
-
-      <div class="card">
-
-        <p
-          class="small"
-          style="margin-top:0;"
-        >
-          View, edit, or delete posts belonging to your authenticated account.
-        </p>
-
-        <button
-          class="btn btn-ghost btn-block"
-          id="myPostsBtn"
-          type="button"
-        >
-          📝 Open My Posts
-        </button>
-
-      </div>
-
-
-      <div class="section-title">
         <h2>Marvel Market 🛍️</h2>
       </div>
 
@@ -470,39 +377,25 @@ export function renderProfile(renderApp) {
 
 
         <div
-          class="grid ${
-            marketActive
-              ? "grid2"
-              : ""
-          }"
+          class="grid"
           style="margin-top:12px;"
         >
 
-          ${
-            !marketActive
-              ? `
-                <button
-                  class="btn btn-primary"
-                  id="marketAccountBtn"
-                  type="button"
-                >
-                  🏪 Create Market Account
-                </button>
-              `
-              : `
-                <button
-                  class="btn btn-ghost"
-                  id="myListingsBtn"
-                  type="button"
-                >
-                  📋 My Listings${
-                    ownListings.length
-                      ? ` (${ownListings.length})`
-                      : ""
-                  }
-                </button>
-              `
-          }
+          <button
+            class="btn ${
+              marketActive
+                ? "btn-ghost"
+                : "btn-primary"
+            } btn-block"
+            id="marketAccountBtn"
+            type="button"
+          >
+            ${
+              marketActive
+                ? "⚙️ Manage Market Account"
+                : "🏪 Create Market Account"
+            }
+          </button>
 
         </div>
 
@@ -522,19 +415,6 @@ export function renderProfile(renderApp) {
           type="button"
         >
           ✏️ Edit profile
-        </button>
-
-
-        <button
-          class="btn btn-ghost"
-          id="savedBtn"
-          type="button"
-        >
-          🔖 Saved posts${
-            state.savedPostCount == null
-              ? ""
-              : ` (${state.savedPostCount})`
-          }
         </button>
 
 
@@ -563,8 +443,10 @@ export function renderProfile(renderApp) {
 
 
 export function showEditProfile(renderApp) {
+
   const profile =
     state.profile || {};
+
 
   showModal(
     "Edit profile",
@@ -648,6 +530,7 @@ export function showEditProfile(renderApp) {
             ?.value
             .trim() || "";
 
+
         const username =
           document
             .getElementById(
@@ -655,6 +538,7 @@ export function showEditProfile(renderApp) {
             )
             ?.value
             .trim() || "";
+
 
         const bio =
           document
@@ -690,17 +574,21 @@ export function showEditProfile(renderApp) {
 
 
           try {
+
             await updateProfile(
               state.user,
               {
                 displayName
               }
             );
+
           } catch (authError) {
+
             console.warn(
               "[Profile] Auth display-name update warning:",
               authError
             );
+
           }
 
 
@@ -713,6 +601,7 @@ export function showEditProfile(renderApp) {
 
 
           closeModal();
+
           toast(
             "Profile updated."
           );
@@ -737,753 +626,6 @@ export function showEditProfile(renderApp) {
 }
 
 
-function postTime(value) {
-  if (value?.toMillis) {
-    return value.toMillis();
-  }
-
-  if (value?.toDate) {
-    return value.toDate().getTime();
-  }
-
-  if (!value) {
-    return 0;
-  }
-
-  const time =
-    new Date(value).getTime();
-
-  return Number.isFinite(time)
-    ? time
-    : 0;
-}
-
-
-function mergePostsIntoState(posts) {
-  const map =
-    new Map(
-      (state.posts || []).map(
-        post => [
-          post.id,
-          post
-        ]
-      )
-    );
-
-  posts.forEach(post => {
-    if (post?.id) {
-      map.set(
-        post.id,
-        post
-      );
-    }
-  });
-
-  state.posts =
-    Array.from(
-      map.values()
-    );
-}
-
-
-function renderProfilePost(
-  post,
-  mode = "my"
-) {
-  const isOwner =
-    post?.uid ===
-    state.user?.uid;
-
-
-  return `
-    <article
-      class="card post-card"
-      data-profile-post="${escapeHtml(
-        post?.id || ""
-      )}"
-      style="margin-bottom:14px;"
-    >
-
-      <div
-        style="
-          display:flex;
-          justify-content:space-between;
-          gap:12px;
-          align-items:flex-start;
-        "
-      >
-
-        <div style="min-width:0;">
-
-          <strong>
-            ${escapeHtml(
-              post?.username ||
-              post?.displayName ||
-              "User"
-            )}
-          </strong>
-
-          <div class="small">
-            ${escapeHtml(
-              formatDate(
-                post?.createdAt
-              )
-            )}
-          </div>
-
-        </div>
-
-
-        ${
-          isOwner
-            ? `
-              <span class="badge">
-                Your post
-              </span>
-            `
-            : ""
-        }
-
-      </div>
-
-
-      <div
-        class="post-content"
-        style="
-          margin-top:14px;
-          line-height:1.65;
-          white-space:pre-wrap;
-          word-break:break-word;
-        "
-      >
-        ${escapeHtml(
-          post?.text || ""
-        )}
-      </div>
-
-
-      <div
-        style="
-          display:flex;
-          gap:8px;
-          flex-wrap:wrap;
-          margin-top:14px;
-        "
-      >
-
-        ${
-          mode === "saved"
-            ? `
-              <button
-                class="btn btn-ghost"
-                type="button"
-                data-share="${escapeHtml(
-                  post.id
-                )}"
-              >
-                📤 Share
-              </button>
-            `
-            : `
-              ${
-                isOwner
-                  ? `
-                    <button
-                      class="btn btn-ghost"
-                      type="button"
-                      data-edit-post="${escapeHtml(
-                        post.id
-                      )}"
-                    >
-                      ✏️ Edit
-                    </button>
-
-                    <button
-                      class="btn btn-danger"
-                      type="button"
-                      data-delete-post="${escapeHtml(
-                        post.id
-                      )}"
-                    >
-                      🗑️ Delete
-                    </button>
-                  `
-                  : ""
-              }
-
-
-              <button
-                class="btn btn-ghost"
-                type="button"
-                data-share="${escapeHtml(
-                  post.id
-                )}"
-              >
-                📤 Share
-              </button>
-
-
-              <button
-                class="btn btn-ghost"
-                type="button"
-                data-comment="${escapeHtml(
-                  post.id
-                )}"
-              >
-                💬 ${Number(
-                  post?.comments || 0
-                )}
-              </button>
-            `
-        }
-
-      </div>
-
-    </article>
-  `;
-}
-
-
-function attachProfilePostEvents() {
-
-  document
-    .querySelectorAll(
-      "[data-edit-post]"
-    )
-    .forEach(
-      button => {
-
-        button.addEventListener(
-          "click",
-          event => {
-
-            event.stopPropagation();
-
-            showEditPost(
-              button.dataset.editPost
-            );
-
-          }
-        );
-
-      }
-    );
-
-
-  document
-    .querySelectorAll(
-      "[data-delete-post]"
-    )
-    .forEach(
-      button => {
-
-        button.addEventListener(
-          "click",
-          event => {
-
-            event.stopPropagation();
-
-            showDeletePostConfirmation(
-              button.dataset.deletePost
-            );
-
-          }
-        );
-
-      }
-    );
-
-
-  document
-    .querySelectorAll(
-      "[data-save]"
-    )
-    .forEach(
-      button => {
-
-        button.addEventListener(
-          "click",
-          () =>
-            savePost(
-              button.dataset.save
-            )
-        );
-
-      }
-    );
-
-
-  document
-    .querySelectorAll(
-      "[data-share]"
-    )
-    .forEach(
-      button => {
-
-        button.addEventListener(
-          "click",
-          () =>
-            sharePost(
-              button.dataset.share
-            )
-        );
-
-      }
-    );
-
-
-  document
-    .querySelectorAll(
-      "[data-comment]"
-    )
-    .forEach(
-      button => {
-
-        button.addEventListener(
-          "click",
-          () =>
-            showComments(
-              button.dataset.comment
-            )
-        );
-
-      }
-    );
-}
-
-
-function showProfilePostsModal(
-  title,
-  posts,
-  renderApp,
-  emptyMessage
-) {
-  const sorted =
-    [...posts].sort(
-      (a, b) =>
-        postTime(b?.createdAt) -
-        postTime(a?.createdAt)
-    );
-
-
-  showModal(
-    title,
-
-    sorted.length
-      ? `
-        <div
-          style="
-            display:flex;
-            flex-direction:column;
-            gap:10px;
-          "
-        >
-          ${sorted
-            .map(
-              post =>
-                renderProfilePost(
-                  post,
-                  title === "Saved posts"
-                    ? "saved"
-                    : "my"
-                )
-            )
-            .join("")}
-        </div>
-      `
-      : `
-        <div
-          class="empty"
-          style="
-            text-align:center;
-            padding:20px 8px;
-          "
-        >
-
-          <div
-            style="
-              font-size:40px;
-              margin-bottom:8px;
-            "
-          >
-            📝
-          </div>
-
-          <p>
-            ${escapeHtml(
-              emptyMessage
-            )}
-          </p>
-
-        </div>
-      `
-  );
-
-
-  attachProfilePostEvents(
-    renderApp
-  );
-}
-
-
-export async function showMyPosts(
-  renderApp
-) {
-  if (!state.user) {
-    toast(
-      "Please sign in first."
-    );
-    return;
-  }
-
-
-  const button =
-    document.getElementById(
-      "myPostsBtn"
-    );
-
-
-  if (button) {
-    button.disabled = true;
-    button.textContent =
-      "Loading your posts…";
-  }
-
-
-  try {
-
-    const snapshot =
-      await getDocs(
-        query(
-          collection(
-            db,
-            "posts"
-          ),
-          where(
-            "uid",
-            "==",
-            state.user.uid
-          ),
-          limit(50)
-        )
-      );
-
-
-    const posts =
-      snapshot.docs.map(
-        postDoc => ({
-          id: postDoc.id,
-          ...postDoc.data()
-        })
-      );
-
-
-    mergePostsIntoState(
-      posts
-    );
-
-
-    showProfilePostsModal(
-      "My Posts",
-      posts,
-      renderApp,
-      "You have not published any posts yet."
-    );
-
-  } catch (error) {
-
-    console.error(
-      "[Profile] My Posts load error:",
-      error
-    );
-
-    toast(
-      friendly(error)
-    );
-
-  } finally {
-
-    if (button) {
-      button.disabled = false;
-      button.innerHTML =
-        "📝 Open My Posts";
-    }
-
-  }
-}
-
-
-export async function showSaved(
-  renderApp
-) {
-  if (!state.user) {
-    toast(
-      "Please sign in first."
-    );
-    return;
-  }
-
-
-  const button =
-    document.getElementById(
-      "savedBtn"
-    );
-
-
-  if (button) {
-    button.disabled = true;
-    button.textContent =
-      "Loading saved posts…";
-  }
-
-
-  try {
-
-    const savedSnapshot =
-      await getDocs(
-        collection(
-          db,
-          "users",
-          state.user.uid,
-          "savedPosts"
-        )
-      );
-
-
-    const savedIds =
-      savedSnapshot.docs
-        .map(
-          savedDoc =>
-            savedDoc.id
-        )
-        .filter(Boolean);
-
-
-    savedPostIds =
-      new Set(savedIds);
-
-    state.savedPostCount =
-      savedIds.length;
-
-    savedPostsLoadedForUid =
-      state.user.uid;
-
-
-    const resolvedPosts =
-      await Promise.all(
-        savedIds.map(
-          async postId => {
-
-            try {
-
-              const postSnapshot =
-                await getDoc(
-                  doc(
-                    db,
-                    "posts",
-                    postId
-                  )
-                );
-
-
-              if (
-                !postSnapshot.exists()
-              ) {
-                return null;
-              }
-
-
-              return {
-                id:
-                  postSnapshot.id,
-                ...postSnapshot.data()
-              };
-
-            } catch (error) {
-
-              console.warn(
-                "[Profile] Could not resolve saved post:",
-                {
-                  postId,
-                  code:
-                    error?.code,
-                  error
-                }
-              );
-
-              return null;
-            }
-          }
-        )
-      );
-
-
-    const posts =
-      resolvedPosts.filter(
-        Boolean
-      );
-
-
-    mergePostsIntoState(
-      posts
-    );
-
-
-    showProfilePostsModal(
-      "Saved posts",
-      posts,
-      renderApp,
-      "You have no saved posts yet."
-    );
-
-  } catch (error) {
-
-    console.error(
-      "[Profile] Saved posts load error:",
-      error
-    );
-
-    toast(
-      friendly(error)
-    );
-
-  } finally {
-
-    if (button) {
-
-      button.disabled = false;
-
-      button.innerHTML =
-        `🔖 Saved posts${
-          state.savedPostCount == null
-            ? ""
-            : ` (${state.savedPostCount})`
-        }`;
-
-    }
-
-  }
-}
-
-
-async function showMyListings(
-  renderApp
-) {
-  if (!state.user) {
-    toast(
-      "Please sign in first."
-    );
-    return;
-  }
-
-  const listings =
-    (state.listings || [])
-      .filter(
-        listing =>
-          listing.uid ===
-          state.user.uid
-      );
-
-  if (!listings.length) {
-    showModal(
-      "My Listings",
-      `
-        <div
-          class="empty"
-          style="
-            text-align:center;
-            padding:20px 8px;
-          "
-        >
-          <div
-            style="
-              font-size:40px;
-              margin-bottom:8px;
-            "
-          >
-            🛍️
-          </div>
-
-          <p>
-            You have no listings yet.
-          </p>
-        </div>
-      `
-    );
-    return;
-  }
-
-  showModal(
-    "My Listings",
-    `
-      <div
-        style="
-          display:flex;
-          flex-direction:column;
-          gap:10px;
-        "
-      >
-        ${listings
-          .map(
-            listing => `
-              <button
-                class="btn btn-ghost"
-                type="button"
-                data-profile-listing="${escapeHtml(
-                  listing.id
-                )}"
-                style="
-                  text-align:left;
-                  width:100%;
-                "
-              >
-                <strong>
-                  ${escapeHtml(
-                    listing.title ||
-                    listing.name ||
-                    "Listing"
-                  )}
-                </strong>
-
-                <span class="small">
-                  ${escapeHtml(
-                    listing.description ||
-                    ""
-                  )}
-                </span>
-              </button>
-            `
-          )
-          .join("")}
-      </div>
-    `
-  );
-
-
-  document
-    .querySelectorAll(
-      "[data-profile-listing]"
-    )
-    .forEach(
-      button => {
-
-        button.addEventListener(
-          "click",
-          () => {
-
-            showListingDetails(
-              button.dataset.profileListing,
-              renderApp
-            );
-
-          }
-        );
-
-      }
-    );
-}
-
-
 export function attachProfileEvents(
   renderApp
 ) {
@@ -1496,32 +638,6 @@ export function attachProfileEvents(
       "click",
       () =>
         showEditProfile(
-          renderApp
-        )
-    );
-
-
-  document
-    .getElementById(
-      "savedBtn"
-    )
-    ?.addEventListener(
-      "click",
-      () =>
-        showSaved(
-          renderApp
-        )
-    );
-
-
-  document
-    .getElementById(
-      "myPostsBtn"
-    )
-    ?.addEventListener(
-      "click",
-      () =>
-        showMyPosts(
           renderApp
         )
     );
@@ -1555,19 +671,6 @@ export function attachProfileEvents(
 
   document
     .getElementById(
-      "myListingsBtn"
-    )
-    ?.addEventListener(
-      "click",
-      () =>
-        showMyListings(
-          renderApp
-        )
-    );
-
-
-  document
-    .getElementById(
       "logoutBtn"
     )
     ?.addEventListener(
@@ -1575,7 +678,9 @@ export function attachProfileEvents(
       async () => {
 
         try {
+
           await signOut();
+
         } catch (error) {
 
           console.error(
