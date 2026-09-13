@@ -2172,6 +2172,82 @@ function renderPostCard(post) {
   const media =
     getPostMedia(post);
 
+  const postTextBlock = postPlainText
+    ? `
+            <div
+              class="post-content"
+              style="
+                margin-top:13px;
+                line-height:1.65;
+                overflow-wrap:anywhere;
+                max-width:100%;
+                box-sizing:border-box;
+              "
+            >
+              <div
+                class="post-text-surface"
+                id="postText-${escapeHtml(id)}"
+                data-post-background="${escapeHtml(
+                  background.key
+                )}"
+                data-expanded="false"
+                style="
+                  width:100%;
+                  max-width:100%;
+                  box-sizing:border-box;
+                  padding:16px 15px;
+                  border-radius:17px;
+                  overflow-wrap:anywhere;
+                  background:${background.background};
+                  color:${background.text};
+                  border:1px solid rgba(127,127,127,.20);
+                  box-shadow:
+                    inset 0 0 0 1px
+                    rgba(255,255,255,.04);
+                  font-size:16px;
+                  font-weight:400;
+                  letter-spacing:.005em;
+                  ${
+                    isLongPostText
+                      ? "display:-webkit-box;-webkit-line-clamp:8;-webkit-box-orient:vertical;overflow:hidden;"
+                      : "overflow:hidden;"
+                  }
+                "
+              >
+                ${text}
+              </div>
+
+              ${
+                isLongPostText
+                  ? `
+                    <button
+                      type="button"
+                      class="btn-link"
+                      data-home-action="toggle-text"
+                      data-id="${escapeHtml(id)}"
+                      id="postTextToggle-${escapeHtml(id)}"
+                      style="
+                        margin-top:6px;
+                        background:none;
+                        border:none;
+                        padding:0;
+                        color:var(--accent, #7c5cff);
+                        font-size:13px;
+                        font-weight:600;
+                        cursor:pointer;
+                      "
+                    >
+                      Show more
+                    </button>
+                  `
+                  : ""
+              }
+            </div>
+          `
+    : "";
+
+  const postMediaBlock = renderPostMedia(post);
+
   return `
     <article
       class="card post-card"
@@ -2328,82 +2404,10 @@ function renderPostCard(post) {
       </div>
 
       ${
-        postPlainText
-          ? `
-            <div
-              class="post-content"
-              style="
-                margin-top:13px;
-                line-height:1.65;
-                overflow-wrap:anywhere;
-                max-width:100%;
-                box-sizing:border-box;
-              "
-            >
-              <div
-                class="post-text-surface"
-                id="postText-${escapeHtml(id)}"
-                data-post-background="${escapeHtml(
-                  background.key
-                )}"
-                data-expanded="false"
-                style="
-                  width:100%;
-                  max-width:100%;
-                  box-sizing:border-box;
-                  padding:16px 15px;
-                  border-radius:17px;
-                  overflow-wrap:anywhere;
-                  background:${background.background};
-                  color:${background.text};
-                  border:1px solid rgba(127,127,127,.20);
-                  box-shadow:
-                    inset 0 0 0 1px
-                    rgba(255,255,255,.04);
-                  font-size:16px;
-                  font-weight:400;
-                  letter-spacing:.005em;
-                  ${
-                    isLongPostText
-                      ? "display:-webkit-box;-webkit-line-clamp:8;-webkit-box-orient:vertical;overflow:hidden;"
-                      : "overflow:hidden;"
-                  }
-                "
-              >
-                ${text}
-              </div>
-
-              ${
-                isLongPostText
-                  ? `
-                    <button
-                      type="button"
-                      class="btn-link"
-                      data-home-action="toggle-text"
-                      data-id="${escapeHtml(id)}"
-                      id="postTextToggle-${escapeHtml(id)}"
-                      style="
-                        margin-top:6px;
-                        background:none;
-                        border:none;
-                        padding:0;
-                        color:var(--accent, #7c5cff);
-                        font-size:13px;
-                        font-weight:600;
-                        cursor:pointer;
-                      "
-                    >
-                      Show more
-                    </button>
-                  `
-                  : ""
-              }
-            </div>
-          `
-          : ""
+        media
+          ? `${postMediaBlock}${postTextBlock}`
+          : `${postTextBlock}${postMediaBlock}`
       }
-
-      ${renderPostMedia(post)}
 
       <div
         class="post-engagement"
