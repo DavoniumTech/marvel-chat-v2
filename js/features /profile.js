@@ -12,8 +12,10 @@ import {
 
 import {
   db,
+  collection,
   doc,
-  updateDoc
+  updateDoc,
+  getDocs
 } from "../firebase/firestore.js";
 
 import {
@@ -37,6 +39,15 @@ import {
   hasTimeTrustAccount,
   showTimeTrustAccountModal
 } from "./timetrust.js";
+
+
+/* =========================================================
+   PROFILE STATE
+   ========================================================= */
+
+let profileSavedCountLoading = false;
+let profileSavedCountLoadedFor = "";
+let profileSavedCountRequestId = 0;
 
 
 /* =========================================================
@@ -120,32 +131,157 @@ function getMyPostCount() {
 /* =========================================================
    SAVED POSTS COUNT
    =========================================================
-
+   
    IMPORTANT:
-   This only changes the COUNT logic.
+   We DO NOT load the saved post documents.
+   We only count documents inside:
+   
+   users/{uid}/savedPosts
+   
+   This is one Firestore collection read and avoids
+   the previous N+1 reads of posts/{postId}.
+   ========================================================= */
 
-   The count is read from the already-loaded user profile:
+async function loadProfileSavedPostCount(
+  renderApp
+) {
+  const uid = getCurrentUid();
 
-     state.profile.savedPostCount
+  if (!uid) {
+    state.savedPostCount = 0;
+    profileSavedCountLoadedFor = "";
+    return;
+  }
 
-   This preserves the rest of the Profile page and does not
-   read users/{uid}/savedPosts or scan any subcollection.
+  /*
+   * Do not start another request while the current one
+   * is still running.
+   */
+  if (profileSavedCountLoading) {
+    return;
+  }
+
+  /*
+   * If we already loaded the count for this signed-in
+   * user during the current app session, use it.
+   */
+  if (
+    profileSavedCountLoadedFor === uid &&
+    state.savedPostCount !== undefined &&
+    state.savedPostCount !== null
+  ) {
+    return;
+  }
+
+  profileSavedCountLoading = true;
+
+  const requestId =
+    ++profileSavedCountRequestId;
+
+  try {
+    const savedPostsRef =
+      collection(
+        db,
+        "users",
+        uid,
+        "savedPosts"
+      );
+
+    const snapshot =
+      await getDocs(
+        savedPostsRef
+      );
+
+    /*
+     * Make sure a stale request cannot overwrite
+     * a newer request after account changes.
+     */
+    if (
+      requestId !==
+      profileSavedCountRequestId
+    ) {
+      return;
+    }
+
+    state.savedPostCount =
+      snapshot.size;
+
+    profileSavedCountLoadedFor =
+      uid;
+
+    /*
+     * Re-render Profile so the number appears.
+     */
+    if (
+      typeof renderApp ===
+      "function"
+    ) {
+      renderApp();
+    }
+  } catch (error) {
+    console.warn(
+      "[Profile] Saved post count could not be loaded:",
+      error
+    );
+
+    /*
+     * Do not pretend there are zero saved posts when
+     * Firestore failed. Keep any existing value if one
+     * already exists; otherwise show an em dash.
+     */
+    if (
+      state.savedPostCount ===
+        undefined ||
+      state.savedPostCount ===
+        null
+    ) {
+      state.savedPostCount =
+        "—";
+    }
+
+    profileSavedCountLoadedFor =
+      uid;
+
+    if (
+      typeof renderApp ===
+      "function"
+    ) {
+      renderApp();
+    }
+  } finally {
+    profileSavedCountLoading =
+      false;
+  }
+}
+
+
+/* =========================================================
+   SAVED COUNT
    ========================================================= */
 
 function getSavedPostCount() {
-  const profile = getProfile();
-
-  const count =
-    Number(profile.savedPostCount);
-
   if (
-    Number.isFinite(count) &&
-    count > 0
+    state.savedPostCount !==
+      undefined &&
+    state.savedPostCount !==
+      null
   ) {
-    return Math.floor(count);
+    return state.savedPostCount;
   }
 
-  return 0;
+  const profile =
+    getProfile();
+
+  if (
+    profile.savedPostCount !==
+      undefined &&
+    profile.savedPostCount !==
+      null
+  ) {
+    return profile.savedPostCount;
+  }
+
+  return "…";
 }
 
 
@@ -385,6 +521,10 @@ function showEditProfile(
           }
 
 
+          /*
+           * Keep Firebase Authentication displayName
+           * synchronized with the Firestore profile.
+           */
           await updateProfile(
             user,
             {
@@ -415,6 +555,11 @@ function showEditProfile(
           };
 
 
+          /*
+           * Keep the local auth user reference current
+           * when the object is mutable in the current
+           * Firebase implementation.
+           */
           try {
             user.displayName =
               displayName;
@@ -539,6 +684,16 @@ async function handleSignOut(
   try {
     await signOut();
 
+    /*
+     * Reset the Profile saved-count cache so the
+     * next signed-in account gets its own count.
+     */
+    profileSavedCountLoadedFor =
+      "";
+
+    state.savedPostCount =
+      undefined;
+
     if (
       typeof renderApp ===
       "function"
@@ -628,11 +783,31 @@ export function renderProfile(
   const savedPostCount =
     getSavedPostCount();
 
+
   const timeTrustActive =
     hasTimeTrustAccount();
 
+
   const marketActive =
     hasMarketAccount();
+
+
+  /*
+   * Start the saved-post count read without
+   * blocking the initial Profile render.
+   *
+   * The function is guarded so it does not
+   * repeatedly read Firestore.
+   */
+  if (
+    !profileSavedCountLoadedFor ||
+    profileSavedCountLoadedFor !==
+      user.uid
+  ) {
+    loadProfileSavedPostCount(
+      renderApp
+    );
+  }
 
 
   return `
@@ -1220,4 +1395,51 @@ export function attachProfileEvents(
         );
       }
     );
+}
+
+
+/* =========================================================
+   OPTIONAL PROFILE REFRESH
+   =========================================================
+   
+   Other modules can call this after saving/unsaving a post
+   if they want Profile's saved count refreshed immediately.
+   ========================================================= */
+
+export function refreshProfileSavedPostCount(
+  renderApp
+) {
+  const uid =
+    getCurrentUid();
+
+  if (!uid) {
+    state.savedPostCount =
+      0;
+
+    profileSavedCountLoadedFor =
+      "";
+
+    if (
+      typeof renderApp ===
+      "function"
+    ) {
+      renderApp();
+    }
+
+    return;
+  }
+
+  /*
+   * Force the next Profile render to perform
+   * one fresh count read.
+   */
+  profileSavedCountLoadedFor =
+    "";
+
+  state.savedPostCount =
+    undefined;
+
+  loadProfileSavedPostCount(
+    renderApp
+  );
 }
