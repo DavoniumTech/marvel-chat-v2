@@ -5179,11 +5179,21 @@ function ensureMarvelChatV2Styles() {
        not blanket cascade insurance.
        ===================================================== */
     .mc2-conversation-page {
+      /* inset:0 alone pins all four edges to the LIVE visual
+         viewport and keeps re-resolving as the browser's
+         address bar / nav chrome shows or hides. Previously
+         this also had an explicit height:100dvh, which
+         overrides the bottom edge inset:0 would otherwise
+         compute — on some Android Chrome builds that dvh
+         value resolves shorter than the true visible
+         viewport, leaving a gap below the composer where the
+         page's own background shows through. Do not re-add a
+         fixed height here; inset:0 is the correct, self-
+         correcting sizing mechanism for this fixed shell. */
       position:fixed !important;
       inset:0 !important;
       width:100% !important;
       max-width:100% !important;
-      height:100dvh !important;
       margin:0 !important;
       z-index:10;
       display:flex !important;
