@@ -22,17 +22,14 @@ import {
   query,
   orderBy,
   limit,
-  Timestamp,
-  runTransaction
+  Timestamp
 } from "../firebase/firestore.js";
 
 import { toast } from "../components/toast.js";
 
 const CLOUDINARY_CLOUD_NAME = "rzfgrd6q";
 const CLOUDINARY_UPLOAD_PRESET = "marvel_chat_images";
-const CLOUDINARY_UPLOAD_URL =
-  `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`;
-
+const CLOUDINARY_UPLOAD_URL = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`;
 const HOME_MEDIA_USAGE_KEY = "marvel_media_usage_v2";
 const HOME_MEDIA_MAX_FILE_BYTES = 10 * 1024 * 1024;
 const HOME_MEDIA_MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
@@ -40,6 +37,38 @@ const HOME_MEDIA_MAX_DIMENSION = 1920;
 const HOME_MEDIA_WINDOW_MS = 24 * 60 * 60 * 1000;
 const POST_TEXT_COLLAPSE_LENGTH = 520;
 
+/*
+ * Collapsed post-text box heights, in pixels.
+ *
+ * The post-text-surface box uses font-size:16px and
+ * line-height:1.65, so one line of text renders at
+ * roughly 16 * 1.65 ≈ 26px. The surface also has 16px
+ * top/bottom padding and uses box-sizing:border-box, so
+ * that padding (32px total) counts toward the element's
+ * height budget in both cases below.
+ *
+ * MEDIA + TEXT posts collapse to ~1.5 lines:
+ *   ~40px (1.5 lines of text) + 32px padding ≈ 72px
+ *
+ * TEXT-ONLY posts collapse to 7 lines:
+ *   ~185px (7 lines of text) + 32px padding ≈ 217px
+ *
+ * This is a CSS max-height/overflow approach rather than
+ * -webkit-line-clamp, because line-clamp only accepts whole
+ * integers (1, 2, 3 ...) and cannot express "1.5 lines".
+ * A max-height crop naturally shows a partial next line,
+ * which is what gives the "about N.5 lines" look.
+ *
+ * Limitation: this is an approximation. Exact pixel-per-line
+ * measurements can vary slightly across browsers, OS font
+ * rendering, and zoom levels, so on some devices this may
+ * render a little more or less than the exact target line
+ * count. Whether a post actually needs the "Show more"
+ * control is NOT decided by these constants — it's decided
+ * after render by measuring the real rendered height (see
+ * syncPostTextOverflow below), so the control only appears
+ * when text is genuinely being cut off.
+ */
 const POST_TEXT_COLLAPSED_MEDIA_HEIGHT_PX = 72;
 const POST_TEXT_COLLAPSED_TEXT_ONLY_HEIGHT_PX = 217;
 
@@ -51,26 +80,10 @@ const DISCOVERY_MAX_IMPRESSIONS = 3;
 const DISCOVERY_DURATION_SECONDS = 40;
 
 const POST_EXPIRY_OPTIONS = [
-  {
-    value: "12h",
-    label: "12 hours",
-    milliseconds: 12 * 60 * 60 * 1000
-  },
-  {
-    value: "1d",
-    label: "1 day",
-    milliseconds: 24 * 60 * 60 * 1000
-  },
-  {
-    value: "7d",
-    label: "1 week",
-    milliseconds: 7 * 24 * 60 * 60 * 1000
-  },
-  {
-    value: "30d",
-    label: "30 days",
-    milliseconds: 30 * 24 * 60 * 60 * 1000
-  }
+  { value: "12h", label: "12 hours", milliseconds: 12 * 60 * 60 * 1000 },
+  { value: "1d", label: "1 day", milliseconds: 24 * 60 * 60 * 1000 },
+  { value: "7d", label: "1 week", milliseconds: 7 * 24 * 60 * 60 * 1000 },
+  { value: "30d", label: "30 days", milliseconds: 30 * 24 * 60 * 60 * 1000 }
 ];
 
 let discoveryTimer = null;
@@ -90,8 +103,6 @@ let editPendingImagePreviewUrl = "";
 let editRemoveExistingPhoto = false;
 let searchPostsCache = null;
 let searchPostsLoadPromise = null;
-let homeResizeObserver = null;
-let homeOverflowSyncFrame = null;
 
 const pendingLikeIds = new Set();
 const pendingSaveIds = new Set();
@@ -105,9 +116,7 @@ function postId(id) {
 }
 
 function getPosts() {
-  return Array.isArray(state.posts)
-    ? state.posts
-    : [];
+  return Array.isArray(state.posts) ? state.posts : [];
 }
 
 function getPost(id) {
@@ -115,15 +124,9 @@ function getPost(id) {
     p => postId(p.id) === postId(id)
   );
 
-  if (recent) {
-    return recent;
-  }
+  if (recent) return recent;
 
-  return (
-    Array.isArray(searchPostsCache)
-      ? searchPostsCache
-      : []
-  ).find(
+  return (Array.isArray(searchPostsCache) ? searchPostsCache : []).find(
     p => postId(p.id) === postId(id)
   ) || null;
 }
@@ -151,9 +154,7 @@ function getPostDate(post) {
 }
 
 function toDate(value) {
-  if (!value) {
-    return null;
-  }
+  if (!value) return null;
 
   if (value instanceof Date) {
     return value;
@@ -168,11 +169,11 @@ function toDate(value) {
   }
 
   if (typeof value === "string") {
-    const date = new Date(value);
+    const d = new Date(value);
 
-    return Number.isNaN(date.getTime())
+    return Number.isNaN(d.getTime())
       ? null
-      : date;
+      : d;
   }
 
   if (typeof value?.seconds === "number") {
@@ -185,25 +186,25 @@ function toDate(value) {
 }
 
 function isPostExpired(post) {
-  const date = toDate(
+  const d = toDate(
     post?.expiresAt
   );
 
-  return !!date &&
-    date.getTime() <= Date.now();
+  return !!d &&
+    d.getTime() <= Date.now();
 }
 
 function expiryLabel(post) {
-  const date = toDate(
+  const d = toDate(
     post?.expiresAt
   );
 
-  if (!date) {
+  if (!d) {
     return "";
   }
 
   const remaining =
-    date.getTime() - Date.now();
+    d.getTime() - Date.now();
 
   if (remaining <= 0) {
     return "Expired";
@@ -248,45 +249,21 @@ function currentUserName() {
 }
 
 function currentUserGreeting() {
-  const hour =
-    new Date().getHours();
+  const hour = new Date().getHours();
 
-  if (hour >= 5 && hour < 12) {
-    return "Good morning";
-  }
-
-  if (hour >= 12 && hour < 17) {
-    return "Good afternoon";
-  }
-
-  if (hour >= 17 && hour < 21) {
-    return "Good evening";
-  }
-
+  if (hour >= 5 && hour < 12) return "Good morning";
+  if (hour >= 12 && hour < 17) return "Good afternoon";
+  if (hour >= 17 && hour < 21) return "Good evening";
   return "Good night";
 }
 
 function safeMediaUrl(value) {
-  const raw =
-    String(value || "").trim();
-
-  if (!raw) {
-    return "";
-  }
+  const raw = String(value || "").trim();
+  if (!raw) return "";
 
   try {
-    const url = new URL(
-      raw,
-      window.location.href
-    );
-
-    if (
-      url.protocol !== "http:" &&
-      url.protocol !== "https:"
-    ) {
-      return "";
-    }
-
+    const url = new URL(raw, window.location.href);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return "";
     return url.href;
   } catch {
     return "";
@@ -294,83 +271,30 @@ function safeMediaUrl(value) {
 }
 
 function getPostMedia(post) {
-  const media =
-    post?.media ||
-    post?.attachment ||
-    null;
-
-  if (!media) {
-    return null;
-  }
+  const media = post?.media || post?.attachment || null;
+  if (!media) return null;
 
   if (typeof media === "string") {
-    const url =
-      safeMediaUrl(media);
-
-    return url
-      ? {
-          type: "image",
-          url
-        }
-      : null;
+    const url = safeMediaUrl(media);
+    return url ? { type: "image", url } : null;
   }
 
   if (Array.isArray(media)) {
-    const first =
-      media.find(
-        item =>
-          item?.url ||
-          item?.secure_url
-      );
-
-    if (!first) {
-      return null;
-    }
-
-    const url =
-      safeMediaUrl(
-        first.url ||
-        first.secure_url
-      );
-
-    return url
-      ? {
-          type:
-            first.type ||
-            "image",
-          url
-        }
-      : null;
+    const first = media.find(item => item?.url || item?.secure_url);
+    if (!first) return null;
+    const url = safeMediaUrl(first.url || first.secure_url);
+    return url ? { type: first.type || "image", url } : null;
   }
 
-  const url =
-    safeMediaUrl(
-      media.url ||
-      media.secure_url
-    );
-
-  return url
-    ? {
-        type:
-          media.type ||
-          "image",
-        url
-      }
-    : null;
+  const url = safeMediaUrl(media.url || media.secure_url);
+  return url ? { type: media.type || "image", url } : null;
 }
 
 function renderPostMedia(post) {
-  const media =
-    getPostMedia(post);
+  const media = getPostMedia(post);
+  if (!media) return "";
 
-  if (!media) {
-    return "";
-  }
-
-  if (
-    media.type === "image" ||
-    media.type === "photo"
-  ) {
+  if (media.type === "image" || media.type === "photo") {
     return `
       <div
         class="post-media"
@@ -402,10 +326,7 @@ function renderPostMedia(post) {
       href="${escapeHtml(media.url)}"
       target="_blank"
       rel="noopener noreferrer"
-      style="
-        display:inline-flex;
-        margin-top:12px;
-      "
+      style="display:inline-flex;margin-top:12px;"
     >
       Open attachment ↗
     </a>
@@ -413,22 +334,10 @@ function renderPostMedia(post) {
 }
 
 function homeHasMarketAccount() {
-  if (
-    state.profile?.marketAccount?.active === true
-  ) {
-    return true;
-  }
+  if (state.profile?.marketAccount?.active === true) return true;
 
-  const listings =
-    Array.isArray(state.listings)
-      ? state.listings
-      : [];
-
-  return listings.some(
-    item =>
-      String(item?.uid || "") ===
-      String(uid() || "")
-  );
+  const listings = Array.isArray(state.listings) ? state.listings : [];
+  return listings.some(item => String(item?.uid || "") === String(uid() || ""));
 }
 
 function readHomeMediaUsage() {
@@ -442,48 +351,29 @@ function readHomeMediaUsage() {
   }
 
   try {
-    const raw =
-      localStorage.getItem(
-        `${HOME_MEDIA_USAGE_KEY}_${currentUid}`
-      );
+    const raw = localStorage.getItem(
+      `${HOME_MEDIA_USAGE_KEY}_${currentUid}`
+    );
 
-    const parsed =
-      raw
-        ? JSON.parse(raw)
-        : null;
+    const parsed = raw
+      ? JSON.parse(raw)
+      : null;
 
     const cutoff =
-      Date.now() -
-      HOME_MEDIA_WINDOW_MS;
+      Date.now() - HOME_MEDIA_WINDOW_MS;
 
     const homeTimestamps =
-      Array.isArray(
-        parsed?.homeTimestamps
-      )
+      Array.isArray(parsed?.homeTimestamps)
         ? parsed.homeTimestamps
-            .map(
-              value =>
-                Number(value) || 0
-            )
-            .filter(
-              value =>
-                value > cutoff
-            )
+            .map(value => Number(value) || 0)
+            .filter(value => value > cutoff)
         : [];
 
     const marketTimestamps =
-      Array.isArray(
-        parsed?.marketTimestamps
-      )
+      Array.isArray(parsed?.marketTimestamps)
         ? parsed.marketTimestamps
-            .map(
-              value =>
-                Number(value) || 0
-            )
-            .filter(
-              value =>
-                value > cutoff
-            )
+            .map(value => Number(value) || 0)
+            .filter(value => value > cutoff)
         : [];
 
     return {
@@ -500,25 +390,18 @@ function readHomeMediaUsage() {
 
 function saveHomeMediaUsage(usage) {
   const currentUid = uid();
-
-  if (!currentUid) {
-    return;
-  }
+  if (!currentUid) return;
 
   try {
     localStorage.setItem(
       `${HOME_MEDIA_USAGE_KEY}_${currentUid}`,
       JSON.stringify({
         homeTimestamps:
-          Array.isArray(
-            usage.homeTimestamps
-          )
+          Array.isArray(usage.homeTimestamps)
             ? usage.homeTimestamps
             : [],
         marketTimestamps:
-          Array.isArray(
-            usage.marketTimestamps
-          )
+          Array.isArray(usage.marketTimestamps)
             ? usage.marketTimestamps
             : []
       })
@@ -527,1185 +410,607 @@ function saveHomeMediaUsage(usage) {
 }
 
 function homePhotoLimit() {
-  /*
-   * This is intentionally only a UI hint.
-   *
-   * The authoritative Home photo limit is enforced
-   * by Firestore rules together with the atomic
-   * mediaUsage transaction.
-   */
-  return 2;
+  return homeHasMarketAccount() ? 1 : 2;
 }
 
 function homePhotosRemaining() {
-  const usage =
-    readHomeMediaUsage();
-
+  const usage = readHomeMediaUsage();
   return Math.max(
     0,
-    homePhotoLimit() -
-      usage.homeTimestamps.length
+    homePhotoLimit() - usage.homeTimestamps.length
   );
 }
 
-function homePhotoRetryText(
-  oldestTimestamp
-) {
-  const elapsed =
-    Date.now() -
-    oldestTimestamp;
+function homePhotoRetryText(oldestTimestamp) {
+  const elapsed = Date.now() - oldestTimestamp;
 
-  const remainingMs =
-    Math.max(
-      0,
-      HOME_MEDIA_WINDOW_MS -
-        elapsed
-    );
+  const remainingMs = Math.max(
+    0,
+    HOME_MEDIA_WINDOW_MS - elapsed
+  );
 
-  const remainingMinutes =
-    Math.ceil(
-      remainingMs / 60000
-    );
-
-  if (
-    remainingMinutes >= 60
-  ) {
-    const hours =
-      Math.ceil(
-        remainingMinutes / 60
-      );
-
-    return `Try again in about ${hours} hour${hours === 1 ? "" : "s"}.`;
-  }
-
-  return `Try again in about ${Math.max(
+  const remainingMinutesTotal = Math.max(
     1,
-    remainingMinutes
-  )} minute${remainingMinutes === 1 ? "" : "s"}.`;
-}
-
-function pruneLocalHomeUsage() {
-  const usage =
-    readHomeMediaUsage();
-
-  saveHomeMediaUsage(
-    usage
+    Math.ceil(remainingMs / 60000)
   );
 
-  return usage;
-}
+  const hours = Math.floor(remainingMinutesTotal / 60);
+  const minutes = remainingMinutesTotal % 60;
 
-function recordLocalHomePhotoUse(
-  timestamp = Date.now()
-) {
-  const usage =
-    pruneLocalHomeUsage();
-
-  usage.homeTimestamps =
-    [
-      ...usage.homeTimestamps,
-      timestamp
-    ]
-      .filter(
-        value =>
-          value >
-          Date.now() -
-            HOME_MEDIA_WINDOW_MS
-      )
-      .slice(-homePhotoLimit());
-
-  saveHomeMediaUsage(
-    usage
-  );
-}
-
-function hasHomePhoto(post) {
-  return !!getPostMedia(post);
-}
-
-function normalizePostText(text) {
-  return String(
-    text || ""
-  ).trim();
-}
-
-function postNeedsTextToggle(
-  textElement
-) {
-  if (!textElement) {
-    return false;
+  if (hours >= 1) {
+    return minutes > 0
+      ? `Try again in the next ${hours} hour${hours === 1 ? "" : "s"} ${minutes} minute${minutes === 1 ? "" : "s"}.`
+      : `Try again in the next ${hours} hour${hours === 1 ? "" : "s"}.`;
   }
 
-  /*
-   * scrollHeight/clientHeight is the important check.
-   * Do not use text.length here because wrapping depends
-   * on the actual device width, font, and browser.
-   */
-  return (
-    textElement.scrollHeight >
-    textElement.clientHeight + 1
-  );
+  return `Try again in the next ${minutes} minute${minutes === 1 ? "" : "s"}.`;
 }
 
-function syncOnePostTextOverflow(
-  card
-) {
-  if (!card) {
-    return;
-  }
+function homePhotoAllowanceText() {
+  const usage = readHomeMediaUsage();
+  const limit = homePhotoLimit();
 
-  const textElement =
-    card.querySelector(
-      "[data-post-text]"
-    );
-
-  const toggle =
-    card.querySelector(
-      "[data-home-action='toggle-text']"
-    );
-
-  if (
-    !textElement ||
-    !toggle
-  ) {
-    return;
-  }
-
-  const isExpanded =
-    textElement.dataset.expanded ===
-    "true";
-
-  const hasOverflow =
-    postNeedsTextToggle(
-      textElement
-    );
-
-  /*
-   * If a previously expanded element becomes smaller
-   * because the viewport changed, temporarily collapse it
-   * before measuring again. This prevents the toggle from
-   * disappearing while leaving the post expanded.
-   */
-  if (
-    isExpanded &&
-    !hasOverflow
-  ) {
-    toggle.hidden = true;
-    toggle.setAttribute(
-      "aria-hidden",
-      "true"
-    );
-    return;
-  }
-
-  toggle.hidden =
-    !hasOverflow;
-
-  toggle.setAttribute(
-    "aria-hidden",
-    hasOverflow
-      ? "false"
-      : "true"
+  const remaining = Math.max(
+    0,
+    limit - usage.homeTimestamps.length
   );
 
-  if (!hasOverflow) {
-    textElement.dataset.expanded =
-      "false";
-
-    textElement.style.maxHeight =
-      textElement.classList.contains(
-        "post-text-with-media"
-      )
-        ? `${POST_TEXT_COLLAPSED_MEDIA_HEIGHT_PX}px`
-        : `${POST_TEXT_COLLAPSED_TEXT_ONLY_HEIGHT_PX}px`;
-
-    toggle.textContent =
-      "Show more";
-
-    toggle.setAttribute(
-      "aria-expanded",
-      "false"
-    );
-
-    return;
+  if (remaining > 0) {
+    return homeHasMarketAccount()
+      ? `Home photo allowance: ${remaining} of ${limit} remaining in the last 24 hours. Your other daily photo slot is for Marvel Market.`
+      : `Home photo allowance: ${remaining} of ${limit} remaining in the last 24 hours.`;
   }
 
-  if (isExpanded) {
-    textElement.style.maxHeight =
-      `${textElement.scrollHeight}px`;
+  const oldest = Math.min(
+    ...usage.homeTimestamps
+  );
 
-    toggle.textContent =
-      "Show less";
-
-    toggle.setAttribute(
-      "aria-expanded",
-      "true"
-    );
-  } else {
-    toggle.textContent =
-      "Show more";
-
-    toggle.setAttribute(
-      "aria-expanded",
-      "false"
-    );
-  }
+  return `You have reached your Home photo limit for the last 24 hours. ${homePhotoRetryText(oldest)}`;
 }
 
-function syncPostTextOverflow(
-  root = document
-) {
-  if (!root) {
-    return;
-  }
+function consumeHomePhotoAllowance() {
+  const usage = readHomeMediaUsage();
 
-  root
-    .querySelectorAll(
-      "[data-post-card]"
-    )
-    .forEach(
-      syncOnePostTextOverflow
-    );
+  usage.homeTimestamps.push(Date.now());
+
+  saveHomeMediaUsage(usage);
 }
 
-function schedulePostTextOverflowSync(
-  root = document
-) {
-  if (homeOverflowSyncFrame) {
-    cancelAnimationFrame(
-      homeOverflowSyncFrame
-    );
+function revokePendingHomeImagePreview() {
+  if (pendingHomeImagePreviewUrl) {
+    try {
+      URL.revokeObjectURL(
+        pendingHomeImagePreviewUrl
+      );
+    } catch {}
   }
 
-  /*
-   * Two animation frames are intentional:
-   *
-   * frame 1 = DOM exists
-   * frame 2 = browser has completed layout
-   *
-   * This fixes the original bug where the feed was
-   * rendered AFTER syncPostTextOverflow() had already run.
-   */
-  homeOverflowSyncFrame =
-    requestAnimationFrame(
-      () => {
-        homeOverflowSyncFrame =
-          requestAnimationFrame(
-            () => {
-              syncPostTextOverflow(
-                root
-              );
+  pendingHomeImagePreviewUrl = "";
+}
 
-              homeOverflowSyncFrame =
-                null;
-            }
+function clearPendingHomeImage() {
+  revokePendingHomeImagePreview();
+  pendingHomeImage = null;
+}
+
+function revokeEditPendingImagePreview() {
+  if (editPendingImagePreviewUrl) {
+    try {
+      URL.revokeObjectURL(
+        editPendingImagePreviewUrl
+      );
+    } catch {}
+  }
+
+  editPendingImagePreviewUrl = "";
+}
+
+function clearEditPendingImage() {
+  revokeEditPendingImagePreview();
+  editPendingImage = null;
+  editRemoveExistingPhoto = false;
+}
+
+function formatBytes(bytes) {
+  const value = Number(bytes) || 0;
+
+  if (value < 1024) {
+    return `${value} B`;
+  }
+
+  if (value < 1024 * 1024) {
+    return `${(value / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function loadImageFromBlob(blob) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const image = new Image();
+
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(
+        new Error(
+          "The selected image could not be opened."
+        )
+      );
+    };
+
+    image.src = url;
+  });
+}
+
+function canvasToBlob(canvas, type, quality) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      blob => {
+        if (blob) {
+          resolve(blob);
+        } else {
+          reject(
+            new Error(
+              "Your browser could not prepare the image."
+            )
           );
+        }
+      },
+      type,
+      quality
+    );
+  });
+}
+
+async function compressHomeImage(file) {
+  if (!(file instanceof File)) {
+    throw new Error(
+      "Please choose an image file."
+    );
+  }
+
+  if (!String(file.type || "").startsWith("image/")) {
+    throw new Error(
+      "Please choose an image from your photos or gallery."
+    );
+  }
+
+  if (file.size > HOME_MEDIA_MAX_FILE_BYTES) {
+    throw new Error(
+      "That photo is too large. Please choose an image up to 10 MB."
+    );
+  }
+
+  const image = await loadImageFromBlob(file);
+
+  const sourceWidth =
+    Number(
+      image.naturalWidth ||
+      image.width ||
+      0
+    );
+
+  const sourceHeight =
+    Number(
+      image.naturalHeight ||
+      image.height ||
+      0
+    );
+
+  if (!sourceWidth || !sourceHeight) {
+    throw new Error(
+      "The selected image has no usable dimensions."
+    );
+  }
+
+  const scale = Math.min(
+    1,
+    HOME_MEDIA_MAX_DIMENSION /
+      Math.max(
+        sourceWidth,
+        sourceHeight
+      )
+  );
+
+  const width = Math.max(
+    1,
+    Math.round(sourceWidth * scale)
+  );
+
+  const height = Math.max(
+    1,
+    Math.round(sourceHeight * scale)
+  );
+
+  const canvas =
+    document.createElement(
+      "canvas"
+    );
+
+  canvas.width = width;
+  canvas.height = height;
+
+  const context =
+    canvas.getContext(
+      "2d",
+      {
+        alpha: false
       }
     );
-}
 
-function observeHomePostOverflow(
-  homePage
-) {
-  if (
-    homeResizeObserver
+  if (!context) {
+    throw new Error(
+      "Your browser could not prepare the image."
+    );
+  }
+
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+
+  context.drawImage(
+    image,
+    0,
+    0,
+    width,
+    height
+  );
+
+  let quality = 0.84;
+
+  let blob =
+    await canvasToBlob(
+      canvas,
+      "image/jpeg",
+      quality
+    );
+
+  while (
+    blob.size >
+      HOME_MEDIA_MAX_OUTPUT_BYTES &&
+    quality > 0.58
   ) {
-    homeResizeObserver.disconnect();
-    homeResizeObserver = null;
+    quality -= 0.07;
+
+    blob =
+      await canvasToBlob(
+        canvas,
+        "image/jpeg",
+        quality
+      );
   }
 
   if (
-    typeof ResizeObserver !==
-      "undefined"
+    blob.size >
+    HOME_MEDIA_MAX_OUTPUT_BYTES
   ) {
-    homeResizeObserver =
-      new ResizeObserver(
-        entries => {
-          if (
-            entries.length
-          ) {
-            schedulePostTextOverflowSync(
-              homePage
-            );
-          }
+    const smallerScale =
+      Math.min(
+        1,
+        Math.sqrt(
+          HOME_MEDIA_MAX_OUTPUT_BYTES /
+            blob.size
+        )
+      );
+
+    const smallerWidth =
+      Math.max(
+        1,
+        Math.round(
+          width * smallerScale
+        )
+      );
+
+    const smallerHeight =
+      Math.max(
+        1,
+        Math.round(
+          height * smallerScale
+        )
+      );
+
+    canvas.width =
+      smallerWidth;
+
+    canvas.height =
+      smallerHeight;
+
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
+
+    context.drawImage(
+      image,
+      0,
+      0,
+      smallerWidth,
+      smallerHeight
+    );
+
+    blob =
+      await canvasToBlob(
+        canvas,
+        "image/jpeg",
+        0.72
+      );
+  }
+
+  return {
+    blob,
+    width: canvas.width,
+    height: canvas.height,
+    originalName:
+      file.name ||
+      "photo",
+    originalBytes:
+      file.size
+  };
+}
+
+async function uploadHomeImageToCloudinary(file) {
+  const prepared =
+    await compressHomeImage(
+      file
+    );
+
+  const formData =
+    new FormData();
+
+  formData.append(
+    "file",
+    prepared.blob,
+    "marvel-chat-photo.jpg"
+  );
+
+  formData.append(
+    "upload_preset",
+    CLOUDINARY_UPLOAD_PRESET
+  );
+
+  formData.append(
+    "folder",
+    `marvel-chat/home/${uid()}`
+  );
+
+  const response =
+    await fetch(
+      CLOUDINARY_UPLOAD_URL,
+      {
+        method: "POST",
+        body: formData
+      }
+    );
+
+  let result = null;
+
+  try {
+    result =
+      await response.json();
+  } catch {}
+
+  if (
+    !response.ok ||
+    !result?.secure_url
+  ) {
+    throw new Error(
+      result?.error?.message ||
+      "Photo upload failed. Please try again."
+    );
+  }
+
+  return {
+    media: {
+      type: "image",
+      url: result.secure_url,
+      publicId:
+        result.public_id ||
+        "",
+      width:
+        Number(result.width) ||
+        prepared.width,
+      height:
+        Number(result.height) ||
+        prepared.height,
+      format:
+        result.format ||
+        "jpg",
+      bytes:
+        Number(result.bytes) ||
+        prepared.blob.size,
+      resourceType:
+        result.resource_type ||
+        "image"
+    },
+    prepared
+  };
+}
+
+function renderPendingHomeImage() {
+  const holder =
+    document.getElementById(
+      "createPostImagePreview"
+    );
+
+  if (!holder) return;
+
+  if (
+    !pendingHomeImage ||
+    !pendingHomeImagePreviewUrl
+  ) {
+    holder.innerHTML = "";
+    holder.style.display =
+      "none";
+
+    return;
+  }
+
+  holder.style.display =
+    "block";
+
+  holder.innerHTML = `
+    <div
+      style="
+        position:relative;
+        margin-top:10px;
+        padding:10px;
+        border:1px solid var(--border);
+        border-radius:15px;
+        background:var(--surface);
+      "
+    >
+      <img
+        src="${escapeHtml(
+          pendingHomeImagePreviewUrl
+        )}"
+        alt="Selected photo preview"
+        style="
+          display:block;
+          width:100%;
+          max-height:320px;
+          object-fit:cover;
+          border-radius:11px;
+        "
+      >
+
+      <div
+        style="
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          gap:10px;
+          flex-wrap:wrap;
+          margin-top:8px;
+        "
+      >
+        <span class="small">
+          ${escapeHtml(
+            pendingHomeImage.name ||
+            "Selected photo"
+          )}
+          ·
+          ${escapeHtml(
+            formatBytes(
+              pendingHomeImage.size
+            )
+          )}
+        </span>
+
+        <button
+          type="button"
+          class="btn secondary"
+          id="removeCreatePostImage"
+          style="padding:7px 10px;"
+        >
+          Remove
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+async function handleHomeImageSelection(file) {
+  if (!uid()) {
+    return toast(
+      "Please sign in first."
+    );
+  }
+
+  if (homePhotosRemaining() <= 0) {
+    return toast(
+      homePhotoAllowanceText()
+    );
+  }
+
+  if (!file) return;
+
+  try {
+    const prepared =
+      await compressHomeImage(
+        file
+      );
+
+    clearPendingHomeImage();
+
+    pendingHomeImage =
+      new File(
+        [prepared.blob],
+        "marvel-chat-photo.jpg",
+        {
+          type: "image/jpeg"
         }
       );
 
-    homeResizeObserver.observe(
-      homePage
-    );
-  }
+    pendingHomeImagePreviewUrl =
+      URL.createObjectURL(
+        prepared.blob
+      );
 
-  if (
-    !homePage.__marvelHomeResizeBound
-  ) {
-    const resizeHandler =
-      () =>
-        schedulePostTextOverflowSync(
-          homePage
-        );
+    renderPendingHomeImage();
 
-    window.addEventListener(
-      "resize",
-      resizeHandler,
-      {
-        passive: true
-      }
-    );
+    const status =
+      document.getElementById(
+        "createPostImageStatus"
+      );
 
-    homePage.__marvelHomeResizeBound =
-      true;
-
-    homePage.__marvelHomeResizeHandler =
-      resizeHandler;
-  }
-}
-
-export function toggleHomePostText(
-  id
-) {
-  const card =
-    document.querySelector(
-      `[data-post-card="${CSS.escape(
-        postId(id)
-      )}"]`
-    );
-
-  if (!card) {
-    return;
-  }
-
-  const textElement =
-    card.querySelector(
-      "[data-post-text]"
-    );
-
-  const toggle =
-    card.querySelector(
-      "[data-home-action='toggle-text']"
-    );
-
-  if (
-    !textElement ||
-    !toggle
-  ) {
-    return;
-  }
-
-  const currentlyExpanded =
-    textElement.dataset.expanded ===
-    "true";
-
-  if (currentlyExpanded) {
-    textElement.dataset.expanded =
-      "false";
-
-    const collapsedHeight =
-      textElement.classList.contains(
-        "post-text-with-media"
-      )
-        ? POST_TEXT_COLLAPSED_MEDIA_HEIGHT_PX
-        : POST_TEXT_COLLAPSED_TEXT_ONLY_HEIGHT_PX;
-
-    textElement.style.maxHeight =
-      `${collapsedHeight}px`;
-
-    toggle.textContent =
-      "Show more";
-
-    toggle.setAttribute(
-      "aria-expanded",
-      "false"
-    );
-
-    requestAnimationFrame(
-      () =>
-        syncOnePostTextOverflow(
-          card
-        )
-    );
-
-    return;
-  }
-
-  textElement.dataset.expanded =
-    "true";
-
-  textElement.style.maxHeight =
-    `${textElement.scrollHeight}px`;
-
-  toggle.textContent =
-    "Show less";
-
-  toggle.setAttribute(
-    "aria-expanded",
-    "true"
-  );
-
-  requestAnimationFrame(
-    () => {
-      textElement.style.maxHeight =
-        `${textElement.scrollHeight}px`;
+    if (status) {
+      status.textContent =
+        `Ready · ${formatBytes(
+          prepared.blob.size
+        )} · ${prepared.width}×${prepared.height}`;
     }
-  );
-}
-
-function renderPostText(
-  post
-) {
-  const text =
-    getPostText(post);
-
-  if (!text) {
-    return "";
-  }
-
-  const media =
-    getPostMedia(post);
-
-  const longText =
-    text.length >
-    POST_TEXT_COLLAPSE_LENGTH;
-
-  const mediaClass =
-    media
-      ? "post-text-with-media"
-      : "post-text-text-only";
-
-  const initialHeight =
-    media
-      ? POST_TEXT_COLLAPSED_MEDIA_HEIGHT_PX
-      : POST_TEXT_COLLAPSED_TEXT_ONLY_HEIGHT_PX;
-
-  return `
-    <div
-      class="post-text-wrap"
-      style="
-        margin-top:12px;
-      "
-    >
-      <div
-        class="post-text-surface ${mediaClass}"
-        data-post-text
-        data-expanded="false"
-        style="
-          max-height:${initialHeight}px;
-          overflow:hidden;
-          transition:max-height .24s ease;
-          padding:16px;
-          border-radius:16px;
-          line-height:1.65;
-          white-space:pre-wrap;
-          overflow-wrap:anywhere;
-          background:var(--surface-2,rgba(127,127,127,.08));
-          box-sizing:border-box;
-        "
-      >${escapeHtml(text)}</div>
-
-      <button
-        type="button"
-        class="btn secondary post-text-toggle"
-        data-home-action="toggle-text"
-        data-id="${escapeHtml(postId(post.id))}"
-        aria-expanded="false"
-        ${longText ? "" : "hidden"}
-        style="
-          margin-top:8px;
-          min-height:36px;
-          padding:7px 13px;
-        "
-      >Show more</button>
-    </div>
-  `;
-}
-
-function renderPostCard(
-  post
-) {
-  if (!post || isPostExpired(post)) {
-    return "";
-  }
-
-  const id =
-    postId(post.id);
-
-  const author =
-    getPostAuthor(post);
-
-  const text =
-    getPostText(post);
-
-  const date =
-    getPostDate(post);
-
-  const media =
-    getPostMedia(post);
-
-  const liked =
-    Array.isArray(post.likes)
-      ? post.likes.includes(uid())
-      : !!post.likedByCurrentUser;
-
-  const saved =
-    savedPostIds.has(id);
-
-  const ownPost =
-    String(post.uid || "") ===
-    String(uid() || "");
-
-  const likeCount =
-    Number(post.likeCount) ||
-    (
-      Array.isArray(post.likes)
-        ? post.likes.length
-        : 0
-    );
-
-  const commentCount =
-    Number(post.commentCount) ||
-    (
-      Array.isArray(
-        post.comments
-      )
-        ? post.comments.length
-        : 0
-    );
-
-  const displayDate =
-    date
-      ? formatDate(date)
-      : "";
-
-  return `
-    <article
-      class="card post-card"
-      data-post-card="${escapeHtml(id)}"
-      style="
-        margin-bottom:16px;
-        overflow:visible;
-      "
-    >
-      <div
-        class="post-card-header"
-        style="
-          display:flex;
-          align-items:center;
-          gap:11px;
-        "
-      >
-        <div
-          class="avatar"
-          aria-hidden="true"
-        >
-          ${escapeHtml(
-            initials(author)
-          )}
-        </div>
-
-        <div
-          style="
-            flex:1;
-            min-width:0;
-          "
-        >
-          <div
-            style="
-              font-weight:700;
-              overflow:hidden;
-              text-overflow:ellipsis;
-              white-space:nowrap;
-            "
-          >
-            ${escapeHtml(author)}
-          </div>
-
-          <div
-            class="small"
-            style="
-              display:flex;
-              gap:7px;
-              flex-wrap:wrap;
-              align-items:center;
-            "
-          >
-            <span>
-              ${escapeHtml(displayDate)}
-            </span>
-
-            ${
-              expiryLabel(post)
-                ? `
-                  <span>
-                    • ${escapeHtml(
-                      expiryLabel(post)
-                    )}
-                  </span>
-                `
-                : ""
-            }
-          </div>
-        </div>
-
-        <div
-          class="dropdown-container"
-          style="
-            position:relative;
-          "
-        >
-          <button
-            type="button"
-            class="icon-btn"
-            aria-label="Post menu"
-            data-home-action="menu"
-            data-id="${escapeHtml(id)}"
-          >
-            ⋮
-          </button>
-
-          <div
-            id="postMenu-${escapeHtml(id)}"
-            class="dropdown-menu hidden"
-            style="
-              right:0;
-              top:42px;
-              min-width:170px;
-              z-index:50;
-            "
-          >
-            ${
-              ownPost
-                ? `
-                  <button
-                    type="button"
-                    class="dropdown-item"
-                    data-home-action="edit"
-                    data-id="${escapeHtml(id)}"
-                  >
-                    Edit
-                  </button>
-
-                  <button
-                    type="button"
-                    class="dropdown-item danger"
-                    data-home-action="delete"
-                    data-id="${escapeHtml(id)}"
-                  >
-                    Delete
-                  </button>
-                `
-                : ""
-            }
-
-            <button
-              type="button"
-              class="dropdown-item"
-              data-home-action="share"
-              data-id="${escapeHtml(id)}"
-            >
-              Share
-            </button>
-
-            ${
-              media
-                ? `
-                  <button
-                    type="button"
-                    class="dropdown-item"
-                    data-home-action="share-image"
-                    data-id="${escapeHtml(id)}"
-                  >
-                    Share image
-                  </button>
-                `
-                : ""
-            }
-          </div>
-        </div>
-      </div>
-
-      <div
-        class="post-content"
-        style="
-          margin-top:3px;
-        "
-      >
-        ${renderPostText(post)}
-
-        ${renderPostMedia(post)}
-      </div>
-
-      <div
-        class="post-actions"
-        style="
-          display:flex;
-          align-items:center;
-          flex-wrap:wrap;
-          gap:8px;
-          margin-top:13px;
-        "
-      >
-        <button
-          type="button"
-          class="btn secondary"
-          data-home-action="like"
-          data-id="${escapeHtml(id)}"
-          aria-pressed="${liked ? "true" : "false"}"
-        >
-          ${liked ? "♥" : "♡"}
-          ${likeCount}
-        </button>
-
-        <button
-          type="button"
-          class="btn secondary"
-          data-home-action="comment"
-          data-id="${escapeHtml(id)}"
-        >
-          💬 ${commentCount}
-        </button>
-
-        <button
-          type="button"
-          class="btn secondary"
-          data-home-action="save"
-          data-id="${escapeHtml(id)}"
-          aria-pressed="${saved ? "true" : "false"}"
-        >
-          ${saved ? "★ Saved" : "☆ Save"}
-        </button>
-
-        <button
-          type="button"
-          class="btn secondary"
-          data-home-action="share"
-          data-id="${escapeHtml(id)}"
-        >
-          ↗ Share
-        </button>
-      </div>
-    </article>
-  `;
-}
-
-function renderEmptyHomeState() {
-  return `
-    <div
-      class="card"
-      style="
-        text-align:center;
-        padding:32px 18px;
-      "
-    >
-      <div
-        style="
-          font-size:42px;
-          margin-bottom:10px;
-        "
-      >
-        🌍
-      </div>
-
-      <h3
-        style="
-          margin:0 0 7px;
-        "
-      >
-        No posts yet
-      </h3>
-
-      <p
-        class="small"
-        style="
-          margin:0 0 16px;
-        "
-      >
-        Be the first person to share something.
-      </p>
-
-      <button
-        type="button"
-        class="btn btn-primary"
-        id="emptyCreatePost"
-      >
-        Create a post
-      </button>
-    </div>
-  `;
-}
-
-function renderHomeHeader() {
-  return `
-    <section
-      class="card"
-      style="
-        margin-bottom:16px;
-      "
-    >
-      <div
-        style="
-          display:flex;
-          align-items:center;
-          gap:12px;
-        "
-      >
-        <div class="avatar">
-          ${escapeHtml(
-            initials(
-              currentUserName()
-            )
-          )}
-        </div>
-
-        <div>
-          <div class="small">
-            ${escapeHtml(
-              currentUserGreeting()
-            )}
-          </div>
-
-          <h2
-            style="
-              margin:2px 0 0;
-            "
-          >
-            ${escapeHtml(
-              currentUserName()
-            )}
-          </h2>
-        </div>
-      </div>
-    </section>
-  `;
-}
-
-function renderComposerPreview() {
-  return `
-    <button
-      type="button"
-      class="card"
-      id="openComposerPreview"
-      style="
-        width:100%;
-        text-align:left;
-        border:0;
-        cursor:pointer;
-        margin-bottom:16px;
-      "
-    >
-      <div
-        style="
-          display:flex;
-          align-items:center;
-          gap:11px;
-        "
-      >
-        <div class="avatar">
-          ${escapeHtml(
-            initials(
-              currentUserName()
-            )
-          )}
-        </div>
-
-        <div
-          class="small"
-          style="
-            flex:1;
-          "
-        >
-          What would you like to share?
-        </div>
-      </div>
-    </button>
-  `;
-}
-
-function renderHomeFeedControls() {
-  return `
-    <div
-      class="card"
-      style="
-        margin-bottom:16px;
-      "
-    >
-      <div
-        style="
-          display:flex;
-          gap:8px;
-          flex-wrap:wrap;
-          margin-bottom:11px;
-        "
-      >
-        <button
-          type="button"
-          class="btn ${
-            homeFeedFilter === "all"
-              ? "btn-primary"
-              : "secondary"
-          }"
-          data-feed-filter="all"
-          aria-selected="${
-            homeFeedFilter === "all"
-          }"
-        >
-          All
-        </button>
-
-        <button
-          type="button"
-          class="btn ${
-            homeFeedFilter === "mine"
-              ? "btn-primary"
-              : "secondary"
-          }"
-          data-feed-filter="mine"
-          aria-selected="${
-            homeFeedFilter === "mine"
-          }"
-        >
-          My posts
-        </button>
-
-        <button
-          type="button"
-          class="btn ${
-            homeFeedFilter === "saved"
-              ? "btn-primary"
-              : "secondary"
-          }"
-          data-feed-filter="saved"
-          aria-selected="${
-            homeFeedFilter === "saved"
-          }"
-        >
-          Saved
-        </button>
-      </div>
-
-      <div
-        style="
-          position:relative;
-        "
-      >
-        <input
-          id="communityFeedSearch"
-          type="search"
-          value="${escapeHtml(
-            homeSearchTerm
-          )}"
-          placeholder="Search posts..."
-          autocomplete="off"
-          style="
-            width:100%;
-            box-sizing:border-box;
-          "
-        />
-
-        ${
-          homeSearchTerm
-            ? `
-              <button
-                type="button"
-                class="icon-btn"
-                id="clearCommunitySearch"
-                aria-label="Clear search"
-                style="
-                  position:absolute;
-                  right:5px;
-                  top:50%;
-                  transform:translateY(-50%);
-                "
-              >
-                ×
-              </button>
-            `
-            : ""
-        }
-      </div>
-
-      <div
-        id="communitySearchStatus"
-        class="small"
-        style="
-          margin-top:8px;
-        "
-      ></div>
-    </div>
-  `;
-}
-
-function renderHomePage() {
-  const posts =
-    getPosts().filter(
-      post =>
-        post &&
-        !isPostExpired(post)
-    );
-
-  return `
-    <main
-      id="homePage"
-      class="page"
-    >
-      ${renderHomeHeader()}
-
-      ${renderComposerPreview()}
-
-      ${renderHomeFeedControls()}
-
-      <section
-        id="communityFeed"
-      >
-        ${
-          posts.length
-            ? posts
-                .map(
-                  renderPostCard
-                )
-                .join("")
-            : renderEmptyHomeState()
-        }
-      </section>
-
-      ${
-        homeHasMarketAccount()
-          ? `
-            <section
-              class="card"
-              style="
-                margin-top:16px;
-              "
-            >
-              <div
-                style="
-                  display:flex;
-                  align-items:center;
-                  justify-content:space-between;
-                  gap:12px;
-                "
-              >
-                <div>
-                  <strong>
-                    Your marketplace
-                  </strong>
-                  <div class="small">
-                    Manage or browse your listings.
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  class="btn secondary"
-                  data-quick="sell"
-                >
-                  Open market
-                </button>
-              </div>
-            </section>
-          `
-          : ""
-      }
-    </main>
-  `;
-}
-
-export function renderHome() {
-  return renderHomePage();
-}
-
-function getHomeFeedContainer() {
-  return document.getElementById(
-    "communityFeed"
-  );
-}
-
-function getHomeSearchStatus() {
-  return document.getElementById(
-    "communitySearchStatus"
-  );
-}
-
-function matchesHomeFilter(post) {
-  if (
-    homeFeedFilter ===
-    "mine"
-  ) {
-    return (
-      String(post?.uid || "") ===
-      String(uid() || "")
+  } catch (error) {
+    toast(
+      error?.message ||
+      "Could not prepare that photo."
     );
   }
-
-  if (
-    homeFeedFilter ===
-    "saved"
-  ) {
-    return savedPostIds.has(
-      postId(post?.id)
-    );
-  }
-
-  return true;
 }
 
-function matchesHomeSearch(
-  post,
-  term
-) {
-  const normalized =
-    String(term || "")
-      .trim()
-      .toLowerCase();
-
-  if (!normalized) {
-    return true;
-  }
-
-  const searchable = [
+function searchTextForPost(post) {
+  return [
     getPostText(post),
-    getPostAuthor(post),
-    post?.username || "",
-    post?.displayName || ""
+    post?.richTextHtml || "",
+    getPostAuthor(post)
   ]
     .join(" ")
+    .replace(
+      /<[^>]*>/g,
+      " "
+    )
     .toLowerCase();
-
-  return searchable.includes(
-    normalized
-  );
 }
 
-async function loadSearchPosts() {
+async function loadAllPostsForSearch() {
   if (
-    searchPostsCache
+    Array.isArray(
+      searchPostsCache
+    )
   ) {
     return searchPostsCache;
   }
 
-  if (
-    searchPostsLoadPromise
-  ) {
+  if (searchPostsLoadPromise) {
     return searchPostsLoadPromise;
   }
 
   searchPostsLoadPromise =
     (async () => {
       try {
-        const postsRef =
-          collection(
-            db,
-            "posts"
-          );
-
         const snapshot =
           await getDocs(
             query(
-              postsRef,
+              collection(
+                db,
+                "posts"
+              ),
               orderBy(
                 "createdAt",
                 "desc"
-              ),
-              limit(100)
+              )
             )
           );
 
@@ -1718,13 +1023,6 @@ async function loadSearchPosts() {
           );
 
         return searchPostsCache;
-      } catch (error) {
-        console.warn(
-          "Could not load older posts:",
-          error
-        );
-
-        return [];
       } finally {
         searchPostsLoadPromise =
           null;
@@ -1734,349 +1032,789 @@ async function loadSearchPosts() {
   return searchPostsLoadPromise;
 }
 
-async function filterRenderedPosts(
-  term = ""
-) {
-  homeSearchTerm =
-    String(term || "").trim();
+function searchablePosts() {
+  const merged =
+    new Map();
 
-  const container =
-    getHomeFeedContainer();
-
-  const status =
-    getHomeSearchStatus();
-
-  if (!container) {
-    return;
-  }
-
-  let source =
-    getPosts().filter(
-      post =>
-        post &&
-        !isPostExpired(post)
-    );
-
-  const localMatches =
-    source.filter(
-      post =>
-        matchesHomeFilter(post) &&
-        matchesHomeSearch(
-          post,
-          homeSearchTerm
-        )
-    );
-
-  /*
-   * When searching, fetch the larger history set.
-   * This preserves the existing "search older posts too"
-   * behavior while making sure every newly rendered card
-   * gets its overflow measurement after rendering.
-   */
-  if (
-    homeSearchTerm
-  ) {
-    const older =
-      await loadSearchPosts();
-
-    source = Array.from(
-      new Map(
-        [
-          ...source,
-          ...(Array.isArray(older)
-            ? older
-            : [])
-        ].map(
-          post => [
-            postId(post.id),
-            post
-          ]
-        )
-      ).values()
-    );
-  }
-
-  const matches =
-    source
-      .filter(
-        post =>
-          post &&
-          !isPostExpired(post)
+  getPosts().forEach(
+    post =>
+      merged.set(
+        postId(post.id),
+        post
       )
-      .filter(
-        post =>
-          matchesHomeFilter(
-            post
-          )
-      )
-      .filter(
-        post =>
-          matchesHomeSearch(
-            post,
-            homeSearchTerm
-          )
-      );
-
-  /*
-   * Preserve the local result if there is no search term.
-   */
-  const finalMatches =
-    homeSearchTerm
-      ? matches
-      : localMatches;
-
-  container.innerHTML =
-    finalMatches.length
-      ? finalMatches
-          .map(
-            renderPostCard
-          )
-          .join("")
-      : `
-          <div
-            class="card"
-            style="
-              text-align:center;
-              padding:30px 18px;
-            "
-          >
-            <div
-              style="
-                font-size:32px;
-              "
-            >
-              🔎
-            </div>
-
-            <h3
-              style="
-                margin:8px 0;
-              "
-            >
-              No matching posts
-            </h3>
-
-            <p
-              class="small"
-              style="
-                margin:0;
-              "
-            >
-              ${
-                homeSearchTerm
-                  ? "No matching posts were found across your post history."
-                  : "There are no posts in this section yet."
-              }
-            </p>
-          </div>
-        `;
-
-  /*
-   * CRITICAL FIX:
-   * filterRenderedPosts() replaces container.innerHTML.
-   * Therefore every replacement creates brand-new hidden
-   * Show More buttons. We MUST sync after the replacement.
-   */
-  schedulePostTextOverflowSync(
-    container
   );
 
-  if (status) {
-    if (
-      homeSearchTerm
-    ) {
-      status.textContent =
-        `${finalMatches.length} matching post${
-          finalMatches.length === 1
-            ? ""
-            : "s"
-        } found across your post history.`;
-    } else {
-      status.textContent =
-        "";
+  if (
+    Array.isArray(
+      searchPostsCache
+    )
+  ) {
+    searchPostsCache.forEach(
+      post =>
+        merged.set(
+          postId(post.id),
+          post
+        )
+    );
+  }
+
+  return Array.from(
+    merged.values()
+  );
+}
+
+const POST_BACKGROUND_OPTIONS = [
+  {
+    key: "black",
+    label: "Black",
+    background: "#111827",
+    text: "#ffffff"
+  },
+  {
+    key: "white",
+    label: "White",
+    background: "#ffffff",
+    text: "#111827"
+  },
+  {
+    key: "purple",
+    label: "Purple",
+    background: "#5b21b6",
+    text: "#ffffff"
+  },
+  {
+    key: "blue",
+    label: "Blue",
+    background: "#1d4ed8",
+    text: "#ffffff"
+  },
+  {
+    key: "green",
+    label: "Green",
+    background: "#166534",
+    text: "#ffffff"
+  },
+  {
+    key: "orange",
+    label: "Orange",
+    background: "#c2410c",
+    text: "#ffffff"
+  },
+  {
+    key: "pink",
+    label: "Pink",
+    background: "#be185d",
+    text: "#ffffff"
+  }
+];
+
+function getPostBackground(key) {
+  return (
+    POST_BACKGROUND_OPTIONS.find(
+      option =>
+        option.key ===
+        String(
+          key || ""
+        ).toLowerCase()
+    ) ||
+    POST_BACKGROUND_OPTIONS[1]
+  );
+}
+
+function sanitizePostRichText(
+  html,
+  fallbackText = ""
+) {
+  const source =
+    String(
+      html || ""
+    ).trim();
+
+  if (!source) {
+    return escapeHtml(
+      fallbackText
+    ).replace(
+      /\n/g,
+      "<br>"
+    );
+  }
+
+  try {
+    const parser =
+      new DOMParser();
+
+    const parsed =
+      parser.parseFromString(
+        source,
+        "text/html"
+      );
+
+    const root =
+      parsed.body;
+
+    if (!root) {
+      return escapeHtml(
+        fallbackText
+      ).replace(
+        /\n/g,
+        "<br>"
+      );
     }
+
+    const allowedTags =
+      new Set([
+        "B",
+        "STRONG",
+        "BR",
+        "DIV",
+        "P"
+      ]);
+
+    const cleanNode =
+      node => {
+        if (
+          node.nodeType ===
+          Node.TEXT_NODE
+        ) {
+          return document.createTextNode(
+            node.nodeValue ||
+            ""
+          );
+        }
+
+        if (
+          node.nodeType !==
+          Node.ELEMENT_NODE
+        ) {
+          return document.createTextNode(
+            ""
+          );
+        }
+
+        const tag =
+          node.tagName.toUpperCase();
+
+        const children =
+          Array.from(
+            node.childNodes
+          )
+            .map(
+              cleanNode
+            )
+            .filter(Boolean);
+
+        if (
+          !allowedTags.has(
+            tag
+          )
+        ) {
+          const fragment =
+            document.createDocumentFragment();
+
+          children.forEach(
+            child =>
+              fragment.appendChild(
+                child
+              )
+          );
+
+          return fragment;
+        }
+
+        const safe =
+          document.createElement(
+            tag === "B" ||
+            tag === "STRONG"
+              ? "strong"
+              : tag === "P"
+                ? "div"
+                : tag === "BR"
+                  ? "br"
+                  : "div"
+          );
+
+        children.forEach(
+          child =>
+            safe.appendChild(
+              child
+            )
+        );
+
+        return safe;
+      };
+
+    const holder =
+      document.createElement(
+        "div"
+      );
+
+    Array.from(
+      root.childNodes
+    ).forEach(
+      node => {
+        const clean =
+          cleanNode(node);
+
+        if (clean) {
+          holder.appendChild(
+            clean
+          );
+        }
+      }
+    );
+
+    return holder.innerHTML;
+  } catch {
+    return escapeHtml(
+      fallbackText
+    ).replace(
+      /\n/g,
+      "<br>"
+    );
   }
 }
 
-function closeHomeModal() {
-  const modal =
+function renderPostText(post) {
+  const text =
+    getPostText(post);
+
+  const rich =
+    post?.richTextHtml ||
+    post?.formattedText ||
+    "";
+
+  return sanitizePostRichText(
+    rich,
+    text
+  );
+}
+
+function normalizeComposerText(
+  value
+) {
+  return String(
+    value || ""
+  )
+    .replace(
+      /\u00a0/g,
+      " "
+    )
+    .replace(
+      /\r\n/g,
+      "\n"
+    )
+    .replace(
+      /\r/g,
+      "\n"
+    )
+    .replace(
+      /\n{4,}/g,
+      "\n\n\n"
+    )
+    .trim();
+}
+
+function composerPlainText(
+  editor
+) {
+  if (!editor) return "";
+
+  return normalizeComposerText(
+    editor.innerText ||
+    editor.textContent ||
+    ""
+  );
+}
+
+function composerRichHtml(
+  editor
+) {
+  if (!editor) return "";
+
+  const clone =
+    editor.cloneNode(
+      true
+    );
+
+  clone
+    .querySelectorAll(
+      "script,style,iframe,object,embed,link,meta"
+    )
+    .forEach(
+      node =>
+        node.remove()
+    );
+
+  clone
+    .querySelectorAll("*")
+    .forEach(
+      node => {
+        Array.from(
+          node.attributes
+        ).forEach(
+          attribute =>
+            node.removeAttribute(
+              attribute.name
+            )
+        );
+      }
+    );
+
+  return sanitizePostRichText(
+    clone.innerHTML,
+    composerPlainText(
+      editor
+    )
+  );
+}
+
+function postEditorToolbarHtml() {
+  return `
+    <div
+      class="post-editor-toolbar"
+      role="toolbar"
+      aria-label="Post text formatting"
+      style="
+        display:flex;
+        align-items:center;
+        gap:7px;
+        flex-wrap:wrap;
+        margin:9px 0 8px;
+      "
+    >
+      <button
+        type="button"
+        class="btn secondary"
+        data-post-format="bold"
+        aria-label="Bold selected text"
+        title="Bold"
+        style="
+          font-weight:900;
+          padding:7px 12px;
+        "
+      >
+        <strong>B</strong> Bold
+      </button>
+
+      <button
+        type="button"
+        class="btn secondary"
+        data-post-format="normal"
+        aria-label="Make selected text normal"
+        title="Normal text"
+        style="padding:7px 12px;"
+      >
+        Normal
+      </button>
+
+      <span class="small" style="margin-left:2px;">
+        Select text, then choose a style.
+      </span>
+    </div>
+  `;
+}
+
+function postBackgroundPickerHtml() {
+  return `
+    <div
+      style="
+        margin-top:10px;
+        padding:11px 12px;
+        border:1px solid var(--border);
+        border-radius:15px;
+        background:var(--surface);
+        max-width:100%;
+        box-sizing:border-box;
+        overflow:hidden;
+      "
+    >
+      <div
+        style="
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          gap:10px;
+          flex-wrap:wrap;
+          margin-bottom:9px;
+        "
+      >
+        <strong style="font-size:13px;">
+          Post background
+        </strong>
+
+        <span class="small">
+          Choose one color
+        </span>
+      </div>
+
+      <div
+        style="
+          display:grid;
+          grid-template-columns:
+            repeat(7,minmax(30px,1fr));
+          gap:7px;
+          width:100%;
+          max-width:100%;
+          box-sizing:border-box;
+        "
+      >
+        ${POST_BACKGROUND_OPTIONS.map(
+          option => `
+            <button
+              type="button"
+              data-post-background="${option.key}"
+              aria-label="${escapeHtml(
+                option.label
+              )} background"
+              title="${escapeHtml(
+                option.label
+              )}"
+              style="
+                width:100%;
+                max-width:48px;
+                aspect-ratio:1;
+                min-width:30px;
+                justify-self:center;
+                border-radius:50%;
+                border:2px solid ${
+                  option.key === "white"
+                    ? "#d1d5db"
+                    : "rgba(255,255,255,.75)"
+                };
+                background:${option.background};
+                box-shadow:
+                  0 1px 5px
+                  rgba(0,0,0,.14);
+                cursor:pointer;
+                position:relative;
+              "
+            >
+              <span
+                data-background-check="${option.key}"
+                aria-hidden="true"
+                style="
+                  display:none;
+                  color:${option.text};
+                  font-weight:900;
+                  font-size:16px;
+                  line-height:1;
+                "
+              >
+                ✓
+              </span>
+            </button>
+          `
+        ).join("")}
+      </div>
+
+      <div
+        id="postBackgroundLabel"
+        class="small"
+        style="margin-top:8px;"
+        aria-live="polite"
+      >
+        White background selected
+      </div>
+    </div>
+  `;
+}
+
+function updatePostBackgroundPicker(
+  selected
+) {
+  const key =
+    getPostBackground(
+      selected
+    ).key;
+
+  const option =
+    getPostBackground(
+      key
+    );
+
+  document
+    .querySelectorAll(
+      "#homeModalHost [data-post-background]"
+    )
+    .forEach(
+      button => {
+        const active =
+          button.dataset
+            .postBackground ===
+          key;
+
+        button.style.outline =
+          active
+            ? "3px solid var(--primary)"
+            : "none";
+
+        button.style.outlineOffset =
+          "2px";
+
+        const check =
+          button.querySelector(
+            "[data-background-check]"
+          );
+
+        if (check) {
+          check.style.display =
+            active
+              ? "inline"
+              : "none";
+        }
+      }
+    );
+
+  const label =
     document.getElementById(
-      "homeModal"
+      "postBackgroundLabel"
     );
 
-  if (modal) {
-    modal.remove();
-  }
-
-  if (
-    homeModalEscapeHandler
-  ) {
-    document.removeEventListener(
-      "keydown",
-      homeModalEscapeHandler
-    );
-
-    homeModalEscapeHandler =
-      null;
-  }
-
-  clearPendingHomeImage();
-  clearEditPendingImage();
-}
-
-function clearPendingHomeImage() {
-  pendingHomeImage =
-    null;
-
-  if (
-    pendingHomeImagePreviewUrl
-  ) {
-    URL.revokeObjectURL(
-      pendingHomeImagePreviewUrl
-    );
-
-    pendingHomeImagePreviewUrl =
-      "";
+  if (label) {
+    label.textContent =
+      `${option.label} background selected`;
   }
 }
 
-function clearEditPendingImage() {
-  editPendingImage =
-    null;
-  editRemoveExistingPhoto =
-    false;
-
-  if (
-    editPendingImagePreviewUrl
-  ) {
-    URL.revokeObjectURL(
-      editPendingImagePreviewUrl
+function getExpiryDate(
+  value
+) {
+  const option =
+    POST_EXPIRY_OPTIONS.find(
+      item =>
+        item.value ===
+        value
     );
 
-    editPendingImagePreviewUrl =
-      "";
-  }
+  return option
+    ? new Date(
+        Date.now() +
+          option.milliseconds
+      )
+    : null;
 }
 
 function markHomeActivity() {
   try {
     localStorage.setItem(
       DISCOVERY_LAST_ACTIVE_KEY,
-      String(Date.now())
+      String(
+        Date.now()
+      )
     );
   } catch {}
 }
 
-function getDiscoveryState() {
+function discoveryHistory() {
   try {
-    const raw =
-      localStorage.getItem(
-        DISCOVERY_STORAGE_KEY
+    const parsed =
+      JSON.parse(
+        localStorage.getItem(
+          DISCOVERY_STORAGE_KEY
+        ) || "[]"
       );
 
-    const parsed =
-      raw
-        ? JSON.parse(raw)
-        : null;
+    if (
+      !Array.isArray(
+        parsed
+      )
+    ) {
+      return [];
+    }
 
-    return {
-      impressions:
-        Number(
-          parsed?.impressions
-        ) || 0,
-      firstSeen:
-        Number(
-          parsed?.firstSeen
-        ) || 0,
-      lastShown:
-        Number(
-          parsed?.lastShown
-        ) || 0
-    };
+    const cutoff =
+      Date.now() -
+      DISCOVERY_WINDOW_MS;
+
+    return parsed
+      .map(Number)
+      .filter(
+        value =>
+          Number.isFinite(
+            value
+          ) &&
+          value >= cutoff
+      )
+      .sort(
+        (a, b) =>
+          a - b
+      );
   } catch {
-    return {
-      impressions: 0,
-      firstSeen: 0,
-      lastShown: 0
-    };
+    return [];
   }
 }
 
-function saveDiscoveryState(
-  value
+function saveDiscoveryHistory(
+  history
 ) {
   try {
     localStorage.setItem(
       DISCOVERY_STORAGE_KEY,
-      JSON.stringify(value)
+      JSON.stringify(
+        history.slice(
+          -DISCOVERY_MAX_IMPRESSIONS
+        )
+      )
     );
   } catch {}
+}
+
+function shouldShowDiscovery() {
+  const history =
+    discoveryHistory();
+
+  if (!history.length) {
+    return true;
+  }
+
+  if (
+    history.length >=
+    DISCOVERY_MAX_IMPRESSIONS
+  ) {
+    return false;
+  }
+
+  return (
+    Date.now() -
+      history[
+        history.length - 1
+      ] >=
+    DISCOVERY_MIN_INTERVAL_MS
+  );
 }
 
 function recordDiscoveryImpression() {
   const now =
     Date.now();
 
-  const current =
-    getDiscoveryState();
+  const history =
+    discoveryHistory();
 
-  const firstSeen =
-    current.firstSeen &&
+  if (
+    history.length &&
     now -
-      current.firstSeen <=
-      DISCOVERY_WINDOW_MS
-      ? current.firstSeen
-      : now;
+      history[
+        history.length - 1
+      ] <
+      DISCOVERY_MIN_INTERVAL_MS
+  ) {
+    return;
+  }
 
-  const impressions =
-    current.firstSeen &&
-    now -
-      current.firstSeen <=
-      DISCOVERY_WINDOW_MS
-      ? current.impressions + 1
-      : 1;
+  history.push(
+    now
+  );
 
-  saveDiscoveryState({
-    impressions,
-    firstSeen,
-    lastShown: now
-  });
+  saveDiscoveryHistory(
+    history
+  );
+}
+
+export function isDiscoveryDismissed() {
+  return !shouldShowDiscovery();
+}
+
+export function dismissDiscovery() {
+  markHomeActivity();
+  recordDiscoveryImpression();
+  stopDiscoveryCountdown();
+
+  document
+    .getElementById(
+      "discoveryBanner"
+    )
+    ?.remove();
+}
+
+function stopDiscoveryCountdown() {
+  if (discoveryTimer) {
+    clearInterval(
+      discoveryTimer
+    );
+  }
+
+  discoveryTimer =
+    null;
 }
 
 function startDiscoveryCountdown() {
-  stopDiscoveryCountdown();
+  const banner =
+    document.getElementById(
+      "discoveryBanner"
+    );
 
-  const timerElement =
+  const ring =
+    document.getElementById(
+      "discoveryRing"
+    );
+
+  const counter =
     document.getElementById(
       "discoveryCountdown"
     );
 
-  if (!timerElement) {
+  if (
+    !banner ||
+    !ring ||
+    !counter
+  ) {
+    stopDiscoveryCountdown();
+    return;
+  }
+
+  if (discoveryTimer) {
     return;
   }
 
   discoveryStartedAt =
     Date.now();
 
-  const update =
+  const duration =
+    DISCOVERY_DURATION_SECONDS *
+    1000;
+
+  const tick =
     () => {
-      const elapsed =
-        Math.floor(
-          (
-            Date.now() -
-            discoveryStartedAt
-          ) / 1000
-        );
+      if (
+        !document.getElementById(
+          "discoveryBanner"
+        )
+      ) {
+        stopDiscoveryCountdown();
+        return;
+      }
 
       const remaining =
         Math.max(
           0,
-          DISCOVERY_DURATION_SECONDS -
-            elapsed
+          duration -
+            (
+              Date.now() -
+              discoveryStartedAt
+            )
         );
 
-      timerElement.textContent =
-        `${remaining}s`;
+      const percentage =
+        Math.max(
+          0,
+          Math.min(
+            100,
+            remaining /
+              duration *
+              100
+          )
+        );
+
+      ring.style.background =
+        `conic-gradient(currentColor ${percentage}%, rgba(255,255,255,.10) ${percentage}% 100%)`;
+
+      counter.textContent =
+        String(
+          Math.ceil(
+            remaining /
+            1000
+          )
+        );
 
       if (
         remaining <= 0
@@ -2086,73 +1824,1436 @@ function startDiscoveryCountdown() {
       }
     };
 
-  update();
+  tick();
 
   discoveryTimer =
-    window.setInterval(
-      update,
-      1000
+    setInterval(
+      tick,
+      250
     );
-}
-
-function stopDiscoveryCountdown() {
-  if (
-    discoveryTimer
-  ) {
-    clearInterval(
-      discoveryTimer
-    );
-
-    discoveryTimer =
-      null;
-  }
-
-  discoveryStartedAt =
-    0;
-}
-
-function dismissDiscovery() {
-  stopDiscoveryCountdown();
-
-  const banner =
-    document.getElementById(
-      "discoveryBanner"
-    );
-
-  banner?.remove();
 }
 
 function openDiscoveryDestination(
   destination,
   renderApp
 ) {
-  const map = {
-    chat: "chat",
-    market: "market",
-    skill: "timetrust",
-    timetrust: "timetrust"
-  };
-
-  const page =
-    map[destination];
-
-  if (!page) {
-    return;
-  }
-
-  closeHomeModal();
+  dismissDiscovery();
 
   if (
-    page === "market"
+    destination ===
+    "market"
   ) {
     state.marketBrowseMode =
       false;
+
+    state.page =
+      "market";
+
+    renderApp?.();
+
+    return;
   }
 
-  state.page =
-    page;
+  if (
+    destination ===
+    "timetrust"
+  ) {
+    state.page =
+      "timetrust";
 
-  renderApp?.();
+    renderApp?.();
+  }
+}
+
+function renderDiscoveryBanner() {
+  return `
+    <section
+      class="card"
+      id="discoveryBanner"
+      aria-label="Marvel Chat discovery"
+      style="
+        position:relative;
+        overflow:hidden;
+        margin:0 0 18px;
+        padding:24px 20px;
+        border-radius:22px;
+        box-shadow:var(--shadow);
+      "
+    >
+      <button
+        type="button"
+        class="icon-btn"
+        id="discoveryClose"
+        aria-label="Close discovery"
+        style="
+          position:absolute;
+          top:12px;
+          right:12px;
+          z-index:2;
+        "
+      >
+        ✕
+      </button>
+
+      <div
+        style="
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          gap:18px;
+          flex-wrap:wrap;
+        "
+      >
+        <div
+          style="
+            flex:1;
+            min-width:220px;
+          "
+        >
+          <div
+            class="small"
+            style="
+              font-weight:800;
+              letter-spacing:.08em;
+              text-transform:uppercase;
+              margin-bottom:6px;
+            "
+          >
+            MARVEL CHAT DISCOVERY
+          </div>
+
+          <h2
+            style="
+              margin:0 0 8px;
+              font-size:clamp(25px,6vw,38px);
+              line-height:1.05;
+            "
+          >
+            Explore what your community can do ✨
+          </h2>
+
+          <p
+            style="
+              margin:0;
+              line-height:1.55;
+              max-width:560px;
+            "
+          >
+            Discover people, conversations, skills,
+            TimeTrust and the Market — all from one
+            Marvel Chat universe.
+          </p>
+
+          <div
+            style="
+              display:flex;
+              gap:8px;
+              flex-wrap:wrap;
+              margin-top:15px;
+            "
+          >
+            <button
+              type="button"
+              class="btn"
+              data-discovery-nav="market"
+            >
+              🛍️ Explore Market
+            </button>
+
+            <button
+              type="button"
+              class="btn secondary"
+              data-discovery-nav="timetrust"
+            >
+              ⏱️ Explore TimeTrust
+            </button>
+          </div>
+        </div>
+
+        <div
+          style="
+            width:76px;
+            height:76px;
+            border-radius:50%;
+            display:grid;
+            place-items:center;
+            color:var(--primary);
+            background:rgba(124,58,237,.08);
+            flex:0 0 auto;
+          "
+        >
+          <div
+            id="discoveryRing"
+            style="
+              width:62px;
+              height:62px;
+              border-radius:50%;
+              display:grid;
+              place-items:center;
+              background:
+                conic-gradient(
+                  currentColor 100%,
+                  rgba(255,255,255,.10) 100%
+                );
+            "
+          >
+            <div
+              style="
+                inset:5px;
+                position:relative;
+                width:52px;
+                height:52px;
+                border-radius:50%;
+                background:var(--card);
+                display:grid;
+                place-items:center;
+              "
+            >
+              <span
+                id="discoveryCountdown"
+                style="font-weight:900;"
+              >
+                ${DISCOVERY_DURATION_SECONDS}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function isLiked(post) {
+  return (
+    !!uid() &&
+    Array.isArray(
+      post?.likedBy
+    ) &&
+    post.likedBy
+      .map(String)
+      .includes(
+        String(uid())
+      )
+  );
+}
+
+function isSaved(post) {
+  return savedPostIds.has(
+    postId(post?.id)
+  );
+}
+
+function postLikes(post) {
+  const n =
+    Number(post?.likes);
+
+  return Number.isFinite(n)
+    ? n
+    : 0;
+}
+
+function postComments(post) {
+  const n =
+    Number(post?.comments);
+
+  return Number.isFinite(n)
+    ? n
+    : 0;
+}
+
+function cssEscape(value) {
+  if (
+    typeof CSS !==
+      "undefined" &&
+    typeof CSS.escape ===
+      "function"
+  ) {
+    return CSS.escape(
+      String(value)
+    );
+  }
+
+  return String(value)
+    .replace(
+      /[^a-zA-Z0-9_-]/g,
+      "\\$&"
+    );
+}
+
+function refreshPostCard(id) {
+  const card =
+    document.querySelector(
+      `#homePage [data-post-card="${cssEscape(
+        postId(id)
+      )}"]`
+    );
+
+  const post =
+    getPost(id);
+
+  if (
+    !card ||
+    !post ||
+    isPostExpired(post)
+  ) {
+    card?.remove();
+    return;
+  }
+
+  const holder =
+    document.createElement(
+      "div"
+    );
+
+  holder.innerHTML =
+    renderPostCard(
+      post
+    );
+
+  const newCard =
+    holder.firstElementChild;
+
+  card.replaceWith(
+    newCard
+  );
+
+  if (newCard) {
+    syncPostTextOverflow(
+      newCard
+    );
+  }
+}
+
+function toggleHomePostText(id) {
+  const container =
+    document.getElementById(
+      `postText-${id}`
+    );
+
+  const toggle =
+    document.getElementById(
+      `postTextToggle-${id}`
+    );
+
+  if (!container) return;
+
+  const expanded =
+    container.dataset.expanded ===
+    "true";
+
+  const collapsedHeight =
+    Number(
+      container.dataset
+        .collapsedHeight
+    ) ||
+    POST_TEXT_COLLAPSED_MEDIA_HEIGHT_PX;
+
+  if (expanded) {
+    container.style.maxHeight =
+      `${collapsedHeight}px`;
+    container.style.overflow =
+      "hidden";
+    container.dataset.expanded =
+      "false";
+
+    if (toggle) {
+      toggle.textContent =
+        "Show more";
+    }
+  } else {
+    container.style.maxHeight =
+      `${container.scrollHeight}px`;
+    container.style.overflow =
+      "visible";
+    container.dataset.expanded =
+      "true";
+
+    if (toggle) {
+      toggle.textContent =
+        "Show less";
+    }
+  }
+}
+
+/*
+ * After posts are rendered/mounted, measure each collapsed
+ * post-text-surface's real rendered height against its
+ * scrollHeight. If the text doesn't actually overflow the
+ * collapsed box (short text, or text that only *looked* long
+ * by character count but wraps to fewer lines on a wide
+ * screen), the "Show more" control is hidden so it never
+ * appears next to text that isn't actually being cut off.
+ * If it DOES overflow, the control is revealed. This makes
+ * the collapse/expand behavior driven by actual rendered
+ * layout rather than a fixed character-count guess.
+ */
+function syncPostTextOverflow(root) {
+  const scope =
+    root && typeof root.querySelectorAll === "function"
+      ? root
+      : document;
+
+  const surfaces = scope.querySelectorAll(
+    '.post-text-surface[data-expanded="false"]'
+  );
+
+  surfaces.forEach(surface => {
+    const id = surface.id.replace(
+      "postText-",
+      ""
+    );
+
+    const toggle = document.getElementById(
+      `postTextToggle-${id}`
+    );
+
+    if (!toggle) return;
+
+    const isOverflowing =
+      surface.scrollHeight >
+      surface.clientHeight + 2;
+
+    toggle.hidden = !isOverflowing;
+  });
+}
+
+function renderPostCard(post) {
+  const id =
+    postId(post.id);
+
+  const owner =
+    String(post.uid) ===
+    String(uid());
+
+  const liked =
+    isLiked(post);
+
+  const saved =
+    isSaved(post);
+
+  const date =
+    getPostDate(post);
+
+  const text =
+    renderPostText(
+      post
+    );
+
+  const postPlainText =
+    getPostText(post).trim();
+
+  const background =
+    getPostBackground(
+      post?.background
+    );
+
+  const name =
+    escapeHtml(
+      getPostAuthor(
+        post
+      )
+    );
+
+  const initialsText =
+    escapeHtml(
+      initials(
+        getPostAuthor(
+          post
+        )
+      )
+    );
+
+  const expiry =
+    expiryLabel(
+      post
+    );
+
+  const edited =
+    !!post?.editedAt;
+
+  const media =
+    getPostMedia(post);
+
+  const hasMedia =
+    !!media;
+
+  const collapsedHeightPx =
+    hasMedia
+      ? POST_TEXT_COLLAPSED_MEDIA_HEIGHT_PX
+      : POST_TEXT_COLLAPSED_TEXT_ONLY_HEIGHT_PX;
+
+  const postTextBlock = postPlainText
+    ? `
+            <div
+              class="post-content"
+              style="
+                margin-top:13px;
+                line-height:1.65;
+                overflow-wrap:anywhere;
+                max-width:100%;
+                box-sizing:border-box;
+              "
+            >
+              <div
+                class="post-text-surface"
+                id="postText-${escapeHtml(id)}"
+                data-post-background="${escapeHtml(
+                  background.key
+                )}"
+                data-expanded="false"
+                data-collapsed-height="${collapsedHeightPx}"
+                style="
+                  width:100%;
+                  max-width:100%;
+                  box-sizing:border-box;
+                  padding:16px 15px;
+                  border-radius:17px;
+                  overflow-wrap:anywhere;
+                  background:${background.background};
+                  color:${background.text};
+                  border:1px solid rgba(127,127,127,.20);
+                  box-shadow:
+                    inset 0 0 0 1px
+                    rgba(255,255,255,.04);
+                  font-size:16px;
+                  font-weight:400;
+                  letter-spacing:.005em;
+                  max-height:${collapsedHeightPx}px;
+                  overflow:hidden;
+                  transition:max-height .2s ease;
+                "
+              >
+                ${text}
+              </div>
+
+              <button
+                type="button"
+                class="btn-link"
+                data-home-action="toggle-text"
+                data-id="${escapeHtml(id)}"
+                id="postTextToggle-${escapeHtml(id)}"
+                hidden
+                style="
+                  margin-top:6px;
+                  background:none;
+                  border:none;
+                  padding:0;
+                  color:var(--accent, #7c5cff);
+                  font-size:13px;
+                  font-weight:600;
+                  cursor:pointer;
+                "
+              >
+                Show more
+              </button>
+            </div>
+          `
+    : "";
+
+  const postMediaBlock = renderPostMedia(post);
+
+  return `
+    <article
+      class="card post-card"
+      data-post-card="${escapeHtml(id)}"
+      data-post-owner="${owner ? "true" : "false"}"
+      data-post-saved="${saved ? "true" : "false"}"
+      style="
+        margin-bottom:14px;
+        overflow:hidden;
+      "
+    >
+      <div
+        style="
+          display:flex;
+          align-items:flex-start;
+          justify-content:space-between;
+          gap:10px;
+        "
+      >
+        <div
+          style="
+            display:flex;
+            align-items:center;
+            gap:10px;
+            min-width:0;
+          "
+        >
+          <div class="avatar" aria-hidden="true">
+            ${initialsText}
+          </div>
+
+          <div style="min-width:0;">
+            <strong
+              style="
+                display:block;
+                overflow:hidden;
+                text-overflow:ellipsis;
+                white-space:nowrap;
+              "
+            >
+              ${name}
+            </strong>
+
+            <div
+              class="small"
+              style="
+                display:flex;
+                gap:5px;
+                align-items:center;
+                flex-wrap:wrap;
+              "
+            >
+              <span>
+                ${escapeHtml(
+                  date
+                    ? formatDate(
+                        date
+                      )
+                    : ""
+                )}
+              </span>
+
+              ${
+                edited
+                  ? `<span aria-label="Edited">· edited</span>`
+                  : ""
+              }
+
+              ${
+                expiry
+                  ? `<span>· ${escapeHtml(expiry)}</span>`
+                  : ""
+              }
+            </div>
+          </div>
+        </div>
+
+        <div
+          class="dropdown-container"
+          style="
+            position:relative;
+            flex:0 0 auto;
+          "
+        >
+          <button
+            type="button"
+            class="icon-btn"
+            data-home-action="menu"
+            data-id="${escapeHtml(id)}"
+            aria-label="Post menu"
+            title="Post options"
+          >
+            ⋯
+          </button>
+
+          <div
+            id="postMenu-${escapeHtml(id)}"
+            class="dropdown-menu hidden"
+            style="
+              position:absolute;
+              right:0;
+              top:42px;
+              z-index:30;
+              min-width:170px;
+            "
+          >
+            ${
+              owner
+                ? `
+                  <button
+                    type="button"
+                    class="dropdown-item"
+                    data-home-action="edit"
+                    data-id="${escapeHtml(id)}"
+                  >
+                    ✏️ Edit post
+                  </button>
+
+                  <button
+                    type="button"
+                    class="dropdown-item"
+                    data-home-action="delete"
+                    data-id="${escapeHtml(id)}"
+                  >
+                    🗑️ Delete post
+                  </button>
+                `
+                : `
+                  <button
+                    type="button"
+                    class="dropdown-item"
+                    data-home-action="save"
+                    data-id="${escapeHtml(id)}"
+                  >
+                    ${
+                      saved
+                        ? "🔖 Remove saved"
+                        : "🔖 Save post"
+                    }
+                  </button>
+
+                  <button
+                    type="button"
+                    class="dropdown-item"
+                    data-home-action="share"
+                    data-id="${escapeHtml(id)}"
+                  >
+                    ↗️ Share post
+                  </button>
+                `
+            }
+          </div>
+        </div>
+      </div>
+
+      ${postMediaBlock}${postTextBlock}
+
+      <div
+        class="post-engagement"
+        style="
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          gap:8px;
+          flex-wrap:wrap;
+          margin-top:13px;
+          padding-top:10px;
+          color:var(--muted);
+          font-size:12px;
+        "
+      >
+        <span>
+          ${postLikes(post)}
+          ${
+            postLikes(post) === 1
+              ? "like"
+              : "likes"
+          }
+        </span>
+
+        <span>
+          ${postComments(post)}
+          ${
+            postComments(post) === 1
+              ? "comment"
+              : "comments"
+          }
+        </span>
+      </div>
+
+      <div
+        class="post-actions"
+        style="
+          display:grid;
+          grid-template-columns:
+            repeat(4,minmax(0,1fr));
+          gap:6px;
+          margin-top:8px;
+          padding-top:9px;
+          border-top:1px solid var(--border);
+        "
+      >
+        <button
+          type="button"
+          class="btn secondary"
+          data-home-action="like"
+          data-id="${escapeHtml(id)}"
+          ${
+            pendingLikeIds.has(id)
+              ? "disabled"
+              : ""
+          }
+          style="
+            min-width:0;
+            padding:8px 3px;
+            font-size:12px;
+            white-space:nowrap;
+            overflow:hidden;
+            text-overflow:ellipsis;
+          "
+        >
+          ${
+            liked
+              ? "❤️"
+              : "🤍"
+          }
+          ${
+            liked
+              ? "Liked"
+              : "Like"
+          } · ${postLikes(post)}
+        </button>
+
+        <button
+          type="button"
+          class="btn secondary"
+          data-home-action="comment"
+          data-id="${escapeHtml(id)}"
+          style="
+            min-width:0;
+            padding:8px 3px;
+            font-size:12px;
+            white-space:nowrap;
+            overflow:hidden;
+            text-overflow:ellipsis;
+          "
+        >
+          💬 Comment · ${postComments(post)}
+        </button>
+
+        <button
+          type="button"
+          class="btn secondary"
+          data-home-action="save"
+          data-id="${escapeHtml(id)}"
+          ${
+            pendingSaveIds.has(id)
+              ? "disabled"
+              : ""
+          }
+          style="
+            min-width:0;
+            padding:8px 3px;
+            font-size:12px;
+            white-space:nowrap;
+            overflow:hidden;
+            text-overflow:ellipsis;
+          "
+        >
+          ${
+            saved
+              ? "🔖 Saved"
+              : "🔖 Save"
+          }
+        </button>
+
+        <button
+          type="button"
+          class="btn secondary"
+          data-home-action="share"
+          data-id="${escapeHtml(id)}"
+          style="
+            min-width:0;
+            padding:8px 3px;
+            font-size:12px;
+            white-space:nowrap;
+            overflow:hidden;
+            text-overflow:ellipsis;
+          "
+        >
+          ↗️ Share
+        </button>
+      </div>
+    </article>
+  `;
+}
+
+function renderQuickActions() {
+  return `
+    <section
+      class="quick-grid"
+      style="margin-bottom:20px;"
+    >
+      <button
+        type="button"
+        class="quick"
+        data-quick="post"
+      >
+        <span class="quick-icon">
+          ✍️
+        </span>
+
+        <strong>
+          Create post
+        </strong>
+
+        <span class="small">
+          Share something
+        </span>
+      </button>
+
+      <button
+        type="button"
+        class="quick"
+        data-quick="chat"
+      >
+        <span class="quick-icon">
+          💬
+        </span>
+
+        <strong>
+          Start chat
+        </strong>
+
+        <span class="small">
+          Talk to someone
+        </span>
+      </button>
+
+      <button
+        type="button"
+        class="quick"
+        data-quick="skill"
+      >
+        <span class="quick-icon">
+          ⏱️
+        </span>
+
+        <strong>
+          Discover a skill
+        </strong>
+
+        <span class="small">
+          Trade your time
+        </span>
+      </button>
+
+      <button
+        type="button"
+        class="quick"
+        data-quick="sell"
+      >
+        <span class="quick-icon">
+          🛍️
+        </span>
+
+        <strong>
+          Explore Marvel Market
+        </strong>
+
+        <span class="small">
+          Open the market
+        </span>
+      </button>
+    </section>
+  `;
+}
+
+function renderSearchCard() {
+  const filters = [
+    ["all", "All"],
+    ["mine", "My posts"],
+    ["saved", "Saved"]
+  ];
+
+  return `
+    <section
+      class="card home-search-card"
+      style="
+        margin-bottom:14px;
+        padding:13px;
+        border:1px solid rgba(124,58,237,.20);
+        background:
+          linear-gradient(
+            135deg,
+            rgba(124,58,237,.10),
+            rgba(139,92,246,.035)
+          );
+      "
+    >
+      <div
+        style="
+          display:flex;
+          align-items:center;
+          gap:8px;
+          margin-bottom:9px;
+        "
+      >
+        <span
+          aria-hidden="true"
+          style="font-size:18px;"
+        >
+          🔎
+        </span>
+
+        <strong>
+          Find something in your feed
+        </strong>
+      </div>
+
+      <div style="position:relative;">
+        <input
+          id="communityFeedSearch"
+          class="input"
+          type="search"
+          value="${escapeHtml(
+            homeSearchTerm
+          )}"
+          placeholder="Search posts or people…"
+          autocomplete="off"
+          aria-label="Search community posts"
+          style="
+            width:100%;
+            min-height:45px;
+            padding-right:44px;
+            border-radius:14px;
+            box-sizing:border-box;
+          "
+        >
+
+        <button
+          id="clearCommunitySearch"
+          class="icon-btn"
+          type="button"
+          aria-label="Clear search"
+          title="Clear search"
+          style="
+            display:${
+              homeSearchTerm
+                ? "inline-flex"
+                : "none"
+            };
+            position:absolute;
+            right:6px;
+            top:50%;
+            transform:translateY(-50%);
+            width:34px;
+            height:34px;
+          "
+        >
+          ✕
+        </button>
+      </div>
+
+      <div
+        class="home-filter-row"
+        style="
+          display:flex;
+          gap:7px;
+          overflow:auto;
+          padding:9px 0 2px;
+          scrollbar-width:none;
+        "
+        role="tablist"
+        aria-label="Feed filters"
+      >
+        ${filters.map(
+          ([value, label]) => `
+            <button
+              type="button"
+              class="btn ${
+                homeFeedFilter === value
+                  ? "btn-primary"
+                  : "secondary"
+              }"
+              data-feed-filter="${value}"
+              role="tab"
+              aria-selected="${
+                homeFeedFilter === value
+                  ? "true"
+                  : "false"
+              }"
+              style="
+                flex:0 0 auto;
+                padding:7px 11px;
+                font-size:12px;
+                border-radius:999px;
+              "
+            >
+              ${label}
+            </button>
+          `
+        ).join("")}
+      </div>
+
+      <div
+        id="communitySearchStatus"
+        class="small"
+        aria-live="polite"
+        style="
+          margin:6px 2px 0;
+          min-height:15px;
+        "
+      ></div>
+    </section>
+  `;
+}
+
+function renderPosts() {
+  if (!Array.isArray(state.posts)) {
+    return `
+      <section
+        class="card"
+        aria-live="polite"
+        style="
+          text-align:center;
+          padding:34px 18px;
+        "
+      >
+        <div style="font-size:34px;">
+          ⏳
+        </div>
+
+        <h3
+          style="
+            margin:8px 0 5px;
+          "
+        >
+          Loading your community
+        </h3>
+
+        <p
+          class="small"
+          style="margin:0;"
+        >
+          Getting the latest posts ready for you…
+        </p>
+      </section>
+    `;
+  }
+
+  const posts =
+    getPosts()
+      .filter(
+        post =>
+          !isPostExpired(post)
+      );
+
+  return `
+    <section id="communityPosts">
+      ${
+        posts.length
+          ? posts
+              .map(
+                renderPostCard
+              )
+              .join("")
+          : `
+            <section
+              class="card"
+              id="emptyCommunityFeed"
+              style="
+                text-align:center;
+                padding:32px 18px;
+              "
+            >
+              <div
+                style="
+                  font-size:40px;
+                "
+              >
+                🌌
+              </div>
+
+              <h3
+                style="
+                  margin:8px 0;
+                "
+              >
+                Your community feed is quiet
+              </h3>
+
+              <p
+                class="small"
+                style="
+                  max-width:520px;
+                  margin:0 auto 16px;
+                "
+              >
+                Be the first to share something
+                with the Marvel Chat universe.
+              </p>
+
+              <button
+                type="button"
+                class="btn"
+                id="emptyCreatePost"
+              >
+                ✍️ Create the first post
+              </button>
+            </section>
+          `
+      }
+    </section>
+  `;
+}
+
+export function renderHome() {
+  stopDiscoveryCountdown();
+  closeHomeModal();
+
+  const me =
+    currentUserName();
+
+  const greeting =
+    currentUserGreeting();
+
+  return `
+    <div
+      class="page home-page"
+      id="homePage"
+      style="
+        padding-bottom:90px;
+      "
+    >
+      <style>
+        #homePage .home-hero{
+          position:relative;
+          overflow:hidden;
+          margin-bottom:18px;
+          padding:25px 21px;
+          border-radius:24px;
+          color:#fff;
+          background:
+            radial-gradient(
+              circle at 88% 15%,
+              rgba(255,255,255,.18),
+              transparent 34%
+            ),
+            radial-gradient(
+              circle at 12% 88%,
+              rgba(255,255,255,.12),
+              transparent 36%
+            ),
+            linear-gradient(
+              135deg,
+              #4c1d95,
+              #7c3aed 55%,
+              #8b5cf6
+            );
+          box-shadow:
+            0 18px 44px
+            rgba(91,33,182,.22);
+        }
+
+        #homePage .home-hero h1{
+          position:relative;
+          z-index:1;
+          margin:0 0 8px;
+          font-size:
+            clamp(
+              28px,
+              7vw,
+              42px
+            );
+          line-height:1.05;
+        }
+
+        #homePage .home-hero p{
+          position:relative;
+          z-index:1;
+          max-width:650px;
+          margin:0;
+          line-height:1.55;
+          font-size:15px;
+          opacity:.93;
+        }
+
+        #homePage .home-section-head{
+          display:flex;
+          align-items:flex-end;
+          justify-content:space-between;
+          gap:10px;
+          margin:2px 0 10px;
+        }
+
+        #homePage .home-section-head h2{
+          margin:0;
+          font-size:
+            clamp(
+              22px,
+              5vw,
+              30px
+            );
+        }
+
+        #homePage .home-section-head .small{
+          margin-top:3px;
+        }
+
+        #homePage .post-actions button{
+          touch-action:manipulation;
+        }
+
+        #homePage .post-actions button:disabled{
+          opacity:.6;
+        }
+
+        #homePage .home-filter-row{
+          -ms-overflow-style:none;
+        }
+
+        #homePage .post-text-surface strong,
+        #homePage .post-text-surface b{
+          font-weight:900;
+        }
+
+        #homeModalHost #createPostText:empty:before{
+          content:attr(data-placeholder);
+          color:var(--muted);
+          pointer-events:none;
+        }
+
+        #homeModalHost #createPostText:focus{
+          outline:2px solid var(--primary);
+          outline-offset:1px;
+        }
+
+        #homePage .home-filter-row::-webkit-scrollbar{
+          display:none;
+        }
+
+        @media(max-width:520px){
+          #homePage .home-hero{
+            padding:21px 17px;
+            border-radius:20px;
+          }
+
+          #homePage .home-composer-row{
+            align-items:stretch!important;
+          }
+
+          #homePage .home-composer-row .avatar{
+            display:none;
+          }
+
+          #homePage .home-composer-row #openComposerButton{
+            padding:9px 10px!important;
+          }
+
+          #homePage .post-actions{
+            gap:5px!important;
+          }
+
+          #homePage .post-actions button{
+            font-size:10.5px!important;
+            padding-left:2px!important;
+            padding-right:2px!important;
+          }
+
+          #homePage .post-engagement{
+            font-size:11px!important;
+          }
+        }
+      </style>
+
+      <section
+        class="home-hero"
+        aria-label="Marvel Chat welcome"
+      >
+        <h1>
+          ${escapeHtml(
+            greeting
+          )},
+          ${escapeHtml(me)}
+          👋
+        </h1>
+
+        <p>
+          Your community is moving.
+          Share ideas, meet people,
+          trade skills, explore the
+          Market and keep the
+          conversation going — all
+          in one place.
+        </p>
+      </section>
+
+      ${
+        shouldShowDiscovery()
+          ? renderDiscoveryBanner()
+          : ""
+      }
+
+      ${renderQuickActions()}
+
+      <section
+        class="card home-composer-preview"
+        style="
+          margin-bottom:18px;
+          padding:12px;
+        "
+        aria-label="Create a post"
+      >
+        <div
+          class="home-composer-row"
+          style="
+            display:flex;
+            align-items:center;
+            gap:10px;
+          "
+        >
+          <div
+            class="avatar"
+            aria-hidden="true"
+          >
+            ${escapeHtml(
+              initials(me)
+            )}
+          </div>
+
+          <button
+            type="button"
+            class="input"
+            id="openComposerPreview"
+            style="
+              flex:1;
+              text-align:left;
+              min-height:44px;
+              border-radius:14px;
+              cursor:pointer;
+            "
+          >
+            What’s on your mind,
+            ${escapeHtml(me)}?
+          </button>
+
+          <button
+            type="button"
+            class="btn btn-primary"
+            id="openComposerButton"
+            style="
+              flex:0 0 auto;
+              padding:9px 12px;
+            "
+          >
+            + Post
+          </button>
+        </div>
+
+        <div
+          style="
+            display:flex;
+            align-items:center;
+            gap:8px;
+            flex-wrap:wrap;
+            margin-top:9px;
+          "
+        >
+          <span class="small">
+            ✍️ Text post
+          </span>
+
+          <span
+            class="small"
+            data-media-slot="future"
+          >
+            📷 Photo upload available
+          </span>
+        </div>
+      </section>
+
+      <div
+        class="home-section-head"
+      >
+        <div>
+          <h2>
+            Community feed
+          </h2>
+
+          <div class="small">
+            Discover conversations,
+            ideas and opportunities.
+          </div>
+        </div>
+      </div>
+
+      ${renderSearchCard()}
+
+      ${renderPosts()}
+    </div>
+  `;
 }
 
 async function loadSavedPostIds() {
@@ -2198,7 +3299,10 @@ async function loadSavedPostIds() {
         savedPostIds =
           new Set(
             snapshot.docs.map(
-              item => item.id
+              item =>
+                String(
+                  item.id
+                )
             )
           );
 
@@ -2218,1905 +3322,762 @@ async function loadSavedPostIds() {
   return savedPostsLoadPromise;
 }
 
-async function toggleLike(
+export async function toggleLike(
   id
 ) {
-  const currentUid =
-    uid();
-
-  if (
-    !currentUid ||
-    pendingLikeIds.has(id)
-  ) {
-    return;
+  if (!uid()) {
+    return toast(
+      "Please sign in first."
+    );
   }
 
   const post =
     getPost(id);
 
   if (!post) {
+    return toast(
+      "Post is no longer available."
+    );
+  }
+
+  const idString =
+    postId(id);
+
+  if (
+    pendingLikeIds.has(
+      idString
+    )
+  ) {
     return;
   }
 
-  pendingLikeIds.add(id);
+  pendingLikeIds.add(
+    idString
+  );
 
-  const currentlyLiked =
-    Array.isArray(post.likes)
-      ? post.likes.includes(
-          currentUid
+  const liked =
+    isLiked(post);
+
+  const previousLikes =
+    postLikes(post);
+
+  const previousLikedBy =
+    Array.isArray(
+      post.likedBy
+    )
+      ? [
+          ...post.likedBy
+        ]
+      : [];
+
+  const nextLikedBy =
+    liked
+      ? previousLikedBy.filter(
+          value =>
+            String(value) !==
+            String(uid())
         )
-      : !!post.likedByCurrentUser;
+      : [
+          ...previousLikedBy,
+          uid()
+        ];
+
+  state.posts =
+    getPosts().map(
+      item =>
+        postId(item.id) ===
+        idString
+          ? {
+              ...item,
+              likes:
+                Math.max(
+                  0,
+                  previousLikes +
+                    (
+                      liked
+                        ? -1
+                        : 1
+                    )
+                ),
+              likedBy:
+                nextLikedBy
+            }
+          : item
+    );
+
+  if (
+    Array.isArray(
+      searchPostsCache
+    )
+  ) {
+    searchPostsCache =
+      searchPostsCache.map(
+        item =>
+          postId(item.id) ===
+          idString
+            ? {
+                ...item,
+                likes:
+                  Math.max(
+                    0,
+                    previousLikes +
+                      (
+                        liked
+                          ? -1
+                          : 1
+                      )
+                  ),
+                likedBy:
+                  nextLikedBy
+              }
+            : item
+      );
+  }
+
+  refreshPostCard(
+    idString
+  );
 
   try {
     await updateDoc(
       doc(
         db,
         "posts",
-        id
+        idString
       ),
-      {
-        likes:
-          currentlyLiked
-            ? arrayRemove(
-                currentUid
-              )
-            : arrayUnion(
-                currentUid
+      liked
+        ? {
+            likes:
+              increment(
+                -1
               ),
-        likeCount:
-          increment(
-            currentlyLiked
-              ? -1
-              : 1
-          )
-      }
+            likedBy:
+              arrayRemove(
+                uid()
+              )
+          }
+        : {
+            likes:
+              increment(
+                1
+              ),
+            likedBy:
+              arrayUnion(
+                uid()
+              )
+          }
     );
 
-    const localPost =
-      getPosts().find(
+    markHomeActivity();
+  } catch (error) {
+    state.posts =
+      getPosts().map(
         item =>
           postId(item.id) ===
-          postId(id)
+          idString
+            ? {
+                ...item,
+                likes:
+                  previousLikes,
+                likedBy:
+                  previousLikedBy
+              }
+            : item
       );
 
-    if (localPost) {
-      localPost.likes =
-        Array.isArray(
-          localPost.likes
-        )
-          ? localPost.likes
-          : [];
-
-      if (
-        currentlyLiked
-      ) {
-        localPost.likes =
-          localPost.likes.filter(
-            value =>
-              value !==
-              currentUid
-          );
-      } else if (
-        !localPost.likes.includes(
-          currentUid
-        )
-      ) {
-        localPost.likes.push(
-          currentUid
-        );
-      }
-
-      localPost.likeCount =
-        Math.max(
-          0,
-          Number(
-            localPost.likeCount
-          ) +
-            (
-              currentlyLiked
-                ? -1
-                : 1
-            )
+    if (
+      Array.isArray(
+        searchPostsCache
+      )
+    ) {
+      searchPostsCache =
+        searchPostsCache.map(
+          item =>
+            postId(item.id) ===
+            idString
+              ? {
+                  ...item,
+                  likes:
+                    previousLikes,
+                  likedBy:
+                    previousLikedBy
+                }
+              : item
         );
     }
 
-    await filterRenderedPosts(
-      homeSearchTerm
-    );
-  } catch (error) {
-    console.error(
-      "Like failed:",
-      error
+    refreshPostCard(
+      idString
     );
 
     toast(
       friendly(error)
     );
   } finally {
-    pendingLikeIds.delete(id);
+    pendingLikeIds.delete(
+      idString
+    );
+
+    refreshPostCard(
+      idString
+    );
   }
 }
 
-async function savePost(
+export async function savePost(
   id
 ) {
-  const currentUid =
-    uid();
+  if (!uid()) {
+    return toast(
+      "Please sign in first."
+    );
+  }
+
+  const post =
+    getPost(id);
+
+  if (!post) {
+    return toast(
+      "Post is no longer available."
+    );
+  }
+
+  const idString =
+    postId(id);
 
   if (
-    !currentUid ||
-    pendingSaveIds.has(id)
+    pendingSaveIds.has(
+      idString
+    )
   ) {
     return;
   }
 
-  pendingSaveIds.add(id);
+  pendingSaveIds.add(
+    idString
+  );
 
-  const currentlySaved =
-    savedPostIds.has(id);
+  const wasSaved =
+    savedPostIds.has(
+      idString
+    );
+
+  if (wasSaved) {
+    savedPostIds.delete(
+      idString
+    );
+  } else {
+    savedPostIds.add(
+      idString
+    );
+  }
+
+  refreshPostCard(
+    idString
+  );
 
   try {
-    const savedRef =
+    const ref =
       doc(
         db,
         "users",
-        currentUid,
+        uid(),
         "savedPosts",
-        id
+        idString
       );
 
-    if (
-      currentlySaved
-    ) {
+    if (wasSaved) {
       await deleteDoc(
-        savedRef
-      );
-
-      savedPostIds.delete(
-        id
+        ref
       );
     } else {
       await setDoc(
-        savedRef,
+        ref,
         {
-          postId: id,
-          uid: currentUid,
-          createdAt:
+          postId:
+            idString,
+          savedAt:
             serverTimestamp()
         }
       );
+    }
 
+    savedPostsLoadedForUid =
+      uid();
+
+    markHomeActivity();
+
+    toast(
+      wasSaved
+        ? "Post removed from saved posts."
+        : "Post saved."
+    );
+  } catch (error) {
+    if (wasSaved) {
       savedPostIds.add(
-        id
+        idString
+      );
+    } else {
+      savedPostIds.delete(
+        idString
       );
     }
 
-    await filterRenderedPosts(
-      homeSearchTerm
-    );
-  } catch (error) {
-    console.error(
-      "Save post failed:",
-      error
+    refreshPostCard(
+      idString
     );
 
     toast(
       friendly(error)
     );
   } finally {
-    pendingSaveIds.delete(id);
+    pendingSaveIds.delete(
+      idString
+    );
+
+    refreshPostCard(
+      idString
+    );
   }
 }
 
-async function sharePost(
+async function fetchPostImageFile(
+  media
+) {
+  if (!media?.url) return null;
+
+  try {
+    const response =
+      await fetch(
+        media.url,
+        { mode: "cors" }
+      );
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const blob =
+      await response.blob();
+
+    const extension =
+      (media.format &&
+        String(
+          media.format
+        ).toLowerCase()) ||
+      (blob.type &&
+        blob.type.split(
+          "/"
+        )[1]) ||
+      "jpg";
+
+    return new File(
+      [blob],
+      `post-image.${extension}`,
+      {
+        type:
+          blob.type ||
+          "image/jpeg"
+      }
+    );
+  } catch {
+    return null;
+  }
+}
+
+export async function sharePostImage(
   id
 ) {
   const post =
     getPost(id);
 
   if (!post) {
-    return;
-  }
-
-  const text =
-    getPostText(post);
-
-  const shareData = {
-    title:
-      getPostAuthor(post),
-    text:
-      text || "Marvel post"
-  };
-
-  try {
-    if (
-      navigator.share
-    ) {
-      await navigator.share(
-        shareData
-      );
-      return;
-    }
-
-    await navigator.clipboard.writeText(
-      text
-        ? text
-        : "Marvel post"
+    return toast(
+      "Post is no longer available."
     );
-
-    toast(
-      "Post copied to clipboard."
-    );
-  } catch (error) {
-    if (
-      error?.name !==
-      "AbortError"
-    ) {
-      console.warn(
-        "Share failed:",
-        error
-      );
-    }
   }
-}
-
-async function sharePostImage(
-  id
-) {
-  const post =
-    getPost(id);
 
   const media =
     getPostMedia(post);
 
-  if (!media) {
-    toast(
-      "This post has no image."
+  if (!media?.url) {
+    return toast(
+      "This post has no image to share."
     );
-
-    return;
   }
 
   try {
+    let imageFile = null;
+
     if (
+      navigator.canShare
+    ) {
+      imageFile =
+        await fetchPostImageFile(
+          media
+        );
+    }
+
+    if (
+      imageFile &&
+      navigator.share &&
+      navigator.canShare({
+        files: [imageFile]
+      })
+    ) {
+      /*
+       * Native file share so the Android
+       * share sheet can offer destinations
+       * such as WhatsApp and WhatsApp
+       * Status when the device/browser
+       * supports it.
+       */
+      await navigator.share({
+        files: [imageFile],
+        title:
+          "Marvel Chat photo"
+      });
+    } else if (
       navigator.share
     ) {
+      /*
+       * File sharing unsupported here, so
+       * fall back to sharing the image URL.
+       */
       await navigator.share({
         title:
-          getPostAuthor(post),
-        text:
-          getPostText(post) ||
-          "Marvel post",
+          "Marvel Chat photo",
         url:
           media.url
       });
+    } else if (
+      navigator.clipboard?.writeText
+    ) {
+      /*
+       * No Web Share API support at all,
+       * so copy the image URL to the
+       * clipboard.
+       */
+      await navigator.clipboard.writeText(
+        media.url
+      );
 
-      return;
+      toast(
+        "Image link copied."
+      );
+    } else {
+      toast(
+        "Sharing is not available on this device."
+      );
     }
 
-    await navigator.clipboard.writeText(
-      media.url
-    );
-
-    toast(
-      "Image link copied."
-    );
+    markHomeActivity();
   } catch (error) {
     if (
       error?.name !==
       "AbortError"
     ) {
-      console.warn(
-        "Image share failed:",
-        error
+      toast(
+        friendly(error)
       );
     }
   }
 }
 
-async function showComments(
+export async function sharePost(
   id
 ) {
   const post =
     getPost(id);
 
   if (!post) {
-    return;
+    return toast(
+      "Post is no longer available."
+    );
   }
 
-  const comments =
-    Array.isArray(
-      post.comments
-    )
-      ? post.comments
-      : [];
+  const text =
+    getPostText(
+      post
+    );
 
-  const commentsHtml =
-    comments.length
-      ? comments
-          .map(
-            comment => `
-              <div
-                style="
-                  padding:10px 0;
-                  border-bottom:1px solid var(--border,rgba(127,127,127,.18));
-                "
-              >
-                <strong>
-                  ${escapeHtml(
-                    comment.displayName ||
-                    comment.username ||
-                    "User"
-                  )}
-                </strong>
-
-                <div
-                  style="
-                    margin-top:4px;
-                    white-space:pre-wrap;
-                    overflow-wrap:anywhere;
-                  "
-                >
-                  ${escapeHtml(
-                    comment.text ||
-                    ""
-                  )}
-                </div>
-              </div>
-            `
-          )
-          .join("")
-      : `
-          <div
-            class="small"
-            style="
-              padding:16px 0;
-              text-align:center;
-            "
-          >
-            No comments yet.
-          </div>
-        `;
-
-  showHomeModal(
-    `
-      <div
-        class="card"
-        style="
-          max-width:620px;
-          width:min(620px,calc(100vw - 24px));
-          max-height:min(85vh,760px);
-          overflow:auto;
-        "
-      >
-        <div
-          style="
-            display:flex;
-            align-items:center;
-            justify-content:space-between;
-            gap:12px;
-          "
-        >
-          <h3
-            style="margin:0;"
-          >
-            Comments
-          </h3>
-
-          <button
-            type="button"
-            class="icon-btn"
-            data-modal-close
-            aria-label="Close"
-          >
-            ×
-          </button>
-        </div>
-
-        <div
-          style="
-            margin-top:12px;
-          "
-        >
-          ${commentsHtml}
-        </div>
-
-        <form
-          id="homeCommentForm"
-          style="
-            margin-top:14px;
-            display:flex;
-            gap:8px;
-          "
-        >
-          <input
-            id="homeCommentInput"
-            maxlength="1000"
-            placeholder="Write a comment..."
-            style="
-              flex:1;
-              min-width:0;
-            "
-            required
-          />
-
-          <button
-            type="submit"
-            class="btn btn-primary"
-          >
-            Send
-          </button>
-        </form>
-      </div>
-    `,
-    {
-      onOpen: modal => {
-        modal
-          .querySelector(
-            "#homeCommentForm"
-          )
-          ?.addEventListener(
-            "submit",
-            async event => {
-              event.preventDefault();
-
-              const input =
-                modal.querySelector(
-                  "#homeCommentInput"
-                );
-
-              const value =
-                String(
-                  input?.value ||
-                  ""
-                ).trim();
-
-              if (!value) {
-                return;
-              }
-
-              try {
-                await addDoc(
-                  collection(
-                    db,
-                    "posts",
-                    id,
-                    "comments"
-                  ),
-                  {
-                    uid:
-                      uid(),
-                    displayName:
-                      currentUserName(),
-                    text:
-                      value,
-                    createdAt:
-                      serverTimestamp()
-                  }
-                );
-
-                toast(
-                  "Comment added."
-                );
-
-                closeHomeModal();
-              } catch (error) {
-                console.error(
-                  "Comment failed:",
-                  error
-                );
-
-                toast(
-                  friendly(error)
-                );
-              }
-            }
-          );
-      }
-    }
-  );
-}
-
-function showDeletePostConfirmation(
-  id
-) {
-  showHomeModal(
-    `
-      <div
-        class="card"
-        style="
-          width:min(440px,calc(100vw - 24px));
-        "
-      >
-        <h3
-          style="
-            margin-top:0;
-          "
-        >
-          Delete post?
-        </h3>
-
-        <p
-          class="small"
-        >
-          This action cannot be undone.
-        </p>
-
-        <div
-          style="
-            display:flex;
-            justify-content:flex-end;
-            gap:8px;
-            margin-top:18px;
-          "
-        >
-          <button
-            type="button"
-            class="btn secondary"
-            data-modal-close
-          >
-            Cancel
-          </button>
-
-          <button
-            type="button"
-            class="btn danger"
-            id="confirmHomeDelete"
-          >
-            Delete
-          </button>
-        </div>
-      </div>
-    `,
-    {
-      onOpen: modal => {
-        modal
-          .querySelector(
-            "#confirmHomeDelete"
-          )
-          ?.addEventListener(
-            "click",
-            async () => {
-              try {
-                await deleteDoc(
-                  doc(
-                    db,
-                    "posts",
-                    id
-                  )
-                );
-
-                state.posts =
-                  getPosts().filter(
-                    post =>
-                      postId(
-                        post.id
-                      ) !==
-                      postId(id)
-                  );
-
-                searchPostsCache =
-                  Array.isArray(
-                    searchPostsCache
-                  )
-                    ? searchPostsCache.filter(
-                        post =>
-                          postId(
-                            post.id
-                          ) !==
-                          postId(id)
-                      )
-                    : searchPostsCache;
-
-                closeHomeModal();
-
-                await filterRenderedPosts(
-                  homeSearchTerm
-                );
-
-                toast(
-                  "Post deleted."
-                );
-              } catch (error) {
-                console.error(
-                  "Delete post failed:",
-                  error
-                );
-
-                toast(
-                  friendly(error)
-                );
-              }
-            }
-          );
-      }
-    }
-  );
-}
-
-function showEditPost(
-  id
-) {
-  const post =
-    getPost(id);
-
-  if (!post) {
-    return;
-  }
-
-  const existingMedia =
+  const media =
     getPostMedia(post);
 
-  editRemoveExistingPhoto =
-    false;
-
-  showHomeModal(
-    `
-      <div
-        class="card"
-        style="
-          width:min(620px,calc(100vw - 24px));
-          max-height:88vh;
-          overflow:auto;
-        "
-      >
-        <div
-          style="
-            display:flex;
-            align-items:center;
-            justify-content:space-between;
-            gap:12px;
-          "
-        >
-          <h3
-            style="margin:0;"
-          >
-            Edit post
-          </h3>
-
-          <button
-            type="button"
-            class="icon-btn"
-            data-modal-close
-            aria-label="Close"
-          >
-            ×
-          </button>
-        </div>
-
-        <form
-          id="editHomePostForm"
-          style="
-            margin-top:15px;
-          "
-        >
-          <textarea
-            id="editHomePostText"
-            maxlength="5000"
-            rows="7"
-            style="
-              width:100%;
-              box-sizing:border-box;
-              resize:vertical;
-            "
-          >${escapeHtml(
-            getPostText(post)
-          )}</textarea>
-
-          ${
-            existingMedia
-              ? `
-                <div
-                  id="editExistingMedia"
-                  style="
-                    margin-top:12px;
-                  "
-                >
-                  <div
-                    class="small"
-                    style="
-                      margin-bottom:6px;
-                    "
-                  >
-                    Current photo
-                  </div>
-
-                  <img
-                    src="${escapeHtml(
-                      existingMedia.url
-                    )}"
-                    alt="Current post photo"
-                    style="
-                      display:block;
-                      width:100%;
-                      max-height:280px;
-                      object-fit:cover;
-                      border-radius:14px;
-                    "
-                  />
-
-                  <button
-                    type="button"
-                    class="btn secondary"
-                    id="removeExistingHomePhoto"
-                    style="
-                      margin-top:8px;
-                    "
-                  >
-                    Remove photo
-                  </button>
-                </div>
-              `
-              : ""
-          }
-
-          <input
-            id="editHomePhotoInput"
-            type="file"
-            accept="image/*"
-            style="
-              display:block;
-              margin-top:14px;
-            "
-          />
-
-          <div
-            id="editHomePhotoPreview"
-            style="
-              margin-top:10px;
-            "
-          ></div>
-
-          <div
-            style="
-              display:flex;
-              justify-content:flex-end;
-              gap:8px;
-              margin-top:18px;
-            "
-          >
-            <button
-              type="button"
-              class="btn secondary"
-              data-modal-close
-            >
-              Cancel
-            </button>
-
-            <button
-              type="submit"
-              class="btn btn-primary"
-              id="saveEditedHomePost"
-            >
-              Save changes
-            </button>
-          </div>
-        </form>
-      </div>
-    `,
-    {
-      onOpen: modal => {
-        const input =
-          modal.querySelector(
-            "#editHomePhotoInput"
+  const shareUrl =
+    (() => {
+      try {
+        const url =
+          new URL(
+            window.location.href
           );
 
-        const preview =
-          modal.querySelector(
-            "#editHomePhotoPreview"
-          );
+        url.hash =
+          `post-${postId(
+            id
+          )}`;
 
-        input?.addEventListener(
-          "change",
-          () => {
-            const file =
-              input.files?.[0];
-
-            if (!file) {
-              clearEditPendingImage();
-              if (preview) {
-                preview.innerHTML =
-                  "";
-              }
-              return;
-            }
-
-            if (
-              file.size >
-              HOME_MEDIA_MAX_FILE_BYTES
-            ) {
-              toast(
-                "Image is too large. Maximum size is 10 MB."
-              );
-
-              input.value =
-                "";
-
-              return;
-            }
-
-            clearEditPendingImage();
-
-            editPendingImage =
-              file;
-
-            editPendingImagePreviewUrl =
-              URL.createObjectURL(
-                file
-              );
-
-            if (preview) {
-              preview.innerHTML = `
-                <img
-                  src="${escapeHtml(
-                    editPendingImagePreviewUrl
-                  )}"
-                  alt="New photo preview"
-                  style="
-                    display:block;
-                    width:100%;
-                    max-height:280px;
-                    object-fit:cover;
-                    border-radius:14px;
-                  "
-                />
-              `;
-            }
-          }
-        );
-
-        modal
-          .querySelector(
-            "#removeExistingHomePhoto"
-          )
-          ?.addEventListener(
-            "click",
-            () => {
-              editRemoveExistingPhoto =
-                true;
-
-              toast(
-                "The existing photo will be removed when you save."
-              );
-            }
-          );
-
-        modal
-          .querySelector(
-            "#editHomePostForm"
-          )
-          ?.addEventListener(
-            "submit",
-            async event => {
-              event.preventDefault();
-
-              const text =
-                normalizePostText(
-                  modal.querySelector(
-                    "#editHomePostText"
-                  )?.value
-                );
-
-              const button =
-                modal.querySelector(
-                  "#saveEditedHomePost"
-                );
-
-              if (
-                !text &&
-                !existingMedia &&
-                !editPendingImage
-              ) {
-                toast(
-                  "Add some text or a photo."
-                );
-
-                return;
-              }
-
-              if (button) {
-                button.disabled =
-                  true;
-              }
-
-              try {
-                let media =
-                  existingMedia;
-
-                if (
-                  editRemoveExistingPhoto
-                ) {
-                  media =
-                    null;
-                }
-
-                if (
-                  editPendingImage
-                ) {
-                  media =
-                    await uploadHomeImage(
-                      editPendingImage
-                    );
-                }
-
-                const update = {
-                  text,
-                  updatedAt:
-                    serverTimestamp()
-                };
-
-                if (
-                  media
-                ) {
-                  update.media =
-                    media;
-                } else {
-                  update.media =
-                    null;
-                }
-
-                await updateDoc(
-                  doc(
-                    db,
-                    "posts",
-                    id
-                  ),
-                  update
-                );
-
-                const localPost =
-                  getPosts().find(
-                    item =>
-                      postId(
-                        item.id
-                      ) ===
-                      postId(id)
-                  );
-
-                if (
-                  localPost
-                ) {
-                  localPost.text =
-                    text;
-                  localPost.content =
-                    text;
-                  localPost.media =
-                    media;
-                  localPost.updatedAt =
-                    new Date();
-                }
-
-                searchPostsCache =
-                  Array.isArray(
-                    searchPostsCache
-                  )
-                    ? searchPostsCache.map(
-                        item =>
-                          postId(
-                            item.id
-                          ) ===
-                          postId(id)
-                            ? {
-                                ...item,
-                                ...update,
-                                text,
-                                content:
-                                  text,
-                                media
-                              }
-                            : item
-                      )
-                    : searchPostsCache;
-
-                closeHomeModal();
-
-                await filterRenderedPosts(
-                  homeSearchTerm
-                );
-
-                toast(
-                  "Post updated."
-                );
-              } catch (error) {
-                console.error(
-                  "Edit post failed:",
-                  error
-                );
-
-                toast(
-                  friendly(error)
-                );
-              } finally {
-                if (button) {
-                  button.disabled =
-                    false;
-                }
-              }
-            }
-          );
+        return url.href;
+      } catch {
+        return window.location.href;
       }
-    }
-  );
-}
-
-function showCreatePost() {
-  clearPendingHomeImage();
-
-  const defaultExpiry =
-    POST_EXPIRY_OPTIONS[1];
-
-  showHomeModal(
-    `
-      <div
-        class="card"
-        style="
-          width:min(640px,calc(100vw - 24px));
-          max-height:90vh;
-          overflow:auto;
-        "
-      >
-        <div
-          style="
-            display:flex;
-            align-items:center;
-            justify-content:space-between;
-            gap:12px;
-          "
-        >
-          <div>
-            <h3
-              style="margin:0;"
-            >
-              Create a post
-            </h3>
-
-            <div
-              class="small"
-              style="
-                margin-top:4px;
-              "
-            >
-              Share something with the community.
-            </div>
-          </div>
-
-          <button
-            type="button"
-            class="icon-btn"
-            data-modal-close
-            aria-label="Close"
-          >
-            ×
-          </button>
-        </div>
-
-        <form
-          id="createHomePostForm"
-          style="
-            margin-top:16px;
-          "
-        >
-          <textarea
-            id="homePostText"
-            maxlength="5000"
-            rows="7"
-            placeholder="What's on your mind?"
-            style="
-              width:100%;
-              box-sizing:border-box;
-              resize:vertical;
-            "
-          ></textarea>
-
-          <div
-            style="
-              margin-top:12px;
-            "
-          >
-            <label
-              for="homePostPhoto"
-              class="small"
-            >
-              Add a photo
-            </label>
-
-            <input
-              id="homePostPhoto"
-              type="file"
-              accept="image/*"
-              style="
-                display:block;
-                width:100%;
-                margin-top:6px;
-              "
-            />
-
-            <div
-              class="small"
-              style="
-                margin-top:5px;
-              "
-            >
-              Up to 2 Home photo posts per rolling 24 hours.
-            </div>
-
-            <div
-              id="homePostPhotoPreview"
-              style="
-                margin-top:10px;
-              "
-            ></div>
-          </div>
-
-          <div
-            style="
-              margin-top:13px;
-            "
-          >
-            <label
-              for="homePostExpiry"
-              class="small"
-            >
-              Post expiry
-            </label>
-
-            <select
-              id="homePostExpiry"
-              style="
-                display:block;
-                width:100%;
-                margin-top:6px;
-              "
-            >
-              ${POST_EXPIRY_OPTIONS.map(
-                option => `
-                  <option
-                    value="${escapeHtml(
-                      option.value
-                    )}"
-                    ${
-                      option.value ===
-                      defaultExpiry.value
-                        ? "selected"
-                        : ""
-                    }
-                  >
-                    ${escapeHtml(
-                      option.label
-                    )}
-                  </option>
-                `
-              ).join("")}
-            </select>
-          </div>
-
-          <div
-            style="
-              display:flex;
-              justify-content:flex-end;
-              gap:8px;
-              margin-top:18px;
-            "
-          >
-            <button
-              type="button"
-              class="btn secondary"
-              data-modal-close
-            >
-              Cancel
-            </button>
-
-            <button
-              type="submit"
-              class="btn btn-primary"
-              id="publishHomePost"
-            >
-              Publish
-            </button>
-          </div>
-        </form>
-      </div>
-    `,
-    {
-      onOpen: modal => {
-        const fileInput =
-          modal.querySelector(
-            "#homePostPhoto"
-          );
-
-        const preview =
-          modal.querySelector(
-            "#homePostPhotoPreview"
-          );
-
-        fileInput?.addEventListener(
-          "change",
-          () => {
-            const file =
-              fileInput.files?.[0];
-
-            clearPendingHomeImage();
-
-            if (!file) {
-              if (preview) {
-                preview.innerHTML =
-                  "";
-              }
-
-              return;
-            }
-
-            if (
-              file.size >
-              HOME_MEDIA_MAX_FILE_BYTES
-            ) {
-              toast(
-                "Image is too large. Maximum size is 10 MB."
-              );
-
-              fileInput.value =
-                "";
-
-              return;
-            }
-
-            pendingHomeImage =
-              file;
-
-            pendingHomeImagePreviewUrl =
-              URL.createObjectURL(
-                file
-              );
-
-            if (preview) {
-              preview.innerHTML = `
-                <img
-                  src="${escapeHtml(
-                    pendingHomeImagePreviewUrl
-                  )}"
-                  alt="Photo preview"
-                  style="
-                    display:block;
-                    width:100%;
-                    max-height:300px;
-                    object-fit:cover;
-                    border-radius:14px;
-                  "
-                />
-              `;
-            }
-          }
-        );
-
-        modal
-          .querySelector(
-            "#createHomePostForm"
-          )
-          ?.addEventListener(
-            "submit",
-            async event => {
-              event.preventDefault();
-
-              const text =
-                normalizePostText(
-                  modal.querySelector(
-                    "#homePostText"
-                  )?.value
-                );
-
-              const button =
-                modal.querySelector(
-                  "#publishHomePost"
-                );
-
-              if (
-                !text &&
-                !pendingHomeImage
-              ) {
-                toast(
-                  "Write something or add a photo."
-                );
-
-                return;
-              }
-
-              if (button) {
-                button.disabled =
-                  true;
-                button.textContent =
-                  "Publishing...";
-              }
-
-              try {
-                await createHomePost({
-                  text,
-                  image:
-                    pendingHomeImage,
-                  expiry:
-                    modal.querySelector(
-                      "#homePostExpiry"
-                    )?.value ||
-                    "1d"
-                });
-
-                closeHomeModal();
-
-                toast(
-                  "Post published."
-                );
-              } catch (error) {
-                console.error(
-                  "Create post failed:",
-                  error
-                );
-
-                toast(
-                  friendly(error)
-                );
-
-                if (button) {
-                  button.disabled =
-                    false;
-                  button.textContent =
-                    "Publish";
-                }
-              }
-            }
-          );
-      }
-    }
-  );
-}
-
-async function uploadHomeImage(
-  file
-) {
-  if (!file) {
-    return null;
-  }
-
-  if (
-    file.size >
-    HOME_MEDIA_MAX_FILE_BYTES
-  ) {
-    throw new Error(
-      "Image is larger than the 10 MB limit."
-    );
-  }
-
-  const prepared =
-    await prepareHomeImage(
-      file
-    );
-
-  const form =
-    new FormData();
-
-  form.append(
-    "file",
-    prepared
-  );
-
-  form.append(
-    "upload_preset",
-    CLOUDINARY_UPLOAD_PRESET
-  );
-
-  const response =
-    await fetch(
-      CLOUDINARY_UPLOAD_URL,
-      {
-        method: "POST",
-        body: form
-      }
-    );
-
-  if (!response.ok) {
-    throw new Error(
-      "Image upload failed."
-    );
-  }
-
-  const result =
-    await response.json();
-
-  const secureUrl =
-    safeMediaUrl(
-      result.secure_url ||
-      result.url
-    );
-
-  if (!secureUrl) {
-    throw new Error(
-      "Cloudinary did not return a valid image URL."
-    );
-  }
-
-  return {
-    type: "image",
-    url: secureUrl,
-    secure_url:
-      secureUrl,
-    public_id:
-      result.public_id || "",
-    width:
-      Number(
-        result.width
-      ) || null,
-    height:
-      Number(
-        result.height
-      ) || null,
-    bytes:
-      Number(
-        result.bytes
-      ) || null,
-    format:
-      result.format || null
-  };
-}
-
-async function prepareHomeImage(
-  file
-) {
-  if (
-    typeof createImageBitmap !==
-      "function"
-  ) {
-    return file;
-  }
-
-  if (
-    typeof OffscreenCanvas ===
-      "undefined"
-  ) {
-    return file;
-  }
+    })();
 
   try {
-    const bitmap =
-      await createImageBitmap(
-        file
-      );
-
-    const scale =
-      Math.min(
-        1,
-        HOME_MEDIA_MAX_DIMENSION /
-          Math.max(
-            bitmap.width,
-            bitmap.height
-          )
-      );
-
-    const width =
-      Math.max(
-        1,
-        Math.round(
-          bitmap.width *
-            scale
-        )
-      );
-
-    const height =
-      Math.max(
-        1,
-        Math.round(
-          bitmap.height *
-            scale
-        )
-      );
-
-    const canvas =
-      new OffscreenCanvas(
-        width,
-        height
-      );
-
-    const context =
-      canvas.getContext(
-        "2d"
-      );
-
-    if (!context) {
-      bitmap.close?.();
-      return file;
-    }
-
-    context.drawImage(
-      bitmap,
-      0,
-      0,
-      width,
-      height
-    );
-
-    bitmap.close?.();
-
-    const blob =
-      await canvas.convertToBlob({
-        type:
-          "image/jpeg",
-        quality:
-          0.82
-      });
+    let imageFile = null;
 
     if (
-      blob.size >
-      HOME_MEDIA_MAX_OUTPUT_BYTES
+      media?.url &&
+      navigator.canShare
     ) {
-      const smallerCanvas =
-        new OffscreenCanvas(
-          Math.max(
-            1,
-            Math.round(
-              width * 0.8
-            )
-          ),
-          Math.max(
-            1,
-            Math.round(
-              height * 0.8
-            )
-          )
+      imageFile =
+        await fetchPostImageFile(
+          media
         );
-
-      const smallerContext =
-        smallerCanvas.getContext(
-          "2d"
-        );
-
-      smallerContext.drawImage(
-        canvas,
-        0,
-        0,
-        smallerCanvas.width,
-        smallerCanvas.height
-      );
-
-      return smallerCanvas.convertToBlob({
-        type:
-          "image/jpeg",
-        quality:
-          0.72
-      });
     }
 
-    return blob;
-  } catch {
-    return file;
-  }
-}
-
-function expiryDateFromValue(
-  value
-) {
-  const option =
-    POST_EXPIRY_OPTIONS.find(
-      item =>
-        item.value ===
-        value
-    ) ||
-    POST_EXPIRY_OPTIONS[1];
-
-  return new Date(
-    Date.now() +
-      option.milliseconds
-  );
-}
-
-async function createHomePost({
-  text,
-  image,
-  expiry
-}) {
-  const currentUid =
-    uid();
-
-  if (!currentUid) {
-    throw new Error(
-      "You must be signed in to create a post."
-    );
-  }
-
-  /*
-   * Cloudinary upload happens before the Firestore
-   * transaction because Firestore cannot roll back a
-   * Cloudinary upload.
-   *
-   * The important security boundary is still Firestore:
-   * the post write and the user's mediaUsage update must
-   * occur atomically.
-   */
-  let media = null;
-
-  if (image) {
-    media =
-      await uploadHomeImage(
-        image
-      );
-  }
-
-  const postRef =
-    doc(
-      collection(
-        db,
-        "posts"
-      )
-    );
-
-  const usageRef =
-    doc(
-      db,
-      "users",
-      currentUid,
-      "mediaUsage",
-      "home"
-    );
-
-  const expiresAt =
-    expiryDateFromValue(
-      expiry
-    );
-
-  const nowMs =
-    Date.now();
-
-  await runTransaction(
-    db,
-    async transaction => {
-      const usageSnap =
-        await transaction.get(
-          usageRef
-        );
-
-      const usageData =
-        usageSnap.exists()
-          ? usageSnap.data()
-          : {};
-
-      const timestamps =
-        Array.isArray(
-          usageData.photoTimestamps
-        )
-          ? usageData.photoTimestamps
-              .map(
-                value => {
-                  if (
-                    typeof value ===
-                    "number"
-                  ) {
-                    return value;
-                  }
-
-                  if (
-                    typeof value?.toMillis ===
-                    "function"
-                  ) {
-                    return value.toMillis();
-                  }
-
-                  if (
-                    typeof value?.seconds ===
-                    "number"
-                  ) {
-                    return (
-                      value.seconds *
-                      1000
-                    );
-                  }
-
-                  return Number(
-                    value
-                  ) || 0;
-                }
-              )
-              .filter(
-                value =>
-                  value >
-                  nowMs -
-                    HOME_MEDIA_WINDOW_MS
-              )
-          : [];
-
+    if (
+      imageFile &&
+      navigator.share &&
+      navigator.canShare({
+        files: [imageFile]
+      })
+    ) {
       /*
-       * Text-only Home posts do not consume the photo quota.
+       * Native file share, so Android can
+       * offer destinations like WhatsApp
+       * and WhatsApp Status. Include the
+       * post text alongside the image when
+       * present, so a complete post shares
+       * as one unit.
        */
-      if (media) {
-        if (
-          timestamps.length >=
-          homePhotoLimit()
-        ) {
-          const oldest =
-            Math.min(
-              ...timestamps
-            );
-
-          throw new Error(
-            `Home photo limit reached. ${homePhotoRetryText(
-              oldest
-            )}`
-          );
-        }
-
-        timestamps.push(
-          nowMs
-        );
-      }
-
-      const postData = {
-        uid:
-          currentUid,
-        displayName:
-          currentUserName(),
+      await navigator.share({
+        files: [imageFile],
+        title:
+          "Marvel Chat post",
         text:
-          text || "",
-        content:
-          text || "",
-        media:
-          media || null,
-        createdAt:
-          serverTimestamp(),
-        updatedAt:
-          serverTimestamp(),
-        expiresAt:
-          Timestamp.fromDate(
-            expiresAt
-          ),
-        likeCount:
-          0,
-        commentCount:
-          0,
-        likes:
-          []
-      };
-
+          text || shareUrl
+      });
+    } else if (
+      navigator.share
+    ) {
       /*
-       * When there is no media, we don't consume a quota
-       * slot. When there is media, both writes are part of
-       * the same transaction.
+       * File sharing unsupported here, so
+       * fall back to sharing the post text
+       * and/or the image URL alongside the
+       * post link.
        */
-      if (media) {
-        transaction.set(
-          usageRef,
-          {
-            photoTimestamps:
-              timestamps,
-            updatedAt:
-              serverTimestamp()
-          },
-          {
-            merge: true
-          }
-        );
-      }
+      await navigator.share({
+        title:
+          "Marvel Chat post",
+        text:
+          media?.url
+            ? [
+                text,
+                media.url
+              ]
+                .filter(Boolean)
+                .join("\n\n")
+            : text,
+        url:
+          shareUrl
+      });
+    } else if (
+      navigator.clipboard?.writeText
+    ) {
+      /*
+       * No Web Share API support at all,
+       * so copy a sensible text/URL
+       * fallback to the clipboard.
+       */
+      const parts = [
+        text,
+        media?.url,
+        shareUrl
+      ].filter(Boolean);
 
-      transaction.set(
-        postRef,
-        postData
+      await navigator.clipboard.writeText(
+        parts.join("\n\n")
+      );
+
+      toast(
+        media?.url && !text
+          ? "Image link copied."
+          : "Post link copied."
+      );
+    } else {
+      toast(
+        "Sharing is not available on this device."
       );
     }
-  );
 
-  /*
-   * LocalStorage is updated only after Firestore accepts
-   * the transaction. It is not used for authorization.
-   */
-  if (media) {
-    recordLocalHomePhotoUse(
-      nowMs
+    markHomeActivity();
+  } catch (error) {
+    if (
+      error?.name !==
+      "AbortError"
+    ) {
+      toast(
+        friendly(error)
+      );
+    }
+  }
+}
+
+function closeHomeModal() {
+  clearPendingHomeImage();
+  clearEditPendingImage();
+
+  if (
+    homeModalEscapeHandler
+  ) {
+    document.removeEventListener(
+      "keydown",
+      homeModalEscapeHandler
     );
+
+    homeModalEscapeHandler =
+      null;
   }
 
-  const optimisticPost = {
-    id:
-      postRef.id,
-    uid:
-      currentUid,
-    displayName:
-      currentUserName(),
-    text:
-      text || "",
-    content:
-      text || "",
-    media:
-      media || null,
-    createdAt:
-      new Date(),
-    updatedAt:
-      new Date(),
-    expiresAt,
-    likeCount:
-      0,
-    commentCount:
-      0,
-    likes:
-      []
-  };
-
-  state.posts = [
-    optimisticPost,
-    ...getPosts()
-  ];
-
-  searchPostsCache =
-    Array.isArray(
-      searchPostsCache
+  document
+    .getElementById(
+      "homeModalHost"
     )
-      ? [
-          optimisticPost,
-          ...searchPostsCache.filter(
-            item =>
-              postId(
-                item.id
-              ) !==
-              postId(
-                optimisticPost.id
-              )
-          )
-        ]
-      : searchPostsCache;
-
-  await filterRenderedPosts(
-    homeSearchTerm
-  );
+    ?.remove();
 }
 
 function showHomeModal(
-  content,
-  options = {}
+  rawHtml
 ) {
   closeHomeModal();
 
-  const modal =
+  const homePage =
+    document.getElementById(
+      "homePage"
+    );
+
+  if (!homePage) {
+    return;
+  }
+
+  const host =
     document.createElement(
       "div"
     );
 
-  modal.id =
-    "homeModal";
+  host.id =
+    "homeModalHost";
 
-  modal.innerHTML = `
-    <div
-      class="home-modal-backdrop"
-      style="
+  host.innerHTML = `
+    <style>
+      #homeModalHost{
         position:fixed;
         inset:0;
-        z-index:9999;
+        z-index:99999;
         display:flex;
         align-items:center;
         justify-content:center;
-        padding:12px;
-        background:rgba(0,0,0,.55);
+        padding:14px;
+        box-sizing:border-box;
+        background:
+          rgba(20,12,45,.50);
+        backdrop-filter:blur(7px);
+        -webkit-backdrop-filter:blur(7px);
+      }
+
+      #homeModalHost
+      .home-modal-shell{
+        width:min(640px,100%);
+        max-height:90vh;
         overflow:auto;
-      "
+        border:
+          1px solid
+          var(--border);
+        border-radius:22px;
+        background:
+          var(--card,var(--surface));
+        color:var(--text);
+        box-shadow:
+          0 24px 70px
+          rgba(0,0,0,.30);
+      }
+
+      #homeModalHost
+      .modal-content{
+        width:100%;
+        max-width:none!important;
+        box-sizing:border-box;
+      }
+
+      #homeModalHost
+      .modal-header{
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:12px;
+        margin-bottom:12px;
+      }
+
+      #homeModalHost
+      .modal-header h3{
+        margin:0;
+      }
+
+      #homeModalHost
+      .modal-body{
+        padding:0;
+      }
+
+      #homeModalHost
+      .modal-footer{
+        display:flex;
+        justify-content:flex-end;
+        align-items:center;
+        gap:9px;
+        flex-wrap:wrap;
+        margin-top:16px;
+      }
+
+      #homeModalHost
+      textarea,
+      #homeModalHost
+      input,
+      #homeModalHost
+      select{
+        box-sizing:border-box;
+        max-width:100%;
+      }
+
+      @media(max-width:520px){
+        #homeModalHost{
+          align-items:flex-end;
+          padding:8px;
+        }
+
+        #homeModalHost
+        .home-modal-shell{
+          max-height:93vh;
+          border-radius:
+            20px 20px 12px 12px;
+        }
+      }
+    </style>
+
+    <div
+      class="home-modal-shell"
+      role="dialog"
+      aria-modal="true"
     >
-      ${content}
+      ${rawHtml}
     </div>
   `;
 
-  document.body.appendChild(
-    modal
+  homePage.appendChild(
+    host
   );
 
-  const backdrop =
-    modal.querySelector(
-      ".home-modal-backdrop"
-    );
-
-  backdrop?.addEventListener(
-    "click",
-    event => {
-      if (
-        event.target ===
-        backdrop
-      ) {
-        closeHomeModal();
-      }
-    }
-  );
-
-  modal
+  host
     .querySelectorAll(
       "[data-modal-close]"
     )
@@ -4127,6 +4088,18 @@ function showHomeModal(
           closeHomeModal
         )
     );
+
+  host.addEventListener(
+    "click",
+    event => {
+      if (
+        event.target ===
+        host
+      ) {
+        closeHomeModal();
+      }
+    }
+  );
 
   homeModalEscapeHandler =
     event => {
@@ -4142,10 +4115,2180 @@ function showHomeModal(
     "keydown",
     homeModalEscapeHandler
   );
+}
 
-  options.onOpen?.(
-    modal
+function showCreatePost() {
+  if (!uid()) {
+    return toast(
+      "Please sign in first."
+    );
+  }
+
+  clearPendingHomeImage();
+
+  const allowanceText =
+    homePhotoAllowanceText();
+
+  const canAddPhoto =
+    homePhotosRemaining() > 0;
+
+  showHomeModal(`
+    <div
+      class="modal-content"
+      style="padding:18px;"
+    >
+      <div class="modal-header">
+        <h3>
+          Create a post
+        </h3>
+
+        <button
+          type="button"
+          class="icon-btn"
+          data-modal-close
+          aria-label="Close"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <div
+          class="small"
+          style="margin-bottom:9px;"
+        >
+          Posting as
+          ${escapeHtml(
+            currentUserName()
+          )}
+        </div>
+
+        ${postEditorToolbarHtml()}
+
+        <div
+          id="createPostText"
+          class="input"
+          contenteditable="true"
+          role="textbox"
+          aria-multiline="true"
+          aria-label="Post text"
+          data-placeholder="What's happening in your Marvel universe?"
+          spellcheck="true"
+          style="
+            min-height:150px;
+            max-height:300px;
+            overflow:auto;
+            padding:13px 14px;
+            border-radius:15px;
+            box-sizing:border-box;
+            line-height:1.55;
+            white-space:pre-wrap;
+            overflow-wrap:anywhere;
+            font-size:16px;
+          "
+        ></div>
+
+        <div
+          style="
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            gap:10px;
+            flex-wrap:wrap;
+            margin-top:7px;
+          "
+        >
+          <span
+            id="createPostTextStatus"
+            class="small"
+            aria-live="polite"
+          >
+            0 / 1000 characters
+          </span>
+
+          <span class="small">
+            Write line by line for a clean,
+            readable post.
+          </span>
+        </div>
+
+        ${postBackgroundPickerHtml()}
+
+        <div
+          style="
+            margin-top:10px;
+            padding:12px;
+            border:1px solid var(--border);
+            border-radius:15px;
+            background:var(--surface);
+          "
+        >
+          <div
+            style="
+              display:flex;
+              align-items:center;
+              justify-content:space-between;
+              gap:10px;
+              flex-wrap:wrap;
+            "
+          >
+            <div>
+              <strong
+                style="
+                  display:block;
+                "
+              >
+                📷 Add a photo
+              </strong>
+
+              <span
+                id="createPostImageStatus"
+                class="small"
+              >
+                ${escapeHtml(
+                  allowanceText
+                )}
+              </span>
+            </div>
+
+            <button
+              type="button"
+              class="btn secondary"
+              id="chooseCreatePostImage"
+              ${
+                canAddPhoto
+                  ? ""
+                  : "disabled"
+              }
+            >
+              ${
+                canAddPhoto
+                  ? "Choose from photos"
+                  : "Daily limit reached"
+              }
+            </button>
+          </div>
+
+          <input
+            id="createPostImageInput"
+            type="file"
+            accept="image/*"
+            style="display:none;"
+            aria-label="Choose a photo"
+          >
+
+          <div
+            id="createPostImagePreview"
+            style="display:none;"
+          ></div>
+
+          <div
+            class="small"
+            style="margin-top:7px;"
+          >
+            Your phone's normal photo picker
+            will open. The image is resized
+            and compressed before upload.
+          </div>
+        </div>
+
+        <div
+          style="
+            display:flex;
+            align-items:flex-end;
+            justify-content:space-between;
+            gap:10px;
+            flex-wrap:wrap;
+            margin-top:10px;
+          "
+        >
+          <label class="small">
+            Post expiry
+
+            <select
+              id="createPostExpiry"
+              class="input"
+              style="margin-top:5px;"
+            >
+              <option value="">
+                No expiry
+              </option>
+
+              ${POST_EXPIRY_OPTIONS.map(
+                option => `
+                  <option
+                    value="${option.value}"
+                  >
+                    ${escapeHtml(
+                      option.label
+                    )}
+                  </option>
+                `
+              ).join("")}
+            </select>
+          </label>
+
+          <span class="small">
+            Maximum 1000 characters · Photo + text or photo only
+          </span>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button
+          type="button"
+          class="btn secondary"
+          data-modal-close
+        >
+          Cancel
+        </button>
+
+        <button
+          type="button"
+          class="btn btn-primary"
+          id="submitCreatePost"
+        >
+          Publish
+        </button>
+      </div>
+    </div>
+  `);
+
+  const input =
+    document.getElementById(
+      "createPostText"
+    );
+
+  const expiryInput =
+    document.getElementById(
+      "createPostExpiry"
+    );
+
+  const button =
+    document.getElementById(
+      "submitCreatePost"
+    );
+
+  const imageInput =
+    document.getElementById(
+      "createPostImageInput"
+    );
+
+  const chooseImageButton =
+    document.getElementById(
+      "chooseCreatePostImage"
+    );
+
+  let selectedBackground =
+    "white";
+
+  updatePostBackgroundPicker(
+    selectedBackground
   );
+
+  renderPendingHomeImage();
+
+  input?.addEventListener(
+    "input",
+    () => {
+      const text =
+        composerPlainText(
+          input
+        );
+
+      const status =
+        document.getElementById(
+          "createPostTextStatus"
+        );
+
+      if (status) {
+        status.textContent =
+          `${text.length} / 1000 characters`;
+      }
+    }
+  );
+
+  document
+    .querySelectorAll(
+      "#homeModalHost [data-post-format]"
+    )
+    .forEach(
+      formatButton => {
+        formatButton.addEventListener(
+          "mousedown",
+          event =>
+            event.preventDefault()
+        );
+
+        formatButton.addEventListener(
+          "click",
+          event => {
+            event.preventDefault();
+
+            try {
+              input?.focus();
+
+              document.execCommand(
+                "bold",
+                false,
+                formatButton.dataset
+                  .postFormat ===
+                  "bold"
+              );
+
+              input?.dispatchEvent(
+                new Event(
+                  "input",
+                  {
+                    bubbles:
+                      true
+                  }
+                )
+              );
+            } catch {}
+          }
+        );
+      }
+    );
+
+  document
+    .querySelectorAll(
+      "#homeModalHost [data-post-background]"
+    )
+    .forEach(
+      backgroundButton => {
+        backgroundButton.addEventListener(
+          "click",
+          () => {
+            selectedBackground =
+              getPostBackground(
+                backgroundButton
+                  .dataset
+                  .postBackground
+              ).key;
+
+            updatePostBackgroundPicker(
+              selectedBackground
+            );
+          }
+        );
+      }
+    );
+
+  chooseImageButton?.addEventListener(
+    "click",
+    () => {
+      if (
+        homePhotosRemaining() <=
+        0
+      ) {
+        return toast(
+          homePhotoAllowanceText()
+        );
+      }
+
+      imageInput?.click();
+    }
+  );
+
+  imageInput?.addEventListener(
+    "change",
+    async event => {
+      const file =
+        event.target
+          .files?.[0] ||
+        null;
+
+      event.target.value =
+        "";
+
+      await handleHomeImageSelection(
+        file
+      );
+    }
+  );
+
+  document
+    .getElementById(
+      "homeModalHost"
+    )
+    ?.addEventListener(
+      "click",
+      event => {
+        if (
+          event.target.closest(
+            "#removeCreatePostImage"
+          )
+        ) {
+          clearPendingHomeImage();
+
+          renderPendingHomeImage();
+
+          const status =
+            document.getElementById(
+              "createPostImageStatus"
+            );
+
+          if (status) {
+            status.textContent =
+              homePhotoAllowanceText();
+          }
+        }
+      }
+    );
+
+  input?.focus();
+
+  button?.addEventListener(
+    "click",
+    async () => {
+      if (!uid()) {
+        return toast(
+          "Please sign in first."
+        );
+      }
+
+      const text =
+        composerPlainText(
+          input
+        );
+
+      const richTextHtml =
+        composerRichHtml(
+          input
+        );
+
+      if (!text && !pendingHomeImage) {
+        return toast(
+          "Write something or add a photo before publishing."
+        );
+      }
+
+      if (
+        text.length >
+        1000
+      ) {
+        return toast(
+          "Posts must be 1000 characters or less."
+        );
+      }
+
+      button.disabled =
+        true;
+
+      button.textContent =
+        pendingHomeImage
+          ? "Uploading photo..."
+          : "Publishing...";
+
+      try {
+        const username =
+          currentUserName();
+
+        const background =
+          getPostBackground(
+            selectedBackground
+          );
+
+        const payload = {
+          uid:
+            uid(),
+
+          username:
+            username,
+
+          text:
+            text,
+
+          richTextHtml:
+            richTextHtml,
+
+          background:
+            background.key,
+
+          createdAt:
+            serverTimestamp(),
+
+          likes:
+            0,
+
+          likedBy:
+            [],
+
+          comments:
+            0
+        };
+
+        const expiryDate =
+          getExpiryDate(
+            expiryInput?.value ||
+            ""
+          );
+
+        if (expiryDate) {
+          payload.expiresAt =
+            Timestamp.fromDate(
+              expiryDate
+            );
+
+          payload.expiryDurationHours =
+            Math.round(
+              (
+                expiryDate.getTime() -
+                Date.now()
+              ) /
+              3600000
+            );
+        }
+
+        if (
+          pendingHomeImage
+        ) {
+          if (
+            homePhotosRemaining() <=
+            0
+          ) {
+            throw new Error(
+              homePhotoAllowanceText()
+            );
+          }
+
+          const upload =
+            await uploadHomeImageToCloudinary(
+              pendingHomeImage
+            );
+
+          payload.media =
+            upload.media;
+
+          button.textContent =
+            "Publishing...";
+        }
+
+        const ref =
+          await addDoc(
+            collection(
+              db,
+              "posts"
+            ),
+            payload
+          );
+
+        if (
+          pendingHomeImage
+        ) {
+          consumeHomePhotoAllowance();
+        }
+
+        state.posts = [
+          {
+            id:
+              ref.id,
+
+            uid:
+              uid(),
+
+            username:
+              username,
+
+            text:
+              text,
+
+            richTextHtml:
+              richTextHtml,
+
+            background:
+              background.key,
+
+            createdAt:
+              new Date(),
+
+            likes:
+              0,
+
+            likedBy:
+              [],
+
+            comments:
+              0,
+
+            ...(payload.media
+              ? {
+                  media:
+                    payload.media
+                }
+              : {}),
+
+            ...(expiryDate
+              ? {
+                  expiresAt:
+                    expiryDate,
+
+                  expiryDurationHours:
+                    Math.round(
+                      (
+                        expiryDate.getTime() -
+                        Date.now()
+                      ) /
+                      3600000
+                    )
+                }
+              : {})
+          },
+
+          ...getPosts()
+        ];
+
+        if (
+          Array.isArray(
+            searchPostsCache
+          )
+        ) {
+          searchPostsCache = [
+            {
+              id:
+                ref.id,
+
+              ...payload,
+
+              createdAt:
+                new Date()
+            },
+
+            ...searchPostsCache
+          ];
+        }
+
+        closeHomeModal();
+
+        markHomeActivity();
+
+        toast(
+          payload.media
+            ? "Post with photo published ✨"
+            : "Post published ✨"
+        );
+      } catch (error) {
+        button.disabled =
+          false;
+
+        button.textContent =
+          "Publish";
+
+        toast(
+          friendly(error)
+        );
+      }
+    }
+  );
+}
+
+/*
+ * Renders the photo section of the edit-post modal into the
+ * #editPostImageArea container, reflecting the current state:
+ *   - a newly-picked replacement photo (editPendingImage), or
+ *   - "no photo" because the user chose to remove it
+ *     (editRemoveExistingPhoto), or
+ *   - the post's existing photo, kept as-is, or
+ *   - no photo at all (post never had one) with an "Add photo"
+ *     control.
+ * Called after every change so the modal always reflects the
+ * current in-progress edit without re-opening it.
+ */
+function renderEditPostImageArea(post) {
+  const area =
+    document.getElementById(
+      "editPostImageArea"
+    );
+
+  if (!area) return;
+
+  const existingMedia =
+    getPostMedia(post);
+
+  if (
+    editPendingImage &&
+    editPendingImagePreviewUrl
+  ) {
+    area.innerHTML = `
+      <div
+        style="
+          position:relative;
+          margin-top:10px;
+          padding:10px;
+          border:1px solid var(--border);
+          border-radius:15px;
+          background:var(--surface);
+        "
+      >
+        <img
+          src="${escapeHtml(
+            editPendingImagePreviewUrl
+          )}"
+          alt="New photo preview"
+          style="
+            display:block;
+            width:100%;
+            max-height:320px;
+            object-fit:cover;
+            border-radius:11px;
+          "
+        >
+
+        <div
+          style="
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            gap:10px;
+            flex-wrap:wrap;
+            margin-top:8px;
+          "
+        >
+          <span class="small">
+            New photo selected
+          </span>
+
+          <button
+            type="button"
+            class="btn secondary"
+            id="editPostImageRemove"
+            style="padding:7px 10px;"
+          >
+            Remove
+          </button>
+        </div>
+      </div>
+    `;
+
+    return;
+  }
+
+  if (
+    existingMedia &&
+    !editRemoveExistingPhoto
+  ) {
+    area.innerHTML = `
+      <div
+        style="
+          position:relative;
+          margin-top:10px;
+          padding:10px;
+          border:1px solid var(--border);
+          border-radius:15px;
+          background:var(--surface);
+        "
+      >
+        <img
+          src="${escapeHtml(
+            existingMedia.url
+          )}"
+          alt="Current post photo"
+          style="
+            display:block;
+            width:100%;
+            max-height:320px;
+            object-fit:cover;
+            border-radius:11px;
+          "
+        >
+
+        <div
+          style="
+            display:flex;
+            align-items:center;
+            justify-content:flex-end;
+            gap:8px;
+            flex-wrap:wrap;
+            margin-top:8px;
+          "
+        >
+          <button
+            type="button"
+            class="btn secondary"
+            id="editPostImageReplace"
+            style="padding:7px 10px;"
+          >
+            Replace photo
+          </button>
+
+          <button
+            type="button"
+            class="btn secondary"
+            id="editPostImageRemove"
+            style="padding:7px 10px;"
+          >
+            Remove photo
+          </button>
+        </div>
+      </div>
+    `;
+
+    return;
+  }
+
+  area.innerHTML = `
+    <div style="margin-top:10px;">
+      <button
+        type="button"
+        class="btn secondary"
+        id="editPostImageAdd"
+      >
+        ${
+          existingMedia
+            ? "Add a new photo"
+            : "Add photo"
+        }
+      </button>
+    </div>
+  `;
+}
+
+export function showEditPost(
+  id
+) {
+  const post =
+    getPost(id);
+
+  if (!post) {
+    return toast(
+      "Post is no longer available."
+    );
+  }
+
+  if (
+    String(post.uid) !==
+    String(uid())
+  ) {
+    return toast(
+      "You can only edit your own posts."
+    );
+  }
+
+  clearEditPendingImage();
+
+  showHomeModal(`
+    <div
+      class="modal-content"
+      style="padding:18px;"
+    >
+      <div
+        class="modal-header"
+      >
+        <h3>
+          Edit post
+        </h3>
+
+        <button
+          type="button"
+          class="icon-btn"
+          data-modal-close
+          aria-label="Close"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div
+        class="modal-body"
+      >
+        <textarea
+          id="editPostText"
+          class="input"
+          rows="6"
+          maxlength="1000"
+        >${escapeHtml(
+          getPostText(post)
+        )}</textarea>
+
+        <div id="editPostImageArea"></div>
+
+        <input
+          id="editPostImageInput"
+          type="file"
+          accept="image/*"
+          style="display:none;"
+          aria-label="Choose a photo"
+        >
+
+        <div
+          class="small"
+          style="margin-top:7px;"
+        >
+          Maximum 1000 characters · Photo + text or photo only
+        </div>
+      </div>
+
+      <div
+        class="modal-footer"
+      >
+        <button
+          type="button"
+          class="btn secondary"
+          data-modal-close
+        >
+          Cancel
+        </button>
+
+        <button
+          type="button"
+          class="btn btn-primary"
+          id="submitEditPost"
+        >
+          Save changes
+        </button>
+      </div>
+    </div>
+  `);
+
+  const input =
+    document.getElementById(
+      "editPostText"
+    );
+
+  const button =
+    document.getElementById(
+      "submitEditPost"
+    );
+
+  const imageInput =
+    document.getElementById(
+      "editPostImageInput"
+    );
+
+  input?.focus();
+
+  renderEditPostImageArea(
+    post
+  );
+
+  document
+    .getElementById(
+      "editPostImageArea"
+    )
+    ?.addEventListener(
+      "click",
+      event => {
+        if (
+          event.target.closest(
+            "#editPostImageAdd"
+          ) ||
+          event.target.closest(
+            "#editPostImageReplace"
+          )
+        ) {
+          if (
+            homePhotosRemaining() <=
+            0
+          ) {
+            return toast(
+              homePhotoAllowanceText()
+            );
+          }
+
+          imageInput?.click();
+
+          return;
+        }
+
+        if (
+          event.target.closest(
+            "#editPostImageRemove"
+          )
+        ) {
+          if (editPendingImage) {
+            /*
+             * A newly-picked replacement is being discarded.
+             * Fall back to whatever the post already had
+             * (existing photo, if any) rather than removing
+             * it.
+             */
+            clearEditPendingImage();
+          } else {
+            editRemoveExistingPhoto =
+              true;
+          }
+
+          renderEditPostImageArea(
+            post
+          );
+        }
+      }
+    );
+
+  imageInput?.addEventListener(
+    "change",
+    async event => {
+      const file =
+        event.target
+          .files?.[0] ||
+        null;
+
+      event.target.value =
+        "";
+
+      if (!file) return;
+
+      try {
+        const prepared =
+          await compressHomeImage(
+            file
+          );
+
+        revokeEditPendingImagePreview();
+
+        editPendingImage =
+          new File(
+            [prepared.blob],
+            "marvel-chat-photo.jpg",
+            {
+              type: "image/jpeg"
+            }
+          );
+
+        editPendingImagePreviewUrl =
+          URL.createObjectURL(
+            prepared.blob
+          );
+
+        editRemoveExistingPhoto =
+          false;
+
+        renderEditPostImageArea(
+          post
+        );
+      } catch (error) {
+        toast(
+          friendly(error)
+        );
+      }
+    }
+  );
+
+  button?.addEventListener(
+    "click",
+    async () => {
+      const text =
+        String(
+          input?.value ||
+          ""
+        ).trim();
+
+      const existingMedia =
+        getPostMedia(post);
+
+      const willHavePhoto =
+        editPendingImage
+          ? true
+          : editRemoveExistingPhoto
+            ? false
+            : !!existingMedia;
+
+      if (
+        !text &&
+        !willHavePhoto
+      ) {
+        return toast(
+          "Write something or keep a photo before saving."
+        );
+      }
+
+      if (
+        text.length >
+        1000
+      ) {
+        return toast(
+          "Posts must be 1000 characters or less."
+        );
+      }
+
+      button.disabled =
+        true;
+
+      button.textContent =
+        editPendingImage
+          ? "Uploading photo..."
+          : "Saving...";
+
+      try {
+        const updates = {
+          text:
+            text,
+
+          editedAt:
+            serverTimestamp()
+        };
+
+        let nextMedia =
+          existingMedia ||
+          null;
+
+        if (editPendingImage) {
+          if (
+            homePhotosRemaining() <=
+            0
+          ) {
+            throw new Error(
+              homePhotoAllowanceText()
+            );
+          }
+
+          /*
+           * Upload the new photo FIRST. Only once the upload
+           * (and the Firestore update below) has succeeded do
+           * we treat the old photo as replaced — if the
+           * upload fails, nothing about the existing post or
+           * its photo is touched.
+           */
+          const upload =
+            await uploadHomeImageToCloudinary(
+              editPendingImage
+            );
+
+          updates.media =
+            upload.media;
+
+          nextMedia =
+            upload.media;
+
+          button.textContent =
+            "Saving...";
+        } else if (
+          editRemoveExistingPhoto
+        ) {
+          updates.media =
+            null;
+
+          nextMedia = null;
+        }
+
+        await updateDoc(
+          doc(
+            db,
+            "posts",
+            postId(id)
+          ),
+          updates
+        );
+
+        if (editPendingImage) {
+          consumeHomePhotoAllowance();
+        }
+
+        state.posts =
+          getPosts().map(
+            item =>
+              postId(item.id) ===
+              postId(id)
+                ? {
+                    ...item,
+                    text:
+                      text,
+                    editedAt:
+                      new Date(),
+                    media:
+                      nextMedia
+                  }
+                : item
+          );
+
+        if (
+          Array.isArray(
+            searchPostsCache
+          )
+        ) {
+          searchPostsCache =
+            searchPostsCache.map(
+              item =>
+                postId(item.id) ===
+                postId(id)
+                  ? {
+                      ...item,
+                      text:
+                        text,
+                      editedAt:
+                        new Date(),
+                      media:
+                        nextMedia
+                    }
+                  : item
+            );
+        }
+
+        clearEditPendingImage();
+
+        closeHomeModal();
+
+        markHomeActivity();
+
+        refreshPostCard(
+          id
+        );
+
+        toast(
+          "Post updated."
+        );
+      } catch (error) {
+        button.disabled =
+          false;
+
+        button.textContent =
+          "Save changes";
+
+        toast(
+          friendly(error)
+        );
+      }
+    }
+  );
+}
+
+export function showDeletePostConfirmation(
+  id
+) {
+  const post =
+    getPost(id);
+
+  if (!post) {
+    return toast(
+      "Post is no longer available."
+    );
+  }
+
+  if (
+    String(post.uid) !==
+    String(uid())
+  ) {
+    return toast(
+      "You can only delete your own posts."
+    );
+  }
+
+  showHomeModal(`
+    <div
+      class="modal-content"
+      style="
+        padding:18px;
+      "
+    >
+      <div
+        class="modal-header"
+      >
+        <h3>
+          Delete post?
+        </h3>
+
+        <button
+          type="button"
+          class="icon-btn"
+          data-modal-close
+          aria-label="Close"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div
+        class="modal-body"
+      >
+        <p
+          style="
+            line-height:1.6;
+            margin:0;
+          "
+        >
+          This will permanently remove
+          your post from the community feed.
+        </p>
+      </div>
+
+      <div
+        class="modal-footer"
+      >
+        <button
+          type="button"
+          class="btn secondary"
+          data-modal-close
+        >
+          Cancel
+        </button>
+
+        <button
+          type="button"
+          class="btn btn-primary"
+          id="confirmDeletePost"
+        >
+          Delete
+        </button>
+      </div>
+    </div>
+  `);
+
+  document
+    .getElementById(
+      "confirmDeletePost"
+    )
+    ?.addEventListener(
+      "click",
+      async event => {
+        const button =
+          event.currentTarget;
+
+        button.disabled =
+          true;
+
+        button.textContent =
+          "Deleting...";
+
+        try {
+          await deleteDoc(
+            doc(
+              db,
+              "posts",
+              postId(id)
+            )
+          );
+
+          state.posts =
+            getPosts().filter(
+              item =>
+                postId(item.id) !==
+                postId(id)
+            );
+
+          if (
+            Array.isArray(
+              searchPostsCache
+            )
+          ) {
+            searchPostsCache =
+              searchPostsCache.filter(
+                item =>
+                  postId(item.id) !==
+                  postId(id)
+              );
+          }
+
+          closeHomeModal();
+
+          markHomeActivity();
+
+          document
+            .querySelector(
+              `#homePage [data-post-card="${cssEscape(
+                postId(id)
+              )}"]`
+            )
+            ?.remove();
+
+          toast(
+            "Post deleted."
+          );
+        } catch (error) {
+          button.disabled =
+            false;
+
+          button.textContent =
+            "Delete";
+
+          toast(
+            friendly(error)
+          );
+        }
+      }
+    );
+}
+
+export async function showComments(
+  id
+) {
+  const post =
+    getPost(id);
+
+  if (!post) {
+    return toast(
+      "Post is no longer available."
+    );
+  }
+
+  let comments =
+    [];
+
+  try {
+    const snapshot =
+      await getDocs(
+        query(
+          collection(
+            db,
+            "posts",
+            postId(id),
+            "comments"
+          ),
+          orderBy(
+            "createdAt",
+            "asc"
+          ),
+          limit(50)
+        )
+      );
+
+    comments =
+      snapshot.docs.map(
+        item => ({
+          id:
+            item.id,
+          ...item.data()
+        })
+      );
+  } catch (error) {
+    return toast(
+      friendly(error)
+    );
+  }
+
+  const commentsHtml =
+    comments.length
+      ? comments
+          .map(
+            comment => {
+              const own =
+                String(
+                  comment.uid
+                ) ===
+                String(
+                  uid()
+                );
+
+              return `
+                <div
+                  class="list-item"
+                >
+                  <div
+                    style="
+                      display:flex;
+                      justify-content:space-between;
+                      gap:8px;
+                    "
+                  >
+                    <strong>
+                      ${escapeHtml(
+                        comment.displayName ||
+                        comment.authorName ||
+                        comment.username ||
+                        "Marvel User"
+                      )}
+                    </strong>
+
+                    ${
+                      own
+                        ? `
+                          <button
+                            type="button"
+                            class="icon-btn"
+                            data-delete-comment="${escapeHtml(
+                              comment.id
+                            )}"
+                            aria-label="Delete comment"
+                          >
+                            🗑️
+                          </button>
+                        `
+                        : ""
+                    }
+                  </div>
+
+                  <div
+                    style="
+                      margin-top:4px;
+                      overflow-wrap:anywhere;
+                    "
+                  >
+                    ${escapeHtml(
+                      comment.text ||
+                      ""
+                    )}
+                  </div>
+
+                  <div class="small">
+                    ${escapeHtml(
+                      comment.createdAt
+                        ? formatDate(
+                            comment.createdAt
+                          )
+                        : ""
+                    )}
+                  </div>
+                </div>
+              `;
+            }
+          )
+          .join("")
+      : `
+        <div
+          class="small"
+          style="
+            padding:10px 0;
+          "
+        >
+          No comments yet.
+          Start the conversation.
+        </div>
+      `;
+
+  showHomeModal(`
+    <div
+      class="modal-content"
+      style="
+        padding:18px;
+      "
+    >
+      <div
+        class="modal-header"
+      >
+        <h3>
+          Comments
+        </h3>
+
+        <button
+          type="button"
+          class="icon-btn"
+          data-modal-close
+          aria-label="Close"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div
+        class="modal-body"
+      >
+        <div
+          id="commentsList"
+          style="
+            max-height:45vh;
+            overflow:auto;
+          "
+        >
+          ${commentsHtml}
+        </div>
+
+        <div
+          style="
+            margin-top:15px;
+          "
+        >
+          <textarea
+            id="commentText"
+            class="input"
+            rows="3"
+            maxlength="500"
+            placeholder="Write a comment..."
+          ></textarea>
+
+          <div
+            style="
+              display:flex;
+              justify-content:flex-end;
+              margin-top:9px;
+            "
+          >
+            <button
+              type="button"
+              class="btn btn-primary"
+              id="submitComment"
+            >
+              Add comment
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `);
+
+  const input =
+    document.getElementById(
+      "commentText"
+    );
+
+  const button =
+    document.getElementById(
+      "submitComment"
+    );
+
+  input?.focus();
+
+  document
+    .querySelectorAll(
+      "[data-delete-comment]"
+    )
+    .forEach(
+      commentButton =>
+        commentButton.addEventListener(
+          "click",
+          () =>
+            deleteComment(
+              id,
+              commentButton.dataset
+                .deleteComment
+            )
+        )
+    );
+
+  button?.addEventListener(
+    "click",
+    async () => {
+      if (!uid()) {
+        return toast(
+          "Please sign in first."
+        );
+      }
+
+      const text =
+        String(
+          input?.value ||
+          ""
+        ).trim();
+
+      if (!text) {
+        return toast(
+          "Write a comment first."
+        );
+      }
+
+      if (
+        text.length >
+        500
+      ) {
+        return toast(
+          "Comments must be 500 characters or less."
+        );
+      }
+
+      button.disabled =
+        true;
+
+      button.textContent =
+        "Adding...";
+
+      try {
+        const actorName =
+          currentUserName();
+
+        await addDoc(
+          collection(
+            db,
+            "posts",
+            postId(id),
+            "comments"
+          ),
+          {
+            uid:
+              uid(),
+
+            displayName:
+              actorName,
+
+            text:
+              text,
+
+            createdAt:
+              serverTimestamp()
+          }
+        );
+
+        if (
+          String(post.uid) !==
+          String(uid())
+        ) {
+          await updateDoc(
+            doc(
+              db,
+              "posts",
+              postId(id)
+            ),
+            {
+              comments:
+                increment(1)
+            }
+          );
+        }
+
+        state.posts =
+          getPosts().map(
+            item =>
+              postId(item.id) ===
+              postId(id)
+                ? {
+                    ...item,
+                    comments:
+                      postComments(
+                        item
+                      ) + 1
+                  }
+                : item
+          );
+
+        if (
+          Array.isArray(
+            searchPostsCache
+          )
+        ) {
+          searchPostsCache =
+            searchPostsCache.map(
+              item =>
+                postId(item.id) ===
+                postId(id)
+                  ? {
+                      ...item,
+                      comments:
+                        postComments(
+                          item
+                        ) + 1
+                    }
+                  : item
+            );
+        }
+
+        input.value =
+          "";
+
+        markHomeActivity();
+
+        refreshPostCard(
+          id
+        );
+
+        const list =
+          document.getElementById(
+            "commentsList"
+          );
+
+        if (list) {
+          list.insertAdjacentHTML(
+            "beforeend",
+            `
+              <div
+                class="list-item"
+              >
+                <strong>
+                  ${escapeHtml(
+                    actorName
+                  )}
+                </strong>
+
+                <div>
+                  ${escapeHtml(
+                    text
+                  )}
+                </div>
+
+                <div class="small">
+                  Just now
+                </div>
+              </div>
+            `
+          );
+        }
+
+        button.disabled =
+          false;
+
+        button.textContent =
+          "Add comment";
+
+        toast(
+          "Comment added 💬"
+        );
+      } catch (error) {
+        button.disabled =
+          false;
+
+        button.textContent =
+          "Add comment";
+
+        toast(
+          friendly(error)
+        );
+      }
+    }
+  );
+}
+
+async function deleteComment(
+  postIdValue,
+  commentId
+) {
+  if (!uid()) {
+    return;
+  }
+
+  try {
+    await deleteDoc(
+      doc(
+        db,
+        "posts",
+        postId(
+          postIdValue
+        ),
+        "comments",
+        String(
+          commentId
+        )
+      )
+    );
+
+    const post =
+      getPost(
+        postIdValue
+      );
+
+    if (
+      post &&
+      String(post.uid) !==
+      String(uid())
+    ) {
+      await updateDoc(
+        doc(
+          db,
+          "posts",
+          postId(
+            postIdValue
+          )
+        ),
+        {
+          comments:
+            increment(-1)
+        }
+      );
+    }
+
+    state.posts =
+      getPosts().map(
+        item =>
+          postId(item.id) ===
+          postId(
+            postIdValue
+          )
+            ? {
+                ...item,
+                comments:
+                  Math.max(
+                    0,
+                    postComments(
+                      item
+                    ) - 1
+                  )
+              }
+            : item
+      );
+
+    if (
+      Array.isArray(
+        searchPostsCache
+      )
+    ) {
+      searchPostsCache =
+        searchPostsCache.map(
+          item =>
+            postId(item.id) ===
+            postId(
+              postIdValue
+            )
+              ? {
+                  ...item,
+                  comments:
+                    Math.max(
+                      0,
+                      postComments(
+                        item
+                      ) - 1
+                    )
+                }
+              : item
+        );
+    }
+
+    markHomeActivity();
+
+    refreshPostCard(
+      postIdValue
+    );
+
+    toast(
+      "Comment deleted."
+    );
+
+    await showComments(
+      postIdValue
+    );
+  } catch (error) {
+    toast(
+      friendly(error)
+    );
+  }
+}
+
+function postMatchesFilter(
+  post
+) {
+  if (
+    homeFeedFilter ===
+    "mine"
+  ) {
+    return (
+      String(
+        post?.uid ||
+        ""
+      ) ===
+      String(
+        uid() ||
+        ""
+      )
+    );
+  }
+
+  if (
+    homeFeedFilter ===
+    "saved"
+  ) {
+    return isSaved(
+      post
+    );
+  }
+
+  return true;
+}
+
+async function filterRenderedPosts(
+  value
+) {
+  homeSearchTerm =
+    String(
+      value || ""
+    )
+      .trim()
+      .toLowerCase();
+
+  const container =
+    document.getElementById(
+      "communityPosts"
+    );
+
+  const status =
+    document.getElementById(
+      "communitySearchStatus"
+    );
+
+  const clear =
+    document.getElementById(
+      "clearCommunitySearch"
+    );
+
+  if (clear) {
+    clear.style.display =
+      homeSearchTerm
+        ? "inline-flex"
+        : "none";
+  }
+
+  if (
+    !Array.isArray(
+      state.posts
+    )
+  ) {
+    if (status) {
+      status.textContent =
+        "Loading the latest posts…";
+    }
+
+    return;
+  }
+
+  /*
+   * IMPORTANT:
+   *
+   * Empty search means normal Home feed.
+   * The existing listener supplies the recent
+   * 25 posts, so we keep that behavior.
+   */
+  if (!homeSearchTerm) {
+    const recentPosts =
+      getPosts()
+        .filter(
+          post =>
+            !isPostExpired(
+              post
+            )
+        )
+        .filter(
+          post =>
+            postMatchesFilter(
+              post
+            )
+        );
+
+    if (container) {
+      container.innerHTML =
+        recentPosts.length
+          ? recentPosts
+              .map(
+                renderPostCard
+              )
+              .join("")
+          : `
+              <div
+                class="card"
+                style="
+                  text-align:center;
+                  padding:30px 18px;
+                "
+              >
+                No posts are available
+                right now.
+              </div>
+            `;
+    }
+
+    if (status) {
+      const filterLabel =
+        homeFeedFilter ===
+        "mine"
+          ? "my posts"
+          : homeFeedFilter ===
+            "saved"
+            ? "saved posts"
+            : "recent posts";
+
+      status.textContent =
+        recentPosts.length
+          ? `Showing ${recentPosts.length} ${filterLabel}.`
+          : `No ${filterLabel} are available in the recent feed.`;
+    }
+
+    return;
+  }
+
+  /*
+   * IMPORTANT:
+   *
+   * Search is NOT limited to state.posts.
+   * state.posts normally contains only the
+   * recent 25 posts.
+   *
+   * When a search term exists, we load the
+   * complete available post history from
+   * Firestore and search that collection.
+   */
+  if (status) {
+    status.textContent =
+      "Searching all available posts…";
+  }
+
+  try {
+    await loadSavedPostIds();
+
+    await loadAllPostsForSearch();
+
+    const matches =
+      searchablePosts()
+        .filter(
+          post =>
+            !isPostExpired(
+              post
+            )
+        )
+        .filter(
+          post =>
+            postMatchesFilter(
+              post
+            )
+        )
+        .filter(
+          post =>
+            searchTextForPost(
+              post
+            ).includes(
+              homeSearchTerm
+            )
+        );
+
+    if (container) {
+      container.innerHTML =
+        matches.length
+          ? matches
+              .map(
+                renderPostCard
+              )
+              .join("")
+          : `
+              <div
+                class="card"
+                style="
+                  text-align:center;
+                  padding:30px 18px;
+                "
+              >
+                <div
+                  style="
+                    font-size:32px;
+                  "
+                >
+                  🔎
+                </div>
+
+                <h3
+                  style="
+                    margin:8px 0;
+                  "
+                >
+                  No matching posts
+                </h3>
+
+                <p
+                  class="small"
+                  style="margin:0;"
+                >
+                  Your search checked older
+                  posts too, not just the
+                  25 recent posts.
+                </p>
+              </div>
+            `;
+    }
+
+    if (status) {
+      const total =
+        matches.length;
+
+      const filterLabel =
+        homeFeedFilter ===
+        "mine"
+          ? "my posts"
+          : homeFeedFilter ===
+            "saved"
+            ? "saved posts"
+            : "posts";
+
+      status.textContent =
+        total
+          ? `${total} matching ${filterLabel} found across your post history.`
+          : "No matching posts found across your post history.";
+    }
+  } catch (error) {
+    console.warn(
+      "Post history search failed:",
+      error
+    );
+
+    if (status) {
+      status.textContent =
+        "Could not search older posts right now.";
+    }
+
+    toast(
+      friendly(error)
+    );
+  }
 }
 
 export function attachHomeEvents(
@@ -4164,9 +6307,10 @@ export function attachHomeEvents(
   homeNavigationHandler =
     event => {
       if (
-        event.target?.closest?.(
-          "[data-nav]"
-        )
+        event.target
+          ?.closest?.(
+            "[data-nav]"
+          )
       ) {
         closeHomeModal();
         stopDiscoveryCountdown();
@@ -4201,16 +6345,7 @@ export function attachHomeEvents(
     return;
   }
 
-  /*
-   * Initial sync is kept, but it is no longer the only sync.
-   * The critical post-render sync happens after every feed
-   * replacement through schedulePostTextOverflowSync().
-   */
   syncPostTextOverflow(
-    homePage
-  );
-
-  observeHomePostOverflow(
     homePage
   );
 
@@ -4564,6 +6699,45 @@ export function attachHomeEvents(
             "homePage"
           )
         ) {
+          if (
+            !homeSearchTerm
+          ) {
+            document
+              .querySelectorAll(
+                "#homePage [data-post-card]"
+              )
+              .forEach(
+                card => {
+                  const id =
+                    card.dataset
+                      .postCard;
+
+                  const post =
+                    getPost(
+                      id
+                    );
+
+                  if (!post) {
+                    return;
+                  }
+
+                  const holder =
+                    document.createElement(
+                      "div"
+                    );
+
+                  holder.innerHTML =
+                    renderPostCard(
+                      post
+                    );
+
+                  card.replaceWith(
+                    holder.firstElementChild
+                  );
+                }
+              );
+          }
+
           filterRenderedPosts(
             homeSearchTerm
           );
@@ -4588,16 +6762,8 @@ export function attachHomeEvents(
     startDiscoveryCountdown();
   }
 
-  /*
-   * Initial render also goes through the same code path
-   * that fixes the Show More/Show Less lifecycle.
-   */
   filterRenderedPosts(
     homeSearchTerm
-  );
-
-  schedulePostTextOverflowSync(
-    homePage
   );
 
   markHomeActivity();
