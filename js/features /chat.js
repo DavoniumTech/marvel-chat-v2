@@ -808,6 +808,37 @@ export async function openConversation(
       ),
 
       snap => {
+        /*
+         * Capture the reader's scroll position BEFORE we touch
+         * state/DOM. #messages is rebuilt (innerHTML) on every
+         * renderApp() call, so scrollTop would otherwise reset
+         * to 0 on every incoming message — this is what let a
+         * new message yank someone back to the bottom while
+         * they were reading older messages. We only want that
+         * "snap to bottom" behavior when the reader was already
+         * near the bottom (or the new message is their own).
+         */
+        const prevMessagesEl =
+          document.getElementById(
+            "messages"
+          );
+
+        const wasNearBottom =
+          !prevMessagesEl ||
+          prevMessagesEl.scrollHeight -
+            prevMessagesEl.scrollTop -
+            prevMessagesEl.clientHeight <
+            120;
+
+        const prevScrollRatio =
+          prevMessagesEl &&
+          prevMessagesEl.scrollHeight >
+            prevMessagesEl.clientHeight
+            ? prevMessagesEl.scrollTop /
+              (prevMessagesEl.scrollHeight -
+                prevMessagesEl.clientHeight)
+            : 1;
+
         state.messages =
           snap.docs.map(
             d => ({
@@ -872,6 +903,11 @@ export async function openConversation(
           state.page ===
           "chat"
         ) {
+          const isOwnLatest =
+            !!latest?.uid &&
+            latest.uid ===
+              state.user?.uid;
+
           if (
             typeof renderApp ===
             "function"
@@ -891,9 +927,41 @@ export async function openConversation(
                   "messages"
                 );
 
-              if (el) {
+              if (!el) {
+                return;
+              }
+
+              if (
+                wasNearBottom ||
+                isOwnLatest
+              ) {
                 el.scrollTop =
                   el.scrollHeight;
+
+                mc2HideNewMessagesPill();
+
+                return;
+              }
+
+              /*
+               * Reader was scrolled up looking at older
+               * messages — do NOT force them to the bottom.
+               * Restore their approximate position (the list
+               * just got taller) and surface a small "new
+               * messages" pill instead of yanking them.
+               */
+              const maxScroll =
+                el.scrollHeight -
+                el.clientHeight;
+
+              el.scrollTop =
+                maxScroll > 0
+                  ? maxScroll *
+                    prevScrollRatio
+                  : 0;
+
+              if (!isOwnLatest) {
+                mc2ShowNewMessagesPill();
               }
             },
             50
@@ -4439,6 +4507,15 @@ export function renderConversation() {
           }
         </div>
 
+        <button
+          type="button"
+          id="mc2NewMessagesPill"
+          class="mc2-new-messages-pill"
+          data-visible="false"
+        >
+          ↓ New messages
+        </button>
+
         ${
           isBlocked
             ? `
@@ -5117,6 +5194,86 @@ function ensureMarvelChatV2Styles() {
       max-height:min(70vh, 420px);
       overflow-y:auto;
       -webkit-overflow-scrolling:touch;
+    }
+
+    /* ---- "New messages" pill (shown only when the reader is
+       scrolled up looking at older messages and a new message
+       arrives — never forces them back to the bottom). ---- */
+    .mc2-new-messages-pill {
+      display:none;
+      position:absolute;
+      left:50%;
+      bottom:14px;
+      transform:translateX(-50%);
+      z-index:4;
+      border:1px solid rgba(255,255,255,0.16);
+      background:linear-gradient(135deg,#b91c1c,#6d28d9);
+      color:#fff;
+      font-size:13px;
+      font-weight:600;
+      padding:8px 16px;
+      border-radius:999px;
+      box-shadow:0 4px 14px rgba(0,0,0,0.30);
+      cursor:pointer;
+    }
+    .mc2-new-messages-pill[data-visible="true"] {
+      display:block;
+    }
+
+    /* =====================================================
+       LAYOUT HARDENING — guarantees the header / message
+       list / composer three-row layout no matter what the
+       rest of the app's stylesheet does with a shared class
+       name like .message-box or .card. Nothing above this
+       point is removed; this section only makes the existing
+       rules win the cascade so the composer can never end up
+       floating over the conversation again.
+       ===================================================== */
+    .mc2-conversation-page {
+      position:relative !important;
+      display:flex !important;
+      flex-direction:column !important;
+      height:100vh !important;
+      height:100dvh !important;
+      min-height:0 !important;
+      overflow:hidden !important;
+    }
+    .mc2-conversation-card {
+      flex:1 1 auto !important;
+      min-height:0 !important;
+      display:flex !important;
+      flex-direction:column !important;
+      position:relative !important;
+      overflow:hidden !important;
+    }
+    .mc2-messages {
+      flex:1 1 auto !important;
+      min-height:0 !important;
+      overflow-y:auto !important;
+      position:relative !important;
+    }
+    .mc2-composer {
+      flex:0 0 auto !important;
+      position:relative !important;
+      inset:auto !important;
+      top:auto !important;
+      left:auto !important;
+      right:auto !important;
+      bottom:auto !important;
+      width:100% !important;
+      max-width:none !important;
+      margin:0 !important;
+      transform:none !important;
+    }
+    /* Freezes the page body behind the chat screen so a tall
+       document (and any fixed-position element it defines
+       elsewhere) can never scroll independently underneath
+       the composer and throw its position off. */
+    html.mc2-conv-lock,
+    body.mc2-conv-lock {
+      height:100% !important;
+      overflow:hidden !important;
+      overscroll-behavior:none !important;
     }
   `;
 
@@ -5941,6 +6098,227 @@ if (
             );
           });
       }
+    }
+  );
+}
+
+/* =========================================================
+   NEW-MESSAGES PILL HELPERS
+   ========================================================= */
+
+function mc2ShowNewMessagesPill() {
+  const pill =
+    document.getElementById(
+      "mc2NewMessagesPill"
+    );
+
+  if (pill) {
+    pill.setAttribute(
+      "data-visible",
+      "true"
+    );
+  }
+}
+
+function mc2HideNewMessagesPill() {
+  const pill =
+    document.getElementById(
+      "mc2NewMessagesPill"
+    );
+
+  if (pill) {
+    pill.setAttribute(
+      "data-visible",
+      "false"
+    );
+  }
+}
+
+/* =========================================================
+   LAYOUT LOCKDOWN (header / messages / composer)
+
+   Forces the correct flex three-row layout with inline
+   !important styles, which win the cascade over any
+   conflicting rule elsewhere in the app's stylesheet (e.g. a
+   shared ".message-box" or ".card" class) regardless of load
+   order or specificity. This is applied via a MutationObserver
+   rather than at the end of renderConversation(), because
+   renderConversation() only returns an HTML string — the
+   actual DOM nodes don't exist until whatever calls it injects
+   that string, which happens outside this file. Purely a
+   visual safety net: it never touches Firestore, never changes
+   the data model, and never interferes with any existing click
+   handler.
+   ========================================================= */
+
+function mc2LockConversationLayout() {
+  const page =
+    document.querySelector(
+      ".mc2-conversation-page"
+    );
+
+  const card =
+    document.querySelector(
+      ".mc2-conversation-card"
+    );
+
+  const messagesEl =
+    document.getElementById(
+      "messages"
+    );
+
+  const composer =
+    document.querySelector(
+      ".mc2-composer"
+    );
+
+  if (!page) {
+    document.documentElement.classList.remove(
+      "mc2-conv-lock"
+    );
+
+    document.body?.classList.remove(
+      "mc2-conv-lock"
+    );
+
+    return;
+  }
+
+  document.documentElement.classList.add(
+    "mc2-conv-lock"
+  );
+
+  document.body?.classList.add(
+    "mc2-conv-lock"
+  );
+
+  const setImportant = (
+    el,
+    props
+  ) => {
+    if (!el) {
+      return;
+    }
+
+    Object.keys(props).forEach(
+      key => {
+        el.style.setProperty(
+          key,
+          props[key],
+          "important"
+        );
+      }
+    );
+  };
+
+  setImportant(page, {
+    position: "relative",
+    display: "flex",
+    "flex-direction": "column",
+    height: "100dvh",
+    "min-height": "0",
+    overflow: "hidden"
+  });
+
+  setImportant(card, {
+    flex: "1 1 auto",
+    "min-height": "0",
+    display: "flex",
+    "flex-direction": "column",
+    position: "relative",
+    overflow: "hidden"
+  });
+
+  setImportant(messagesEl, {
+    flex: "1 1 auto",
+    "min-height": "0",
+    "overflow-y": "auto",
+    position: "relative"
+  });
+
+  setImportant(composer, {
+    position: "relative",
+    inset: "auto",
+    top: "auto",
+    left: "auto",
+    right: "auto",
+    bottom: "auto",
+    width: "100%",
+    "max-width": "none",
+    margin: "0",
+    transform: "none",
+    flex: "0 0 auto"
+  });
+}
+
+if (
+  !window.__marvelChatLayoutLockInstalledV1
+) {
+  window.__marvelChatLayoutLockInstalledV1 =
+    true;
+
+  let mc2LockScheduled = false;
+
+  const scheduleLock = () => {
+    if (mc2LockScheduled) {
+      return;
+    }
+
+    mc2LockScheduled = true;
+
+    requestAnimationFrame(() => {
+      mc2LockScheduled = false;
+      mc2LockConversationLayout();
+    });
+  };
+
+  const observer =
+    new MutationObserver(
+      scheduleLock
+    );
+
+  observer.observe(
+    document.documentElement,
+    {
+      childList: true,
+      subtree: true
+    }
+  );
+
+  window.addEventListener(
+    "resize",
+    scheduleLock
+  );
+
+  scheduleLock();
+
+  /*
+   * Clicking the "new messages" pill scrolls to the bottom and
+   * hides it — delegated on document so it works no matter how
+   * many times the conversation re-renders.
+   */
+  document.addEventListener(
+    "click",
+    event => {
+      if (
+        !event.target.closest(
+          "#mc2NewMessagesPill"
+        )
+      ) {
+        return;
+      }
+
+      const el =
+        document.getElementById(
+          "messages"
+        );
+
+      if (el) {
+        el.scrollTop =
+          el.scrollHeight;
+      }
+
+      mc2HideNewMessagesPill();
     }
   );
 }
