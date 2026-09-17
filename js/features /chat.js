@@ -4157,7 +4157,7 @@ export function renderConversation() {
     >
 
       <div
-        class="section-title mc2-conv-header"
+        class="mc2-conv-header"
         style="flex:none;position:relative;"
       >
 
@@ -4214,7 +4214,7 @@ export function renderConversation() {
       </div>
 
       <div
-        class="card mc2-conversation-card ${backgroundClass}"
+        class="mc2-conversation-card ${backgroundClass}"
         style="
           flex:1;
           min-height:0;
@@ -4224,8 +4224,6 @@ export function renderConversation() {
           position:relative;
         "
       >
-
-        <div class="mc2-watermark" aria-hidden="true">MARVEL CHAT</div>
 
         ${
           pinnedMessage
@@ -4542,45 +4540,49 @@ export function renderConversation() {
             : `
               <div class="message-box mc2-composer" style="flex:none;">
 
-                <button
-                  type="button"
-                  class="mc2-composer-emoji"
-                  data-emoji-toggle
-                  aria-label="Insert emoji"
-                  aria-expanded="false"
-                >
-                  🙂
-                </button>
+                <div class="mc2-input-wrap">
 
-                <div
-                  id="mc2EmojiPanel"
-                  class="mc2-emoji-panel"
-                  data-open="false"
-                  role="menu"
-                  aria-label="Emoji picker"
-                >
-                  ${MC2_EMOJI_LIST
-                    .map(
-                      emoji => `
-                        <button
-                          type="button"
-                          class="mc2-emoji-item"
-                          data-emoji-insert="${emoji}"
-                          aria-label="Insert ${emoji}"
-                        >${emoji}</button>
-                      `
-                    )
-                    .join("")}
+                  <button
+                    type="button"
+                    class="mc2-composer-emoji"
+                    data-emoji-toggle
+                    aria-label="Insert emoji"
+                    aria-expanded="false"
+                  >
+                    🙂
+                  </button>
+
+                  <div
+                    id="mc2EmojiPanel"
+                    class="mc2-emoji-panel"
+                    data-open="false"
+                    role="menu"
+                    aria-label="Emoji picker"
+                  >
+                    ${MC2_EMOJI_LIST
+                      .map(
+                        emoji => `
+                          <button
+                            type="button"
+                            class="mc2-emoji-item"
+                            data-emoji-insert="${emoji}"
+                            aria-label="Insert ${emoji}"
+                          >${emoji}</button>
+                        `
+                      )
+                      .join("")}
+                  </div>
+
+                  <textarea
+                    class="textarea mc2-composer-input"
+                    id="messageInput"
+                    rows="1"
+                    maxlength="5000"
+                    autocomplete="off"
+                    placeholder="Write a message…"
+                  ></textarea>
+
                 </div>
-
-                <textarea
-                  class="textarea mc2-composer-input"
-                  id="messageInput"
-                  rows="1"
-                  maxlength="5000"
-                  autocomplete="off"
-                  placeholder="Write a message…"
-                ></textarea>
 
                 <button
                   type="button"
@@ -4626,36 +4628,24 @@ function ensureMarvelChatV2Styles() {
 
   style.textContent = `
     /* =====================================================
-       MARVEL CHAT — PREMIUM FULL-SCREEN IDENTITY
-       Full-viewport conversation, glassmorphism, nebula
-       backdrop + subtle watermark, crimson/nebula accents.
+       MC2 CONVERSATION SCREEN — clean fullscreen messaging
+       layout. Neutral theme-aware surfaces (follows the
+       app's existing light/dark mode via the --surface/
+       --text/--border/--bg variables from base.css), no
+       glassmorphism, no forced purple/red tint, no
+       watermark. The only "premium" touches are the
+       optional user-selectable chat wallpapers below
+       (mc2-bg-*), which are a preserved existing feature.
        ===================================================== */
 
-    .mc2-conversation-page {
-      height:100vh;
-      height:100dvh;
-      width:100%;
-      max-width:100%;
-      margin:0;
-      overflow-x:hidden;
-    }
-
-    /* ---- Premium glass header ---- */
+    /* ---- Header ---- */
     .mc2-conv-header {
       padding:10px 14px;
       padding-top:calc(10px + env(safe-area-inset-top, 0px));
-      background:rgba(20,12,40,0.55);
-      border-bottom:1px solid rgba(255,255,255,0.10);
-      backdrop-filter:blur(16px) saturate(140%);
-      -webkit-backdrop-filter:blur(16px) saturate(140%);
-      box-shadow:0 1px 0 rgba(255,255,255,0.04), 0 8px 24px rgba(0,0,0,0.18);
+      background:var(--surface);
+      border-bottom:1px solid var(--border);
       z-index:5;
-      color:#fff;
-    }
-    @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-      .mc2-conv-header {
-        background:rgba(20,12,40,0.92);
-      }
+      color:var(--text);
     }
     .mc2-conv-header .profile-row { gap:11px; }
     .mc2-conv-header h2.mc2-conv-title {
@@ -4665,75 +4655,32 @@ function ensureMarvelChatV2Styles() {
       overflow:hidden;
       text-overflow:ellipsis;
       white-space:nowrap;
-      color:#fff;
+      color:var(--text);
     }
     .mc2-conv-header .mc2-conv-subtitle {
       font-size:13.5px;
-      color:rgba(255,255,255,0.62);
-    }
-    .mc2-conv-avatar {
-      box-shadow:
-        0 0 0 2px rgba(220,38,38,0.55),
-        0 4px 14px rgba(0,0,0,0.30);
+      color:var(--muted);
     }
     .mc2-glass-icon-btn {
-      background:rgba(255,255,255,0.08);
-      border:1px solid rgba(255,255,255,0.14);
-      color:#fff;
-      backdrop-filter:blur(6px);
-      -webkit-backdrop-filter:blur(6px);
+      background:var(--surface);
+      border:1px solid var(--border);
+      color:var(--text);
       transition:background .15s ease, transform .1s ease;
     }
     .mc2-glass-icon-btn:hover,
     .mc2-glass-icon-btn:active {
-      background:rgba(255,255,255,0.16);
+      background:var(--surface2);
     }
     .mc2-conv-header .mc2-options-menu {
       right:10px;
       top:56px;
     }
-    .mc2-conversation-page.mc2-bg-softlight .mc2-conv-header {
-      background:rgba(255,255,255,0.75);
-      border-bottom:1px solid rgba(0,0,0,0.08);
-      color:#111;
-      box-shadow:0 1px 0 rgba(255,255,255,0.5), 0 8px 24px rgba(0,0,0,0.06);
-    }
-    .mc2-conversation-page.mc2-bg-softlight .mc2-conv-title,
-    .mc2-conversation-page.mc2-bg-softlight .mc2-glass-icon-btn {
-      color:#111;
-    }
-    .mc2-conversation-page.mc2-bg-softlight .mc2-conv-subtitle {
-      color:rgba(0,0,0,0.55);
-    }
-    .mc2-conversation-page.mc2-bg-softlight .mc2-glass-icon-btn {
-      background:rgba(0,0,0,0.05);
-      border-color:rgba(0,0,0,0.10);
-    }
 
-    /* ---- Premium conversation surface + nebula backdrop ---- */
+    /* ---- Conversation surface ---- */
     .mc2-conversation-card {
       border:none;
       border-radius:0;
-    }
-    .mc2-watermark {
-      position:absolute;
-      inset:0;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      pointer-events:none;
-      z-index:0;
-      font-size:clamp(28px, 7vw, 52px);
-      font-weight:800;
-      letter-spacing:.14em;
-      color:rgba(255,255,255,0.028);
-      transform:rotate(-14deg) scale(1.4);
-      white-space:nowrap;
-      user-select:none;
-    }
-    .mc2-bg-softlight .mc2-watermark,
-    .mc2-bg-classic .mc2-watermark {
-      color:rgba(120,60,60,0.028);
+      background:var(--bg);
     }
     .mc2-pinned-bar,
     .mc2-messages,
@@ -4742,27 +4689,10 @@ function ensureMarvelChatV2Styles() {
       z-index:1;
     }
     .mc2-pinned-bar {
-      backdrop-filter:blur(10px);
-      -webkit-backdrop-filter:blur(10px);
-      background:rgba(127,127,127,0.10);
+      background:var(--surface2);
     }
 
-    /* Default (non-nebula) conversation surfaces still get a
-       subtle deep-space tint so the watermark + glass read
-       consistently across every chat background option. */
-    .mc2-conversation-card {
-      background-color:#150c28;
-      background-image:
-        radial-gradient(circle at 20% 0%, rgba(124,58,237,0.20), transparent 55%),
-        radial-gradient(circle at 100% 30%, rgba(220,38,38,0.10), transparent 45%);
-    }
-    .mc2-conversation-card.mc2-bg-softlight {
-      background-color:#f3f1fa;
-      background-image:
-        radial-gradient(circle at 20% 0%, rgba(124,58,237,0.06), transparent 55%);
-    }
-
-    /* ---- Composer (glass, keyboard-safe) ---- */
+    /* ---- Composer (keyboard-safe) ---- */
     .mc2-composer {
       position:relative;
       display:flex;
@@ -4770,30 +4700,48 @@ function ensureMarvelChatV2Styles() {
       gap:8px;
       padding:10px 12px;
       padding-bottom:calc(10px + env(safe-area-inset-bottom, 0px));
-      border-top:1px solid rgba(255,255,255,0.10);
-      background:rgba(20,12,40,0.55);
-      backdrop-filter:blur(16px) saturate(140%);
-      -webkit-backdrop-filter:blur(16px) saturate(140%);
-    }
-    @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-      .mc2-composer {
-        background:rgba(20,12,40,0.92);
-      }
-    }
-    .mc2-bg-softlight .mc2-composer {
-      background:rgba(255,255,255,0.75);
-      border-top:1px solid rgba(0,0,0,0.08);
+      border-top:1px solid var(--border);
+      background:var(--surface);
     }
 
-    /* Emoji button */
+    /* Input field wrapper — this is the visible "pill" surface;
+       the emoji button lives INSIDE it (left side) and the
+       textarea is transparent/borderless so the two read as one
+       continuous input, matching WhatsApp/Telegram-style
+       composers. Wrapper owns the border/background/focus ring
+       so growing the textarea never changes the field's chrome. */
+    .mc2-input-wrap {
+      position:relative;
+      flex:1;
+      min-width:0;
+      display:flex;
+      align-items:flex-end;
+      border-radius:22px;
+      border:1px solid var(--border);
+      background:var(--surface2);
+      min-height:48px;
+      max-height:136px;
+      transition:border-color .15s ease, box-shadow .15s ease;
+    }
+    .mc2-input-wrap:focus-within {
+      border-color:var(--primary2);
+      box-shadow:0 0 0 3px rgba(139,92,246,.13);
+    }
+
+    /* Emoji button — absolutely positioned inside the input
+       wrapper's left edge, on top of (not beside) the textarea. */
     .mc2-composer-emoji {
+      position:absolute;
+      left:3px;
+      bottom:3px;
+      z-index:2;
       flex:none;
       width:42px;
       height:42px;
       min-height:0;
       border-radius:50%;
-      border:1px solid rgba(255,255,255,0.14);
-      background:rgba(255,255,255,0.08);
+      border:none;
+      background:transparent;
       color:inherit;
       font-size:20px;
       line-height:1;
@@ -4804,19 +4752,20 @@ function ensureMarvelChatV2Styles() {
       cursor:pointer;
       transition:background .15s ease, transform .1s ease;
     }
+    .mc2-composer-emoji:hover {
+      background:rgba(127,127,127,0.12);
+    }
     .mc2-composer-emoji:active {
       transform:scale(0.93);
     }
-    .mc2-bg-softlight .mc2-composer-emoji {
-      background:rgba(0,0,0,0.05);
-      border-color:rgba(0,0,0,0.10);
-    }
 
-    /* Emoji panel */
+    /* Emoji panel — positioned relative to the input wrapper
+       (its nearest positioned ancestor) so it stays anchored to
+       the field regardless of composer padding. */
     .mc2-emoji-panel {
       display:none;
       position:absolute;
-      left:10px;
+      left:0;
       bottom:calc(100% + 8px);
       z-index:30;
       grid-template-columns:repeat(6, 1fr);
@@ -4863,30 +4812,23 @@ function ensureMarvelChatV2Styles() {
       min-height:48px;
       max-height:136px;
       height:48px;
-      padding:13px 18px;
-      border:1px solid rgba(255,255,255,0.14);
-      background:rgba(255,255,255,0.08);
-      color:#fff;
+      padding:13px 18px 13px 50px;
+      border:none;
+      background:transparent;
+      color:var(--text);
       font-size:16.5px;
       line-height:1.4;
       white-space:pre-wrap;
       overflow-wrap:anywhere;
       overflow-y:hidden;
-      transition:border-color .15s ease, box-shadow .15s ease;
-    }
-    .mc2-bg-softlight .mc2-composer-input {
-      background:#fff;
-      border-color:#e2e5ea;
-      color:#111;
     }
     .mc2-composer-input::placeholder {
+      color:var(--muted);
       font-size:16.5px;
-      opacity:0.55;
+      opacity:1;
     }
     .mc2-composer-input:focus {
       outline:none;
-      border-color:#dc2626;
-      box-shadow:0 0 0 3px rgba(220,38,38,0.18);
     }
     .mc2-composer-send {
       flex:none;
@@ -4900,9 +4842,8 @@ function ensureMarvelChatV2Styles() {
       align-items:center;
       justify-content:center;
       font-size:0;
-      background:linear-gradient(135deg,#dc2626,#7c3aed);
+      background:linear-gradient(135deg, var(--primary), var(--primary2));
       border:none;
-      box-shadow:0 4px 14px rgba(220,38,38,0.35);
       transition:transform .1s ease;
     }
     .mc2-composer-send:active {
@@ -4915,7 +4856,11 @@ function ensureMarvelChatV2Styles() {
       color:#fff;
     }
 
-    /* ---- Message bubbles ---- */
+    /* ---- Message bubbles ----
+       width:fit-content lets a short message ("OK ur acct
+       num pls") stay one natural bubble instead of being
+       forced to wrap inside an unnecessarily narrow box; the
+       max-width still caps how wide a long message can get. */
     .mc2-messages {
       padding:14px 12px;
       display:flex;
@@ -4923,7 +4868,8 @@ function ensureMarvelChatV2Styles() {
       gap:10px;
     }
     .mc2-bubble {
-      max-width:78%;
+      width:fit-content;
+      max-width:min(78%, 420px);
       align-self:flex-start;
       background:var(--surface);
       border:1px solid var(--border);
@@ -4931,25 +4877,21 @@ function ensureMarvelChatV2Styles() {
       padding:10px 14px;
       word-break:break-word;
       overflow-wrap:anywhere;
-      box-shadow:0 2px 10px rgba(0,0,0,0.10);
     }
-    /* Dark, glass-backed presets (nebula default + the existing
-       midnight/purple/ocean options) get a translucent glass
-       bubble instead of the flat theme surface. */
+    /* Dark chat-wallpaper presets (midnight/purple/ocean/
+       nebula) get a translucent-but-flat (no blur) incoming
+       bubble so text stays legible against the wallpaper. */
     .mc2-conversation-card:not(.mc2-bg-classic):not(.mc2-bg-softlight) .mc2-bubble:not(.mine) {
-      background:rgba(255,255,255,0.10);
-      border-color:rgba(255,255,255,0.16);
-      backdrop-filter:blur(8px);
-      -webkit-backdrop-filter:blur(8px);
+      background:rgba(255,255,255,0.12);
+      border-color:rgba(255,255,255,0.18);
       color:#fff;
     }
     .mc2-bubble.mine {
       align-self:flex-end;
-      background:linear-gradient(135deg,#b91c1c,#6d28d9);
+      background:linear-gradient(135deg, var(--primary), var(--primary2));
       color:#fff;
       border-color:transparent;
       border-radius:16px 16px 4px 16px;
-      box-shadow:0 4px 16px rgba(185,28,28,0.28);
     }
     .mc2-bubble-text {
       font-size:17.5px;
@@ -4980,10 +4922,11 @@ function ensureMarvelChatV2Styles() {
       opacity:0.85;
     }
     @media (min-width:640px) {
-      .mc2-bubble { max-width:60%; }
+      .mc2-bubble { max-width:min(60%, 420px); }
     }
 
-    /* ---- Chat backgrounds ---- */
+    /* ---- Chat backgrounds (existing user-selectable
+       wallpaper feature — preserved as-is) ---- */
     .mc2-conversation-card.mc2-bg-classic {
       background:var(--surface);
     }
@@ -5206,14 +5149,14 @@ function ensureMarvelChatV2Styles() {
       bottom:14px;
       transform:translateX(-50%);
       z-index:4;
-      border:1px solid rgba(255,255,255,0.16);
-      background:linear-gradient(135deg,#b91c1c,#6d28d9);
+      border:1px solid var(--border);
+      background:linear-gradient(135deg, var(--primary), var(--primary2));
       color:#fff;
       font-size:13px;
       font-weight:600;
       padding:8px 16px;
       border-radius:999px;
-      box-shadow:0 4px 14px rgba(0,0,0,0.30);
+      box-shadow:var(--shadow, 0 4px 14px rgba(0,0,0,0.20));
       cursor:pointer;
     }
     .mc2-new-messages-pill[data-visible="true"] {
@@ -5221,22 +5164,36 @@ function ensureMarvelChatV2Styles() {
     }
 
     /* =====================================================
-       LAYOUT HARDENING — guarantees the header / message
-       list / composer three-row layout no matter what the
-       rest of the app's stylesheet does with a shared class
-       name like .message-box or .card. Nothing above this
-       point is removed; this section only makes the existing
-       rules win the cascade so the composer can never end up
-       floating over the conversation again.
+       FULLSCREEN SHELL — single source of truth for the
+       conversation layout (header / scrollable messages /
+       composer). Implemented with position:fixed so the
+       screen truly takes over the whole viewport regardless
+       of .app/.main's own flex sizing, instead of nesting a
+       second "fullscreen" height inside a flex:1 parent.
+       This replaces the old MutationObserver + inline
+       !important approach: there is now exactly one place
+       that decides this layout, and it is CSS, not JS.
+       The !important flags below only guard against the
+       specific global rules (.card's padding, .section-title's
+       margin) that previously leaked onto these elements —
+       not blanket cascade insurance.
        ===================================================== */
     .mc2-conversation-page {
-      position:relative !important;
+      position:fixed !important;
+      inset:0 !important;
+      width:100% !important;
+      max-width:100% !important;
+      height:100dvh !important;
+      margin:0 !important;
+      z-index:10;
       display:flex !important;
       flex-direction:column !important;
-      height:100vh !important;
-      height:100dvh !important;
       min-height:0 !important;
       overflow:hidden !important;
+    }
+    .mc2-conv-header {
+      flex:none !important;
+      margin:0 !important;
     }
     .mc2-conversation-card {
       flex:1 1 auto !important;
@@ -5245,11 +5202,13 @@ function ensureMarvelChatV2Styles() {
       flex-direction:column !important;
       position:relative !important;
       overflow:hidden !important;
+      padding:0 !important;
     }
     .mc2-messages {
       flex:1 1 auto !important;
       min-height:0 !important;
       overflow-y:auto !important;
+      overflow-x:hidden !important;
       position:relative !important;
     }
     .mc2-composer {
@@ -5265,10 +5224,8 @@ function ensureMarvelChatV2Styles() {
       margin:0 !important;
       transform:none !important;
     }
-    /* Freezes the page body behind the chat screen so a tall
-       document (and any fixed-position element it defines
-       elsewhere) can never scroll independently underneath
-       the composer and throw its position off. */
+    /* Freezes the page body behind the fixed chat screen so
+       it can never scroll independently underneath it. */
     html.mc2-conv-lock,
     body.mc2-conv-lock {
       height:100% !important;
@@ -6135,121 +6092,17 @@ function mc2HideNewMessagesPill() {
 }
 
 /* =========================================================
-   LAYOUT LOCKDOWN (header / messages / composer)
+   "NEW MESSAGES" PILL — click to scroll to bottom.
 
-   Forces the correct flex three-row layout with inline
-   !important styles, which win the cascade over any
-   conflicting rule elsewhere in the app's stylesheet (e.g. a
-   shared ".message-box" or ".card" class) regardless of load
-   order or specificity. This is applied via a MutationObserver
-   rather than at the end of renderConversation(), because
-   renderConversation() only returns an HTML string — the
-   actual DOM nodes don't exist until whatever calls it injects
-   that string, which happens outside this file. Purely a
-   visual safety net: it never touches Firestore, never changes
-   the data model, and never interferes with any existing click
-   handler.
+   The fullscreen conversation layout itself (header /
+   scrollable messages / composer) is now guaranteed entirely
+   by CSS — see the FULLSCREEN SHELL rules injected by
+   ensureMarvelChatV2Styles() above — and the mc2-conv-lock
+   class is toggled deterministically by app.js's renderApp()
+   whenever it knows the conversation is (or isn't) open. There
+   is no DOM-watching layout-forcing JS: one layout system, one
+   source of truth.
    ========================================================= */
-
-function mc2LockConversationLayout() {
-  const page =
-    document.querySelector(
-      ".mc2-conversation-page"
-    );
-
-  const card =
-    document.querySelector(
-      ".mc2-conversation-card"
-    );
-
-  const messagesEl =
-    document.getElementById(
-      "messages"
-    );
-
-  const composer =
-    document.querySelector(
-      ".mc2-composer"
-    );
-
-  if (!page) {
-    document.documentElement.classList.remove(
-      "mc2-conv-lock"
-    );
-
-    document.body?.classList.remove(
-      "mc2-conv-lock"
-    );
-
-    return;
-  }
-
-  document.documentElement.classList.add(
-    "mc2-conv-lock"
-  );
-
-  document.body?.classList.add(
-    "mc2-conv-lock"
-  );
-
-  const setImportant = (
-    el,
-    props
-  ) => {
-    if (!el) {
-      return;
-    }
-
-    Object.keys(props).forEach(
-      key => {
-        el.style.setProperty(
-          key,
-          props[key],
-          "important"
-        );
-      }
-    );
-  };
-
-  setImportant(page, {
-    position: "relative",
-    display: "flex",
-    "flex-direction": "column",
-    height: "100dvh",
-    "min-height": "0",
-    overflow: "hidden"
-  });
-
-  setImportant(card, {
-    flex: "1 1 auto",
-    "min-height": "0",
-    display: "flex",
-    "flex-direction": "column",
-    position: "relative",
-    overflow: "hidden"
-  });
-
-  setImportant(messagesEl, {
-    flex: "1 1 auto",
-    "min-height": "0",
-    "overflow-y": "auto",
-    position: "relative"
-  });
-
-  setImportant(composer, {
-    position: "relative",
-    inset: "auto",
-    top: "auto",
-    left: "auto",
-    right: "auto",
-    bottom: "auto",
-    width: "100%",
-    "max-width": "none",
-    margin: "0",
-    transform: "none",
-    flex: "0 0 auto"
-  });
-}
 
 if (
   !window.__marvelChatLayoutLockInstalledV1
@@ -6257,46 +6110,6 @@ if (
   window.__marvelChatLayoutLockInstalledV1 =
     true;
 
-  let mc2LockScheduled = false;
-
-  const scheduleLock = () => {
-    if (mc2LockScheduled) {
-      return;
-    }
-
-    mc2LockScheduled = true;
-
-    requestAnimationFrame(() => {
-      mc2LockScheduled = false;
-      mc2LockConversationLayout();
-    });
-  };
-
-  const observer =
-    new MutationObserver(
-      scheduleLock
-    );
-
-  observer.observe(
-    document.documentElement,
-    {
-      childList: true,
-      subtree: true
-    }
-  );
-
-  window.addEventListener(
-    "resize",
-    scheduleLock
-  );
-
-  scheduleLock();
-
-  /*
-   * Clicking the "new messages" pill scrolls to the bottom and
-   * hides it — delegated on document so it works no matter how
-   * many times the conversation re-renders.
-   */
   document.addEventListener(
     "click",
     event => {
