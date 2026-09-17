@@ -318,7 +318,7 @@ export function renderApp() {
         class="main"
         style="${
           chatFullscreen
-            ? "padding:0;height:100vh;min-height:0;overflow:hidden;"
+            ? "padding:0;height:100dvh;min-height:0;overflow:hidden;"
             : ""
         }"
       >
