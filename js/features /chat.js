@@ -22,7 +22,8 @@ import {
   getDocs,
   onSnapshot,
   serverTimestamp,
-  increment
+  increment,
+  arrayUnion
 } from "../firebase/firestore.js";
 
 import {
@@ -101,6 +102,143 @@ async function clearMyUnreadCount(conversation) {
       e
     );
   }
+}
+
+/* =========================================================
+   READ RECEIPT (CONVERSATION-LEVEL, NOT PER-MESSAGE)
+
+   Marvel Chat message status is derived honestly from data
+   we can actually prove:
+
+     - "Sent"  -> the message document exists (write to
+       Firestore succeeded). This is the only thing we can
+       claim the instant a message is written.
+
+     - "Read"  -> the OTHER participant's lastRead timestamp
+       (stored once on the conversation document, not on
+       every message) is at or after this message's
+       createdAt.
+
+   This intentionally does NOT create a Firestore listener
+   per message, and does NOT claim "Delivered" as a separate
+   state, because this client has no reliable signal for a
+   message having reached the recipient's device without a
+   listener that is always active for every conversation
+   (which would not be honest to add given how this app is
+   structured). A single write (this function) replaces what
+   would otherwise require per-message read tracking.
+
+   This write is wrapped defensively: older Firestore rules
+   deployments may not yet allow the "lastRead" field on the
+   conversation document. If so, this fails silently and the
+   app simply shows "Sent" instead of "Read" until rules are
+   updated — it never breaks the conversation.
+   ========================================================= */
+
+async function markConversationRead(conversationId) {
+  if (!conversationId || !state.user?.uid) {
+    return;
+  }
+
+  try {
+    await updateDoc(
+      doc(
+        db,
+        "conversations",
+        conversationId
+      ),
+      {
+        [`lastRead.${state.user.uid}`]:
+          serverTimestamp()
+      }
+    );
+
+    const index =
+      state.conversations.findIndex(
+        x => x.id === conversationId
+      );
+
+    const nowIso =
+      new Date();
+
+    if (index >= 0) {
+      state.conversations[index] = {
+        ...state.conversations[index],
+        lastRead: {
+          ...(state.conversations[index].lastRead || {}),
+          [state.user.uid]: nowIso
+        }
+      };
+    }
+
+    if (state.activeConversation?.id === conversationId) {
+      state.activeConversation = {
+        ...state.activeConversation,
+        lastRead: {
+          ...(state.activeConversation.lastRead || {}),
+          [state.user.uid]: nowIso
+        }
+      };
+    }
+  } catch (e) {
+    /*
+     * Non-fatal. Older Firestore rules may not allow the
+     * "lastRead" field yet — the app simply shows "Sent"
+     * instead of "Read" until rules are updated.
+     */
+    console.warn(
+      "Could not update read receipt (this is safe to ignore until firestore.rules allows the lastRead field):",
+      e
+    );
+  }
+}
+
+function toMillis(value) {
+  if (!value) {
+    return 0;
+  }
+
+  if (typeof value.toMillis === "function") {
+    return value.toMillis();
+  }
+
+  if (typeof value.toDate === "function") {
+    return value.toDate().getTime();
+  }
+
+  const d = new Date(value);
+
+  return Number.isNaN(d.getTime())
+    ? 0
+    : d.getTime();
+}
+
+/*
+ * Returns "sent" or "read" for a message the current user
+ * sent. Never returns anything for a message the current
+ * user did not send — status is only ever shown on your own
+ * messages, exactly like the honest data we have.
+ */
+function getOwnMessageStatus(message, conversation) {
+  const otherUid =
+    conversation?.participants?.find(
+      x => x !== state.user?.uid
+    );
+
+  const otherLastRead =
+    otherUid
+      ? conversation?.lastRead?.[otherUid]
+      : null;
+
+  if (
+    otherLastRead &&
+    toMillis(otherLastRead) >=
+      toMillis(message.createdAt)
+  ) {
+    return "read";
+  }
+
+  return "sent";
 }
 
 export function totalUnreadCount() {
@@ -641,6 +779,7 @@ export async function openConversation(
   state.messages = [];
 
   await clearMyUnreadCount(c);
+  markConversationRead(c.id);
 
   c =
     state.conversations.find(
@@ -721,6 +860,10 @@ export async function openConversation(
             clearMyUnreadCount(
               state.activeConversation ||
                 c
+            );
+
+            markConversationRead(
+              c.id
             );
           }
         }
@@ -1154,6 +1297,25 @@ export async function editMessage(
    DELETE MESSAGE
    ========================================================= */
 
+/*
+ * =========================================================
+ * DELETE MESSAGE — "DELETE FOR EVERYONE"
+ * =========================================================
+ *
+ * IMPORTANT COMPATIBILITY NOTE:
+ *
+ * This used to be a hard `deleteDoc`. It is now a SOFT
+ * delete: the message document is preserved (same id, same
+ * createdAt) and marked `deletedForEveryone: true` with its
+ * text cleared. Existing messages created before this change
+ * simply don't have `deletedForEveryone` set, so they render
+ * exactly as before — nothing about old messages changes.
+ *
+ * This keeps the existing export name, the existing
+ * `data-delete-msg` wiring in app.js, and the existing
+ * owner-only permission check, so nothing else needs to
+ * change to keep this working.
+ */
 export async function deleteMessage(
   messageId
 ) {
@@ -1173,10 +1335,11 @@ export async function deleteMessage(
   }
 
   showModal(
-    "Delete this message?",
+    "Delete for everyone?",
     `
       <p class="small">
-        This message will be permanently removed.
+        This removes the message for both people in this
+        conversation. This cannot be undone.
       </p>
 
       <div
@@ -1199,7 +1362,7 @@ export async function deleteMessage(
           id="confirmDelMsg"
           style="flex:1;"
         >
-          Delete
+          Delete for everyone
         </button>
       </div>
     `
@@ -1222,32 +1385,41 @@ export async function deleteMessage(
       "click",
       async () => {
         try {
-          await deleteDoc(
+          await updateDoc(
             doc(
               db,
               "conversations",
               state.activeConversation.id,
               "messages",
               messageId
-            )
+            ),
+            {
+              deletedForEveryone: true,
+              deletedForEveryoneBy: state.user.uid,
+              deletedForEveryoneAt: serverTimestamp(),
+              text: ""
+            }
           );
 
           state.messages =
-            state.messages.filter(
+            state.messages.map(
               m =>
-                m.id !==
-                messageId
+                m.id === messageId
+                  ? {
+                      ...m,
+                      deletedForEveryone: true,
+                      deletedForEveryoneBy: state.user.uid,
+                      text: ""
+                    }
+                  : m
             );
 
-          const latest =
-            state.messages[
-              state.messages.length - 1
-            ];
-
-          const newLastMsg =
-            latest
-              ? latest.text
-              : "";
+          const latestVisible =
+            [...state.messages]
+              .reverse()
+              .find(
+                m => !m.deletedForEveryone
+              );
 
           await updateDoc(
             doc(
@@ -1257,11 +1429,13 @@ export async function deleteMessage(
             ),
             {
               lastMessage:
-                newLastMsg,
+                latestVisible
+                  ? latestVisible.text
+                  : "",
 
               updatedAt:
-                latest
-                  ? latest.createdAt
+                latestVisible
+                  ? latestVisible.createdAt
                   : serverTimestamp()
             }
           );
@@ -1269,8 +1443,15 @@ export async function deleteMessage(
           closeModal();
 
           toast(
-            "Message deleted."
+            "Message deleted for everyone."
           );
+
+          if (
+            typeof currentRenderApp ===
+            "function"
+          ) {
+            currentRenderApp();
+          }
         } catch (e) {
           console.error(
             "DELETE MESSAGE ERROR:",
@@ -1278,7 +1459,344 @@ export async function deleteMessage(
           );
 
           toast(
-            "Could not delete message."
+            friendly(e)
+          );
+        }
+      }
+    );
+}
+
+/*
+ * =========================================================
+ * DELETE MESSAGE — "DELETE FOR ME"
+ * =========================================================
+ *
+ * New. Available to ANY participant (not just the message
+ * owner) — it only affects what the current user sees.
+ *
+ * Data model: a `deletedFor` array field on the message
+ * document, holding the uids of users who have hidden it.
+ * Old messages have no `deletedFor` field, which is treated
+ * as an empty array, so they display normally.
+ *
+ * NOTE: because a non-owner participant needs to write to a
+ * message document they do not own, this requires
+ * firestore.rules to allow updates that ONLY touch the
+ * `deletedFor` field and only add the requester's own uid.
+ * Until that rule is deployed, this call will fail with a
+ * permission error for messages the user does not own; the
+ * failure is caught and surfaced as a normal toast rather
+ * than breaking the conversation.
+ */
+export async function deleteMessageForMe(
+  messageId
+) {
+  const msg =
+    state.messages.find(
+      m => m.id === messageId
+    );
+
+  if (!msg || !state.activeConversation?.id) {
+    return;
+  }
+
+  showModal(
+    "Delete this message for you?",
+    `
+      <p class="small">
+        This removes the message from your view only. The
+        other participant keeps their copy.
+      </p>
+
+      <div
+        style="
+          display:flex;
+          gap:10px;
+          margin-top:16px;
+        "
+      >
+        <button
+          class="btn btn-ghost"
+          id="cancelDelForMeMsg"
+          style="flex:1;"
+        >
+          Cancel
+        </button>
+
+        <button
+          class="btn btn-danger"
+          id="confirmDelForMeMsg"
+          style="flex:1;"
+        >
+          Delete for me
+        </button>
+      </div>
+    `
+  );
+
+  document
+    .getElementById("cancelDelForMeMsg")
+    ?.addEventListener("click", closeModal);
+
+  document
+    .getElementById("confirmDelForMeMsg")
+    ?.addEventListener(
+      "click",
+      async () => {
+        try {
+          await updateDoc(
+            doc(
+              db,
+              "conversations",
+              state.activeConversation.id,
+              "messages",
+              messageId
+            ),
+            {
+              deletedFor:
+                arrayUnion(state.user.uid)
+            }
+          );
+
+          state.messages =
+            state.messages.map(
+              m =>
+                m.id === messageId
+                  ? {
+                      ...m,
+                      deletedFor: [
+                        ...(m.deletedFor || []),
+                        state.user.uid
+                      ]
+                    }
+                  : m
+            );
+
+          closeModal();
+
+          toast(
+            "Message removed from your view."
+          );
+
+          if (
+            typeof currentRenderApp ===
+            "function"
+          ) {
+            currentRenderApp();
+          }
+        } catch (e) {
+          console.error(
+            "DELETE MESSAGE FOR ME ERROR:",
+            e
+          );
+
+          toast(
+            friendly(e)
+          );
+        }
+      }
+    );
+}
+
+/*
+ * =========================================================
+ * PIN / UNPIN A SINGLE MESSAGE
+ * =========================================================
+ *
+ * This is intentionally separate from conversation-level
+ * pinning (togglePinConversation, below), which pins an
+ * entire CHAT in the chat list. This pins one MESSAGE inside
+ * an open conversation so it can be highlighted at the top.
+ *
+ * Data model: `pinned` (bool), `pinnedBy` (uid), `pinnedAt`
+ * (server timestamp) on the message document. Old messages
+ * have none of these fields, which is treated as unpinned.
+ *
+ * NOTE: like "delete for me", a participant pinning a
+ * message they did not send needs firestore.rules to allow
+ * an update that only touches `pinned`/`pinnedBy`/`pinnedAt`
+ * from any conversation participant, not just the owner.
+ * Until that rule is deployed, pinning another participant's
+ * message will fail with a permission error, caught below
+ * and surfaced as a toast.
+ */
+export async function toggleMessagePin(
+  messageId
+) {
+  if (!state.activeConversation?.id) {
+    return;
+  }
+
+  const msg =
+    state.messages.find(
+      m => m.id === messageId
+    );
+
+  if (!msg) {
+    return;
+  }
+
+  const nowPinned = !msg.pinned;
+
+  try {
+    await updateDoc(
+      doc(
+        db,
+        "conversations",
+        state.activeConversation.id,
+        "messages",
+        messageId
+      ),
+      nowPinned
+        ? {
+            pinned: true,
+            pinnedBy: state.user.uid,
+            pinnedAt: serverTimestamp()
+          }
+        : {
+            pinned: false,
+            pinnedBy: null,
+            pinnedAt: null
+          }
+    );
+
+    state.messages =
+      state.messages.map(
+        m =>
+          m.id === messageId
+            ? {
+                ...m,
+                pinned: nowPinned,
+                pinnedBy:
+                  nowPinned
+                    ? state.user.uid
+                    : null
+              }
+            : m
+      );
+
+    toast(
+      nowPinned
+        ? "Message pinned 📌"
+        : "Message unpinned"
+    );
+
+    if (
+      typeof currentRenderApp ===
+      "function"
+    ) {
+      currentRenderApp();
+    }
+  } catch (e) {
+    console.error(
+      "PIN MESSAGE ERROR:",
+      e
+    );
+
+    toast(
+      friendly(e)
+    );
+  }
+}
+
+/*
+ * =========================================================
+ * REPORT A SINGLE MESSAGE (OR ITS SENDER)
+ * =========================================================
+ *
+ * Writes to the existing top-level `reports` collection with
+ * `reporterUid == request.auth.uid`, which is already
+ * permitted by the current firestore.rules — no rules change
+ * needed for this one.
+ */
+export async function reportMessageModal(
+  messageId
+) {
+  const msg =
+    state.messages.find(
+      m => m.id === messageId
+    );
+
+  if (!msg || !state.activeConversation?.id) {
+    return;
+  }
+
+  const conversationId =
+    state.activeConversation.id;
+
+  showModal(
+    "Report message",
+    `
+      <p class="small">
+        Select a reason for reporting this message:
+      </p>
+
+      <div
+        class="field"
+        style="margin:12px 0;"
+      >
+        <select
+          class="input"
+          id="reportMsgReason"
+        >
+          <option value="Spam">Spam</option>
+          <option value="Harassment">Harassment</option>
+          <option value="Inappropriate behavior">
+            Inappropriate behavior
+          </option>
+          <option value="Scam/fraud concern">
+            Scam/fraud concern
+          </option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+
+      <button
+        class="btn btn-danger btn-block"
+        id="submitMsgReport"
+      >
+        Submit Report
+      </button>
+    `
+  );
+
+  document
+    .getElementById("submitMsgReport")
+    ?.addEventListener(
+      "click",
+      async () => {
+        const reason =
+          document
+            .getElementById("reportMsgReason")
+            ?.value || "Other";
+
+        try {
+          await addDoc(
+            collection(db, "reports"),
+            {
+              type: "message",
+              reporterUid: state.user.uid,
+              reportedUid: msg.uid,
+              conversationId,
+              messageId,
+              reason,
+              createdAt: serverTimestamp()
+            }
+          );
+
+          closeModal();
+
+          toast(
+            "Report submitted successfully. Thank you."
+          );
+        } catch (e) {
+          console.error(
+            "REPORT MESSAGE ERROR:",
+            e
+          );
+
+          toast(
+            "Could not submit report. Note that security rules may require specific report permissions."
           );
         }
       }
@@ -1578,6 +2096,12 @@ export function showChatBackgroundModal(
       id: "softlight",
       name: "Soft Light",
       preview: "linear-gradient(135deg, #ffffff, #eef1f5)"
+    },
+    {
+      id: "nebula",
+      name: "Marvel Nebula",
+      preview:
+        "radial-gradient(circle at 30% 30%, #a855f7, #1b1030 70%)"
     }
   ];
 
@@ -3458,6 +3982,32 @@ export function renderConversation() {
   const isBlocked =
     !!preference.blocked;
 
+  /*
+   * A message hidden via "delete for me" (deletedFor
+   * contains the current uid) is simply never rendered for
+   * this user. Messages without a deletedFor field at all
+   * (every message created before this feature existed)
+   * pass straight through unaffected.
+   */
+  const visibleMessages =
+    state.messages.filter(
+      m =>
+        !(m.deletedFor || []).includes(
+          state.user.uid
+        )
+    );
+
+  const pinnedMessage =
+    [...visibleMessages]
+      .filter(
+        m => m.pinned && !m.deletedForEveryone
+      )
+      .sort(
+        (a, b) =>
+          toMillis(b.pinnedAt) -
+          toMillis(a.pinnedAt)
+      )[0] || null;
+
   const backgroundClass =
     `mc2-bg-${
       preference.background ||
@@ -3528,6 +4078,48 @@ export function renderConversation() {
         "
       >
 
+        ${
+          pinnedMessage
+            ? `
+              <div
+                class="mc2-pinned-bar"
+                data-jump-to-message="${escapeHtml(
+                  pinnedMessage.id
+                )}"
+              >
+                <span>📌</span>
+
+                <span class="mc2-pinned-bar-text">
+                  ${escapeHtml(
+                    (pinnedMessage.text || "Pinned message").slice(
+                      0,
+                      120
+                    )
+                  )}
+                </span>
+
+                <button
+                  type="button"
+                  class="icon-btn"
+                  data-pin-msg="${escapeHtml(
+                    pinnedMessage.id
+                  )}"
+                  aria-label="Unpin message"
+                  title="Unpin"
+                  style="
+                    width:26px;
+                    height:26px;
+                    font-size:13px;
+                    padding:0;
+                  "
+                >
+                  ✕
+                </button>
+              </div>
+            `
+            : ""
+        }
+
         <div
           class="messages mc2-messages"
           id="messages"
@@ -3538,13 +4130,52 @@ export function renderConversation() {
           "
         >
           ${
-            state.messages.length
-              ? state.messages
+            visibleMessages.length
+              ? visibleMessages
                   .map(
                     m => {
                       const isMine =
                         m.uid ===
                         state.user.uid;
+
+                      const isDeleted =
+                        !!m.deletedForEveryone;
+
+                      if (isDeleted) {
+                        return `
+                          <div
+                            class="bubble mc2-bubble ${
+                              isMine
+                                ? "mine"
+                                : ""
+                            }"
+                            data-message-id="${escapeHtml(
+                              m.id
+                            )}"
+                            style="position:relative;"
+                          >
+                            <div class="mc2-bubble-text mc2-bubble-deleted">
+                              🚫 This message was deleted
+                            </div>
+
+                            <div class="bubble-time mc2-bubble-time">
+                              ${escapeHtml(
+                                formatDate(
+                                  m.createdAt
+                                )
+                              )}
+                            </div>
+                          </div>
+                        `;
+                      }
+
+                      const status =
+                        isMine
+                          ? getOwnMessageStatus(
+                              m,
+                              c
+                            )
+                          : null;
 
                       return `
                         <div
@@ -3558,8 +4189,27 @@ export function renderConversation() {
                           )}"
                           style="
                             position:relative;
+                            padding-right:26px;
                           "
                         >
+
+                          ${
+                            m.pinned
+                              ? `<div class="mc2-pin-flag">📌 Pinned</div>`
+                              : ""
+                          }
+
+                          <button
+                            type="button"
+                            class="mc2-msg-menu-btn"
+                            data-msg-menu="${escapeHtml(
+                              m.id
+                            )}"
+                            aria-label="Message options"
+                            aria-expanded="false"
+                          >
+                            ⋮
+                          </button>
 
                           <div class="mc2-bubble-text">
                             ${escapeHtml(
@@ -3586,49 +4236,110 @@ export function renderConversation() {
                                 `
                                 : ""
                             }
+
+                            ${
+                              status
+                                ? `<span
+                                    class="mc2-status-dot status-${status}"
+                                    title="${
+                                      status === "read"
+                                        ? "Read"
+                                        : "Sent"
+                                    }"
+                                  ></span>`
+                                : ""
+                            }
                           </div>
 
                           <div
-                            class="message-actions-dropdown mc2-message-actions"
+                            class="mc2-msg-menu"
+                            data-msg-options="${escapeHtml(
+                              m.id
+                            )}"
+                            data-open="false"
                           >
-
                             <button
-                              class="btn-text mc2-msg-action"
+                              type="button"
+                              class="mc2-msg-menu-item"
                               data-copy-msg="${escapeHtml(
                                 m.text ||
                                 ""
                               )}"
                             >
-                              Copy
+                              📋 Copy
                             </button>
 
                             ${
                               isMine
                                 ? `
                                   <button
-                                    class="btn-text mc2-msg-action"
+                                    type="button"
+                                    class="mc2-msg-menu-item"
                                     data-edit-msg="${escapeHtml(
                                       m.id
                                     )}"
                                   >
-                                    Edit
-                                  </button>
-
-                                  <button
-                                    class="btn-text mc2-msg-action mc2-msg-action-danger"
-                                    data-delete-msg="${escapeHtml(
-                                      m.id
-                                    )}"
-                                    style="
-                                      color:var(--danger);
-                                    "
-                                  >
-                                    Delete
+                                    ✏️ Edit
                                   </button>
                                 `
                                 : ""
                             }
 
+                            <button
+                              type="button"
+                              class="mc2-msg-menu-item"
+                              data-delete-for-me-msg="${escapeHtml(
+                                m.id
+                              )}"
+                            >
+                              🙈 Delete for me
+                            </button>
+
+                            ${
+                              isMine
+                                ? `
+                                  <button
+                                    type="button"
+                                    class="mc2-msg-menu-item danger"
+                                    data-delete-msg="${escapeHtml(
+                                      m.id
+                                    )}"
+                                  >
+                                    🗑️ Delete for everyone
+                                  </button>
+                                `
+                                : ""
+                            }
+
+                            <button
+                              type="button"
+                              class="mc2-msg-menu-item"
+                              data-pin-msg="${escapeHtml(
+                                m.id
+                              )}"
+                            >
+                              ${
+                                m.pinned
+                                  ? "📌 Unpin message"
+                                  : "📌 Pin message"
+                              }
+                            </button>
+
+                            ${
+                              !isMine
+                                ? `
+                                  <button
+                                    type="button"
+                                    class="mc2-msg-menu-item danger"
+                                    data-report-msg="${escapeHtml(
+                                      m.id
+                                    )}"
+                                  >
+                                    ⚠️ Report message
+                                  </button>
+                                `
+                                : ""
+                            }
                           </div>
                         </div>
                       `;
@@ -3880,6 +4591,144 @@ function ensureMarvelChatV2Styles() {
       font-size:11px;
       font-weight:700;
     }
+
+    /* ---- New Marvel Chat background pattern ---- */
+    .mc2-conversation-card.mc2-bg-nebula {
+      background-color:#1b1030;
+      background-image:
+        radial-gradient(circle at 15% 20%, rgba(168,85,247,0.28), transparent 40%),
+        radial-gradient(circle at 85% 15%, rgba(99,102,241,0.24), transparent 45%),
+        radial-gradient(circle at 50% 90%, rgba(236,72,153,0.16), transparent 50%),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64'%3E%3Ccircle cx='6' cy='6' r='1.4' fill='%23ffffff' fill-opacity='0.10'/%3E%3Ccircle cx='34' cy='24' r='1' fill='%23ffffff' fill-opacity='0.08'/%3E%3Ccircle cx='52' cy='48' r='1.6' fill='%23ffffff' fill-opacity='0.09'/%3E%3Ccircle cx='18' cy='52' r='1' fill='%23ffffff' fill-opacity='0.07'/%3E%3C/svg%3E");
+      color:#fff;
+    }
+    .mc2-bg-nebula .mc2-bubble:not(.mine) {
+      background:rgba(255,255,255,0.10);
+      border-color:rgba(255,255,255,0.18);
+      color:#fff;
+    }
+
+    /* ---- Message 3-dot menu (mobile-friendly, clip-proof) ---- */
+    .mc2-msg-menu-btn {
+      position:absolute;
+      top:2px;
+      width:22px;
+      height:22px;
+      min-height:0;
+      border:0;
+      background:transparent;
+      color:inherit;
+      opacity:0.6;
+      border-radius:8px;
+      font-size:15px;
+      line-height:1;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      cursor:pointer;
+      padding:0;
+    }
+    .mc2-msg-menu-btn:hover,
+    .mc2-msg-menu-btn:active {
+      opacity:1;
+      background:rgba(127,127,127,0.15);
+    }
+    .mc2-bubble .mc2-msg-menu-btn { right:2px; }
+    .mc2-bubble.mine .mc2-msg-menu-btn { right:2px; }
+    .mc2-bubble:not(.mine) .mc2-msg-menu-btn { right:2px; }
+
+    .mc2-msg-menu {
+      display:none;
+      position:fixed;
+      z-index:1200;
+      min-width:190px;
+      max-width:calc(100vw - 24px);
+      max-height:min(60vh, 360px);
+      overflow-y:auto;
+      -webkit-overflow-scrolling:touch;
+      background:var(--surface);
+      color:var(--text);
+      border:1px solid var(--border);
+      border-radius:14px;
+      box-shadow:var(--shadow2, 0 10px 30px rgba(0,0,0,0.25));
+      padding:6px;
+    }
+    .mc2-msg-menu[data-open="true"] {
+      display:block;
+    }
+    .mc2-msg-menu-item {
+      width:100%;
+      border:0;
+      background:transparent;
+      color:var(--text);
+      text-align:left;
+      padding:10px 12px;
+      border-radius:8px;
+      font-size:14px;
+      font-weight:600;
+      cursor:pointer;
+    }
+    .mc2-msg-menu-item:hover,
+    .mc2-msg-menu-item:active {
+      background:var(--surface2, rgba(127,127,127,0.12));
+    }
+    .mc2-msg-menu-item.danger { color:var(--danger); }
+
+    /* ---- Message status dot (own messages only) ---- */
+    .mc2-status-dot {
+      display:inline-block;
+      width:7px;
+      height:7px;
+      border-radius:50%;
+      margin-left:6px;
+      vertical-align:middle;
+      position:relative;
+    }
+    .mc2-status-dot.status-sent {
+      background:#ef4444;
+    }
+    .mc2-status-dot.status-read {
+      background:#22c55e;
+      box-shadow:0 0 0 2px rgba(34,197,94,0.28);
+    }
+
+    /* ---- Pin indicator + pinned message bar ---- */
+    .mc2-pin-flag {
+      font-size:11px;
+      margin-bottom:3px;
+      opacity:0.85;
+    }
+    .mc2-pinned-bar {
+      flex:none;
+      display:flex;
+      align-items:center;
+      gap:8px;
+      padding:8px 14px;
+      border-bottom:1px solid var(--border);
+      background:var(--surface2, rgba(127,127,127,0.06));
+      font-size:13px;
+      cursor:pointer;
+    }
+    .mc2-pinned-bar-text {
+      flex:1;
+      min-width:0;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+    }
+
+    /* ---- Deleted-for-everyone placeholder ---- */
+    .mc2-bubble-deleted {
+      font-style:italic;
+      opacity:0.65;
+    }
+
+    /* ---- Conversation options menu: scrollable + clip-proof ---- */
+    .chat-options-menu {
+      max-height:min(70vh, 420px);
+      overflow-y:auto;
+      -webkit-overflow-scrolling:touch;
+    }
   `;
 
   document.head.appendChild(style);
@@ -4062,8 +4911,56 @@ if (
           );
 
         if (!isOpen) {
+          const rect =
+            menuButton.getBoundingClientRect();
+
+          menu.style.position =
+            "fixed";
           menu.style.display =
             "block";
+          menu.style.visibility =
+            "hidden";
+
+          const menuWidth =
+            menu.offsetWidth || 210;
+          const menuHeight =
+            menu.offsetHeight || 300;
+
+          let left =
+            rect.right - menuWidth;
+          left = Math.max(
+            8,
+            Math.min(
+              left,
+              window.innerWidth -
+                menuWidth -
+                8
+            )
+          );
+
+          let top =
+            rect.bottom + 6;
+
+          if (
+            top + menuHeight >
+            window.innerHeight - 8
+          ) {
+            top =
+              rect.top -
+              menuHeight -
+              6;
+          }
+
+          top = Math.max(8, top);
+
+          menu.style.left =
+            `${left}px`;
+          menu.style.top =
+            `${top}px`;
+          menu.style.right =
+            "auto";
+          menu.style.visibility =
+            "visible";
 
           menu.setAttribute(
             "data-open",
@@ -4075,6 +4972,248 @@ if (
             "true"
           );
         }
+
+        return;
+      }
+
+      /* ===============================================
+         MESSAGE MENU BUTTON (3-dot, on each bubble)
+         =============================================== */
+
+      const msgMenuButton =
+        event.target.closest(
+          "[data-msg-menu]"
+        );
+
+      if (msgMenuButton) {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const messageId =
+          msgMenuButton.dataset.msgMenu;
+
+        const msgMenu =
+          document.querySelector(
+            `[data-msg-options="${CSS.escape(
+              messageId
+            )}"]`
+          );
+
+        if (!msgMenu) {
+          return;
+        }
+
+        const msgMenuOpen =
+          msgMenu.getAttribute(
+            "data-open"
+          ) === "true";
+
+        document
+          .querySelectorAll(
+            "[data-msg-options]"
+          )
+          .forEach(otherMenu => {
+            otherMenu.style.display =
+              "none";
+            otherMenu.setAttribute(
+              "data-open",
+              "false"
+            );
+          });
+
+        document
+          .querySelectorAll(
+            "[data-msg-menu]"
+          )
+          .forEach(button => {
+            button.setAttribute(
+              "aria-expanded",
+              "false"
+            );
+          });
+
+        if (!msgMenuOpen) {
+          const rect =
+            msgMenuButton.getBoundingClientRect();
+
+          msgMenu.style.display =
+            "block";
+          msgMenu.style.visibility =
+            "hidden";
+
+          const menuWidth =
+            msgMenu.offsetWidth || 190;
+          const menuHeight =
+            msgMenu.offsetHeight || 260;
+
+          let left =
+            rect.right - menuWidth;
+          left = Math.max(
+            8,
+            Math.min(
+              left,
+              window.innerWidth -
+                menuWidth -
+                8
+            )
+          );
+
+          let top =
+            rect.bottom + 4;
+
+          if (
+            top + menuHeight >
+            window.innerHeight - 8
+          ) {
+            top =
+              rect.top -
+              menuHeight -
+              4;
+          }
+
+          top = Math.max(8, top);
+
+          msgMenu.style.left =
+            `${left}px`;
+          msgMenu.style.top =
+            `${top}px`;
+          msgMenu.style.visibility =
+            "visible";
+
+          msgMenu.setAttribute(
+            "data-open",
+            "true"
+          );
+
+          msgMenuButton.setAttribute(
+            "aria-expanded",
+            "true"
+          );
+        }
+
+        return;
+      }
+
+      /* ===============================================
+         MESSAGE MENU ACTIONS: DELETE FOR ME / PIN / REPORT
+
+         (Copy / Edit / "Delete for everyone" keep using the
+         existing data-copy-msg / data-edit-msg / data-delete-msg
+         attributes, which app.js already binds on every
+         render — nothing about those changes.)
+         =============================================== */
+
+      const deleteForMeBtn =
+        event.target.closest(
+          "[data-delete-for-me-msg]"
+        );
+
+      if (deleteForMeBtn) {
+        event.preventDefault();
+        event.stopPropagation();
+
+        document
+          .querySelectorAll(
+            "[data-msg-options]"
+          )
+          .forEach(m => {
+            m.style.display = "none";
+            m.setAttribute(
+              "data-open",
+              "false"
+            );
+          });
+
+        deleteMessageForMe(
+          deleteForMeBtn.dataset
+            .deleteForMeMsg
+        );
+
+        return;
+      }
+
+      const pinMsgBtn =
+        event.target.closest(
+          "[data-pin-msg]"
+        );
+
+      if (pinMsgBtn) {
+        event.preventDefault();
+        event.stopPropagation();
+
+        document
+          .querySelectorAll(
+            "[data-msg-options]"
+          )
+          .forEach(m => {
+            m.style.display = "none";
+            m.setAttribute(
+              "data-open",
+              "false"
+            );
+          });
+
+        toggleMessagePin(
+          pinMsgBtn.dataset.pinMsg
+        );
+
+        return;
+      }
+
+      const reportMsgBtn =
+        event.target.closest(
+          "[data-report-msg]"
+        );
+
+      if (reportMsgBtn) {
+        event.preventDefault();
+        event.stopPropagation();
+
+        document
+          .querySelectorAll(
+            "[data-msg-options]"
+          )
+          .forEach(m => {
+            m.style.display = "none";
+            m.setAttribute(
+              "data-open",
+              "false"
+            );
+          });
+
+        reportMessageModal(
+          reportMsgBtn.dataset.reportMsg
+        );
+
+        return;
+      }
+
+      /* ===============================================
+         JUMP TO PINNED MESSAGE
+         =============================================== */
+
+      const jumpBtn =
+        event.target.closest(
+          "[data-jump-to-message]"
+        );
+
+      if (
+        jumpBtn &&
+        !event.target.closest(
+          "[data-pin-msg]"
+        )
+      ) {
+        const target =
+          document.querySelector(
+            `[data-message-id="${CSS.escape(
+              jumpBtn.dataset.jumpToMessage
+            )}"]`
+          );
+
+        target?.scrollIntoView({
+          behavior: "smooth",
+          block: "center"
+        });
 
         return;
       }
@@ -4375,6 +5514,89 @@ if (
             }
           );
       }
+
+      /* ===============================================
+         CLOSE MESSAGE MENU WHEN CLICKING OUTSIDE
+         =============================================== */
+
+      if (
+        !event.target.closest(
+          "[data-msg-options]"
+        ) &&
+        !event.target.closest(
+          "[data-msg-menu]"
+        )
+      ) {
+        document
+          .querySelectorAll(
+            "[data-msg-options]"
+          )
+          .forEach(menu => {
+            menu.style.display =
+              "none";
+
+            menu.setAttribute(
+              "data-open",
+              "false"
+            );
+          });
+
+        document
+          .querySelectorAll(
+            "[data-msg-menu]"
+          )
+          .forEach(button => {
+            button.setAttribute(
+              "aria-expanded",
+              "false"
+            );
+          });
+      }
+    }
+  );
+}
+
+/* =========================================================
+   CLOSE ANY OPEN MENU ON ESCAPE (mobile-friendly, guarded
+   so this is only ever installed once regardless of how many
+   times renderChat()/renderConversation() run).
+   ========================================================= */
+
+if (
+  !window.__marvelChatMenuEscapeInstalledV1
+) {
+  window.__marvelChatMenuEscapeInstalledV1 =
+    true;
+
+  document.addEventListener(
+    "keydown",
+    event => {
+      if (event.key !== "Escape") {
+        return;
+      }
+
+      document
+        .querySelectorAll(
+          "[data-chat-options], [data-msg-options]"
+        )
+        .forEach(menu => {
+          menu.style.display = "none";
+          menu.setAttribute(
+            "data-open",
+            "false"
+          );
+        });
+
+      document
+        .querySelectorAll(
+          "[data-chat-menu], [data-msg-menu]"
+        )
+        .forEach(button => {
+          button.setAttribute(
+            "aria-expanded",
+            "false"
+          );
+        });
     }
   );
 }
