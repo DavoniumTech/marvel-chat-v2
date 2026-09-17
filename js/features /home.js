@@ -37,6 +37,41 @@ const HOME_MEDIA_MAX_DIMENSION = 1920;
 const HOME_MEDIA_WINDOW_MS = 24 * 60 * 60 * 1000;
 const POST_TEXT_COLLAPSE_LENGTH = 520;
 
+/*
+ * Collapsed post-text box heights, in pixels.
+ *
+ * The post-text-surface box uses font-size:16px and
+ * line-height:1.65, so one line of text renders at
+ * roughly 16 * 1.65 ≈ 26px. The surface also has 16px
+ * top/bottom padding and uses box-sizing:border-box, so
+ * that padding (32px total) counts toward the element's
+ * height budget in both cases below.
+ *
+ * MEDIA + TEXT posts collapse to ~1.5 lines:
+ *   ~40px (1.5 lines of text) + 32px padding ≈ 72px
+ *
+ * TEXT-ONLY posts collapse to ~5 lines:
+ *   ~132px (5 lines of text) + 32px padding ≈ 164px
+ *
+ * This is a CSS max-height/overflow approach rather than
+ * -webkit-line-clamp, because line-clamp only accepts whole
+ * integers (1, 2, 3 ...) and cannot express "1.5 lines".
+ * A max-height crop naturally shows a partial next line,
+ * which is what gives the "about N.5 lines" look.
+ *
+ * Limitation: this is an approximation. Exact pixel-per-line
+ * measurements can vary slightly across browsers, OS font
+ * rendering, and zoom levels, so on some devices this may
+ * render a little more or less than the exact target line
+ * count. Whether a post actually needs the "Show more"
+ * control is NOT decided by these constants — it's decided
+ * after render by measuring the real rendered height (see
+ * syncPostTextOverflow below), so the control only appears
+ * when text is genuinely being cut off.
+ */
+const POST_TEXT_COLLAPSED_MEDIA_HEIGHT_PX = 72;
+const POST_TEXT_COLLAPSED_TEXT_ONLY_HEIGHT_PX = 164;
+
 const DISCOVERY_STORAGE_KEY = "marvel_discovery_seen_v2";
 const DISCOVERY_LAST_ACTIVE_KEY = "marvel_home_last_active_v1";
 const DISCOVERY_MIN_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -2054,9 +2089,18 @@ function refreshPostCard(id) {
       post
     );
 
+  const newCard =
+    holder.firstElementChild;
+
   card.replaceWith(
-    holder.firstElementChild
+    newCard
   );
+
+  if (newCard) {
+    syncPostTextOverflow(
+      newCard
+    );
+  }
 }
 
 function toggleHomePostText(id) {
@@ -2076,13 +2120,16 @@ function toggleHomePostText(id) {
     container.dataset.expanded ===
     "true";
 
+  const collapsedHeight =
+    Number(
+      container.dataset
+        .collapsedHeight
+    ) ||
+    POST_TEXT_COLLAPSED_MEDIA_HEIGHT_PX;
+
   if (expanded) {
-    container.style.display =
-      "-webkit-box";
-    container.style.webkitLineClamp =
-      "8";
-    container.style.webkitBoxOrient =
-      "vertical";
+    container.style.maxHeight =
+      `${collapsedHeight}px`;
     container.style.overflow =
       "hidden";
     container.dataset.expanded =
@@ -2093,12 +2140,8 @@ function toggleHomePostText(id) {
         "Show more";
     }
   } else {
-    container.style.display =
-      "block";
-    container.style.webkitLineClamp =
-      "unset";
-    container.style.webkitBoxOrient =
-      "unset";
+    container.style.maxHeight =
+      `${container.scrollHeight}px`;
     container.style.overflow =
       "visible";
     container.dataset.expanded =
@@ -2109,6 +2152,48 @@ function toggleHomePostText(id) {
         "Show less";
     }
   }
+}
+
+/*
+ * After posts are rendered/mounted, measure each collapsed
+ * post-text-surface's real rendered height against its
+ * scrollHeight. If the text doesn't actually overflow the
+ * collapsed box (short text, or text that only *looked* long
+ * by character count but wraps to fewer lines on a wide
+ * screen), the "Show more" control is hidden so it never
+ * appears next to text that isn't actually being cut off.
+ * If it DOES overflow, the control is revealed. This makes
+ * the collapse/expand behavior driven by actual rendered
+ * layout rather than a fixed character-count guess.
+ */
+function syncPostTextOverflow(root) {
+  const scope =
+    root && typeof root.querySelectorAll === "function"
+      ? root
+      : document;
+
+  const surfaces = scope.querySelectorAll(
+    '.post-text-surface[data-expanded="false"]'
+  );
+
+  surfaces.forEach(surface => {
+    const id = surface.id.replace(
+      "postText-",
+      ""
+    );
+
+    const toggle = document.getElementById(
+      `postTextToggle-${id}`
+    );
+
+    if (!toggle) return;
+
+    const isOverflowing =
+      surface.scrollHeight >
+      surface.clientHeight + 2;
+
+    toggle.hidden = !isOverflowing;
+  });
 }
 
 function renderPostCard(post) {
@@ -2135,10 +2220,6 @@ function renderPostCard(post) {
 
   const postPlainText =
     getPostText(post).trim();
-
-  const isLongPostText =
-    postPlainText.length >
-    POST_TEXT_COLLAPSE_LENGTH;
 
   const background =
     getPostBackground(
@@ -2172,6 +2253,14 @@ function renderPostCard(post) {
   const media =
     getPostMedia(post);
 
+  const hasMedia =
+    !!media;
+
+  const collapsedHeightPx =
+    hasMedia
+      ? POST_TEXT_COLLAPSED_MEDIA_HEIGHT_PX
+      : POST_TEXT_COLLAPSED_TEXT_ONLY_HEIGHT_PX;
+
   const postTextBlock = postPlainText
     ? `
             <div
@@ -2191,6 +2280,7 @@ function renderPostCard(post) {
                   background.key
                 )}"
                 data-expanded="false"
+                data-collapsed-height="${collapsedHeightPx}"
                 style="
                   width:100%;
                   max-width:100%;
@@ -2207,41 +2297,34 @@ function renderPostCard(post) {
                   font-size:16px;
                   font-weight:400;
                   letter-spacing:.005em;
-                  ${
-                    isLongPostText
-                      ? "display:-webkit-box;-webkit-line-clamp:8;-webkit-box-orient:vertical;overflow:hidden;"
-                      : "overflow:hidden;"
-                  }
+                  max-height:${collapsedHeightPx}px;
+                  overflow:hidden;
+                  transition:max-height .2s ease;
                 "
               >
                 ${text}
               </div>
 
-              ${
-                isLongPostText
-                  ? `
-                    <button
-                      type="button"
-                      class="btn-link"
-                      data-home-action="toggle-text"
-                      data-id="${escapeHtml(id)}"
-                      id="postTextToggle-${escapeHtml(id)}"
-                      style="
-                        margin-top:6px;
-                        background:none;
-                        border:none;
-                        padding:0;
-                        color:var(--accent, #7c5cff);
-                        font-size:13px;
-                        font-weight:600;
-                        cursor:pointer;
-                      "
-                    >
-                      Show more
-                    </button>
-                  `
-                  : ""
-              }
+              <button
+                type="button"
+                class="btn-link"
+                data-home-action="toggle-text"
+                data-id="${escapeHtml(id)}"
+                id="postTextToggle-${escapeHtml(id)}"
+                hidden
+                style="
+                  margin-top:6px;
+                  background:none;
+                  border:none;
+                  padding:0;
+                  color:var(--accent, #7c5cff);
+                  font-size:13px;
+                  font-weight:600;
+                  cursor:pointer;
+                "
+              >
+                Show more
+              </button>
             </div>
           `
     : "";
@@ -2403,11 +2486,7 @@ function renderPostCard(post) {
         </div>
       </div>
 
-      ${
-        media
-          ? `${postMediaBlock}${postTextBlock}`
-          : `${postTextBlock}${postMediaBlock}`
-      }
+      ${postMediaBlock}${postTextBlock}
 
       <div
         class="post-engagement"
@@ -5881,6 +5960,10 @@ export function attachHomeEvents(
   if (!homePage) {
     return;
   }
+
+  syncPostTextOverflow(
+    homePage
+  );
 
   homeClickHandler =
     event => {
