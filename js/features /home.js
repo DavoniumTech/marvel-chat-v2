@@ -50,8 +50,8 @@ const POST_TEXT_COLLAPSE_LENGTH = 520;
  * MEDIA + TEXT posts collapse to ~1.5 lines:
  *   ~40px (1.5 lines of text) + 32px padding ≈ 72px
  *
- * TEXT-ONLY posts collapse to ~5 lines:
- *   ~132px (5 lines of text) + 32px padding ≈ 164px
+ * TEXT-ONLY posts collapse to 7 lines:
+ *   ~185px (7 lines of text) + 32px padding ≈ 217px
  *
  * This is a CSS max-height/overflow approach rather than
  * -webkit-line-clamp, because line-clamp only accepts whole
@@ -70,7 +70,7 @@ const POST_TEXT_COLLAPSE_LENGTH = 520;
  * when text is genuinely being cut off.
  */
 const POST_TEXT_COLLAPSED_MEDIA_HEIGHT_PX = 72;
-const POST_TEXT_COLLAPSED_TEXT_ONLY_HEIGHT_PX = 164;
+const POST_TEXT_COLLAPSED_TEXT_ONLY_HEIGHT_PX = 217;
 
 const DISCOVERY_STORAGE_KEY = "marvel_discovery_seen_v2";
 const DISCOVERY_LAST_ACTIVE_KEY = "marvel_home_last_active_v1";
@@ -98,6 +98,9 @@ let homeNavigationHandler = null;
 let homeModalEscapeHandler = null;
 let pendingHomeImage = null;
 let pendingHomeImagePreviewUrl = "";
+let editPendingImage = null;
+let editPendingImagePreviewUrl = "";
+let editRemoveExistingPhoto = false;
 let searchPostsCache = null;
 let searchPostsLoadPromise = null;
 
@@ -488,6 +491,24 @@ function revokePendingHomeImagePreview() {
 function clearPendingHomeImage() {
   revokePendingHomeImagePreview();
   pendingHomeImage = null;
+}
+
+function revokeEditPendingImagePreview() {
+  if (editPendingImagePreviewUrl) {
+    try {
+      URL.revokeObjectURL(
+        editPendingImagePreviewUrl
+      );
+    } catch {}
+  }
+
+  editPendingImagePreviewUrl = "";
+}
+
+function clearEditPendingImage() {
+  revokeEditPendingImagePreview();
+  editPendingImage = null;
+  editRemoveExistingPhoto = false;
 }
 
 function formatBytes(bytes) {
@@ -3905,6 +3926,7 @@ export async function sharePost(
 
 function closeHomeModal() {
   clearPendingHomeImage();
+  clearEditPendingImage();
 
   if (
     homeModalEscapeHandler
@@ -4761,6 +4783,167 @@ function showCreatePost() {
   );
 }
 
+/*
+ * Renders the photo section of the edit-post modal into the
+ * #editPostImageArea container, reflecting the current state:
+ *   - a newly-picked replacement photo (editPendingImage), or
+ *   - "no photo" because the user chose to remove it
+ *     (editRemoveExistingPhoto), or
+ *   - the post's existing photo, kept as-is, or
+ *   - no photo at all (post never had one) with an "Add photo"
+ *     control.
+ * Called after every change so the modal always reflects the
+ * current in-progress edit without re-opening it.
+ */
+function renderEditPostImageArea(post) {
+  const area =
+    document.getElementById(
+      "editPostImageArea"
+    );
+
+  if (!area) return;
+
+  const existingMedia =
+    getPostMedia(post);
+
+  if (
+    editPendingImage &&
+    editPendingImagePreviewUrl
+  ) {
+    area.innerHTML = `
+      <div
+        style="
+          position:relative;
+          margin-top:10px;
+          padding:10px;
+          border:1px solid var(--border);
+          border-radius:15px;
+          background:var(--surface);
+        "
+      >
+        <img
+          src="${escapeHtml(
+            editPendingImagePreviewUrl
+          )}"
+          alt="New photo preview"
+          style="
+            display:block;
+            width:100%;
+            max-height:320px;
+            object-fit:cover;
+            border-radius:11px;
+          "
+        >
+
+        <div
+          style="
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            gap:10px;
+            flex-wrap:wrap;
+            margin-top:8px;
+          "
+        >
+          <span class="small">
+            New photo selected
+          </span>
+
+          <button
+            type="button"
+            class="btn secondary"
+            id="editPostImageRemove"
+            style="padding:7px 10px;"
+          >
+            Remove
+          </button>
+        </div>
+      </div>
+    `;
+
+    return;
+  }
+
+  if (
+    existingMedia &&
+    !editRemoveExistingPhoto
+  ) {
+    area.innerHTML = `
+      <div
+        style="
+          position:relative;
+          margin-top:10px;
+          padding:10px;
+          border:1px solid var(--border);
+          border-radius:15px;
+          background:var(--surface);
+        "
+      >
+        <img
+          src="${escapeHtml(
+            existingMedia.url
+          )}"
+          alt="Current post photo"
+          style="
+            display:block;
+            width:100%;
+            max-height:320px;
+            object-fit:cover;
+            border-radius:11px;
+          "
+        >
+
+        <div
+          style="
+            display:flex;
+            align-items:center;
+            justify-content:flex-end;
+            gap:8px;
+            flex-wrap:wrap;
+            margin-top:8px;
+          "
+        >
+          <button
+            type="button"
+            class="btn secondary"
+            id="editPostImageReplace"
+            style="padding:7px 10px;"
+          >
+            Replace photo
+          </button>
+
+          <button
+            type="button"
+            class="btn secondary"
+            id="editPostImageRemove"
+            style="padding:7px 10px;"
+          >
+            Remove photo
+          </button>
+        </div>
+      </div>
+    `;
+
+    return;
+  }
+
+  area.innerHTML = `
+    <div style="margin-top:10px;">
+      <button
+        type="button"
+        class="btn secondary"
+        id="editPostImageAdd"
+      >
+        ${
+          existingMedia
+            ? "Add a new photo"
+            : "Add photo"
+        }
+      </button>
+    </div>
+  `;
+}
+
 export function showEditPost(
   id
 ) {
@@ -4781,6 +4964,8 @@ export function showEditPost(
       "You can only edit your own posts."
     );
   }
+
+  clearEditPendingImage();
 
   showHomeModal(`
     <div
@@ -4815,6 +5000,23 @@ export function showEditPost(
         >${escapeHtml(
           getPostText(post)
         )}</textarea>
+
+        <div id="editPostImageArea"></div>
+
+        <input
+          id="editPostImageInput"
+          type="file"
+          accept="image/*"
+          style="display:none;"
+          aria-label="Choose a photo"
+        >
+
+        <div
+          class="small"
+          style="margin-top:7px;"
+        >
+          Maximum 1000 characters · Photo + text or photo only
+        </div>
       </div>
 
       <div
@@ -4849,7 +5051,119 @@ export function showEditPost(
       "submitEditPost"
     );
 
+  const imageInput =
+    document.getElementById(
+      "editPostImageInput"
+    );
+
   input?.focus();
+
+  renderEditPostImageArea(
+    post
+  );
+
+  document
+    .getElementById(
+      "editPostImageArea"
+    )
+    ?.addEventListener(
+      "click",
+      event => {
+        if (
+          event.target.closest(
+            "#editPostImageAdd"
+          ) ||
+          event.target.closest(
+            "#editPostImageReplace"
+          )
+        ) {
+          if (
+            homePhotosRemaining() <=
+            0
+          ) {
+            return toast(
+              homePhotoAllowanceText()
+            );
+          }
+
+          imageInput?.click();
+
+          return;
+        }
+
+        if (
+          event.target.closest(
+            "#editPostImageRemove"
+          )
+        ) {
+          if (editPendingImage) {
+            /*
+             * A newly-picked replacement is being discarded.
+             * Fall back to whatever the post already had
+             * (existing photo, if any) rather than removing
+             * it.
+             */
+            clearEditPendingImage();
+          } else {
+            editRemoveExistingPhoto =
+              true;
+          }
+
+          renderEditPostImageArea(
+            post
+          );
+        }
+      }
+    );
+
+  imageInput?.addEventListener(
+    "change",
+    async event => {
+      const file =
+        event.target
+          .files?.[0] ||
+        null;
+
+      event.target.value =
+        "";
+
+      if (!file) return;
+
+      try {
+        const prepared =
+          await compressHomeImage(
+            file
+          );
+
+        revokeEditPendingImagePreview();
+
+        editPendingImage =
+          new File(
+            [prepared.blob],
+            "marvel-chat-photo.jpg",
+            {
+              type: "image/jpeg"
+            }
+          );
+
+        editPendingImagePreviewUrl =
+          URL.createObjectURL(
+            prepared.blob
+          );
+
+        editRemoveExistingPhoto =
+          false;
+
+        renderEditPostImageArea(
+          post
+        );
+      } catch (error) {
+        toast(
+          friendly(error)
+        );
+      }
+    }
+  );
 
   button?.addEventListener(
     "click",
@@ -4860,9 +5174,22 @@ export function showEditPost(
           ""
         ).trim();
 
-      if (!text) {
+      const existingMedia =
+        getPostMedia(post);
+
+      const willHavePhoto =
+        editPendingImage
+          ? true
+          : editRemoveExistingPhoto
+            ? false
+            : !!existingMedia;
+
+      if (
+        !text &&
+        !willHavePhoto
+      ) {
         return toast(
-          "Post text cannot be empty."
+          "Write something or keep a photo before saving."
         );
       }
 
@@ -4879,23 +5206,74 @@ export function showEditPost(
         true;
 
       button.textContent =
-        "Saving...";
+        editPendingImage
+          ? "Uploading photo..."
+          : "Saving...";
 
       try {
+        const updates = {
+          text:
+            text,
+
+          editedAt:
+            serverTimestamp()
+        };
+
+        let nextMedia =
+          existingMedia ||
+          null;
+
+        if (editPendingImage) {
+          if (
+            homePhotosRemaining() <=
+            0
+          ) {
+            throw new Error(
+              homePhotoAllowanceText()
+            );
+          }
+
+          /*
+           * Upload the new photo FIRST. Only once the upload
+           * (and the Firestore update below) has succeeded do
+           * we treat the old photo as replaced — if the
+           * upload fails, nothing about the existing post or
+           * its photo is touched.
+           */
+          const upload =
+            await uploadHomeImageToCloudinary(
+              editPendingImage
+            );
+
+          updates.media =
+            upload.media;
+
+          nextMedia =
+            upload.media;
+
+          button.textContent =
+            "Saving...";
+        } else if (
+          editRemoveExistingPhoto
+        ) {
+          updates.media =
+            null;
+
+          nextMedia = null;
+        }
+
         await updateDoc(
           doc(
             db,
             "posts",
             postId(id)
           ),
-          {
-            text:
-              text,
-
-            editedAt:
-              serverTimestamp()
-          }
+          updates
         );
+
+        if (editPendingImage) {
+          consumeHomePhotoAllowance();
+        }
 
         state.posts =
           getPosts().map(
@@ -4907,7 +5285,9 @@ export function showEditPost(
                     text:
                       text,
                     editedAt:
-                      new Date()
+                      new Date(),
+                    media:
+                      nextMedia
                   }
                 : item
           );
@@ -4927,11 +5307,15 @@ export function showEditPost(
                       text:
                         text,
                       editedAt:
-                        new Date()
+                        new Date(),
+                      media:
+                        nextMedia
                     }
                   : item
             );
         }
+
+        clearEditPendingImage();
 
         closeHomeModal();
 
