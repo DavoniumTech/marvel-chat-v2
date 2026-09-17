@@ -42,7 +42,8 @@ import {
   deleteMessage,
   copyMessage,
   togglePinConversation,
-  totalUnreadCount
+  totalUnreadCount,
+  mc2SyncConversationViewport
 } from "./features /chat.js";
 
 import {
@@ -508,6 +509,22 @@ export function renderApp() {
    */
 
   attachEvents();
+
+
+  /*
+   * The conversation shell (.mc2-conversation-page) is a brand
+   * new DOM node every time root.innerHTML is rebuilt, so it
+   * needs its keyboard-safe height/top re-applied immediately
+   * rather than waiting for the next visualViewport event.
+   */
+
+  if (
+    chatFullscreen
+  ) {
+
+    mc2SyncConversationViewport();
+
+  }
 
 }
 
