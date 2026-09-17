@@ -42,16 +42,20 @@ const POST_TEXT_COLLAPSE_LENGTH = 520;
  *
  * The post-text-surface box uses font-size:16px and
  * line-height:1.65, so one line of text renders at
- * roughly 16 * 1.65 ≈ 26px. The surface also has 16px
- * top/bottom padding and uses box-sizing:border-box, so
- * that padding (32px total) counts toward the element's
- * height budget in both cases below.
+ * roughly 16 * 1.65 ≈ 26px.
  *
- * MEDIA + TEXT posts collapse to ~1.5 lines:
- *   ~40px (1.5 lines of text) + 32px padding ≈ 72px
- *
- * TEXT-ONLY posts collapse to 7 lines:
+ * TEXT-ONLY posts render inside the existing colored
+ * "note" card, which keeps its 16px top/bottom padding
+ * (32px total, box-sizing:border-box) — that padding
+ * counts toward the height budget below:
  *   ~185px (7 lines of text) + 32px padding ≈ 217px
+ *
+ * MEDIA + TEXT posts render the caption as plain text
+ * directly under the photo (no card/background/padding,
+ * so the photo and caption read as one joined block, the
+ * way a caption sits under a photo in a social feed), so
+ * its budget is just the line-height itself:
+ *   ~1.5 lines of text ≈ 40px
  *
  * This is a CSS max-height/overflow approach rather than
  * -webkit-line-clamp, because line-clamp only accepts whole
@@ -69,7 +73,7 @@ const POST_TEXT_COLLAPSE_LENGTH = 520;
  * syncPostTextOverflow below), so the control only appears
  * when text is genuinely being cut off.
  */
-const POST_TEXT_COLLAPSED_MEDIA_HEIGHT_PX = 72;
+const POST_TEXT_COLLAPSED_MEDIA_HEIGHT_PX = 40;
 const POST_TEXT_COLLAPSED_TEXT_ONLY_HEIGHT_PX = 217;
 
 const DISCOVERY_STORAGE_KEY = "marvel_discovery_seen_v2";
@@ -96,6 +100,8 @@ let homeFeedFilter = "all";
 let homeClickHandler = null;
 let homeNavigationHandler = null;
 let homeModalEscapeHandler = null;
+let homeResizeHandler = null;
+let homeResizeDebounceTimer = null;
 let pendingHomeImage = null;
 let pendingHomeImagePreviewUrl = "";
 let editPendingImage = null;
@@ -2287,7 +2293,7 @@ function renderPostCard(post) {
             <div
               class="post-content"
               style="
-                margin-top:13px;
+                margin-top:${hasMedia ? "8px" : "13px"};
                 line-height:1.65;
                 overflow-wrap:anywhere;
                 max-width:100%;
@@ -2300,21 +2306,35 @@ function renderPostCard(post) {
                 data-post-background="${escapeHtml(
                   background.key
                 )}"
+                data-has-media="${hasMedia ? "true" : "false"}"
                 data-expanded="false"
                 data-collapsed-height="${collapsedHeightPx}"
                 style="
                   width:100%;
                   max-width:100%;
                   box-sizing:border-box;
+                  overflow-wrap:anywhere;
+                  ${
+                    hasMedia
+                      ? `
+                  padding:0;
+                  border-radius:0;
+                  background:transparent;
+                  color:var(--text);
+                  border:none;
+                  box-shadow:none;
+                  `
+                      : `
                   padding:16px 15px;
                   border-radius:17px;
-                  overflow-wrap:anywhere;
                   background:${background.background};
                   color:${background.text};
                   border:1px solid rgba(127,127,127,.20);
                   box-shadow:
                     inset 0 0 0 1px
                     rgba(255,255,255,.04);
+                  `
+                  }
                   font-size:16px;
                   font-weight:400;
                   letter-spacing:.005em;
@@ -6165,6 +6185,12 @@ async function filterRenderedPosts(
           : `No ${filterLabel} are available in the recent feed.`;
     }
 
+    if (container) {
+      syncPostTextOverflow(
+        container
+      );
+    }
+
     return;
   }
 
@@ -6274,6 +6300,12 @@ async function filterRenderedPosts(
           ? `${total} matching ${filterLabel} found across your post history.`
           : "No matching posts found across your post history.";
     }
+
+    if (container) {
+      syncPostTextOverflow(
+        container
+      );
+    }
   } catch (error) {
     console.warn(
       "Post history search failed:",
@@ -6347,6 +6379,39 @@ export function attachHomeEvents(
 
   syncPostTextOverflow(
     homePage
+  );
+
+  if (homeResizeHandler) {
+    window.removeEventListener(
+      "resize",
+      homeResizeHandler
+    );
+  }
+
+  homeResizeHandler = () => {
+    if (homeResizeDebounceTimer) {
+      clearTimeout(
+        homeResizeDebounceTimer
+      );
+    }
+
+    homeResizeDebounceTimer = setTimeout(() => {
+      const page =
+        document.getElementById(
+          "homePage"
+        );
+
+      if (page) {
+        syncPostTextOverflow(
+          page
+        );
+      }
+    }, 150);
+  };
+
+  window.addEventListener(
+    "resize",
+    homeResizeHandler
   );
 
   homeClickHandler =
