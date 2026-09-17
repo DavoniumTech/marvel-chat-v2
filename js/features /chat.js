@@ -3230,215 +3230,27 @@ function getVisibleConversations() {
   return conversations;
 }
 
-function renderChatListItemHTML(c) {
-  const other =
-    c.participants?.find(
-      x =>
-        x !==
-        state.user.uid
-    );
-
-  const profile =
-    c
-      .participantProfiles?.[
-        other
-      ] || {};
-
-  const name =
-    profile.displayName ||
-    profile.username ||
-    "User";
-
+/*
+ * Shared conversation options menu (pin / archive / mute /
+ * background / copy / block / report / delete). Rendered
+ * once here so it can be reused both by the chat list item's
+ * "⋮" trigger and by the open conversation's premium header
+ * "⋮" trigger, without duplicating markup or drifting out of
+ * sync. Behavior (data-chat-action / data-chat-options wiring)
+ * is unchanged from the original chat-list-only version.
+ */
+function renderChatOptionsMenuHTML(c) {
   const preference =
-    state
-      .conversationPreferences[
-        c.id
-      ] || {};
+    state.conversationPreferences[c.id] || {};
 
-  const pinned =
-    !!preference.pinned;
-
-  const muted =
-    !!preference.muted;
-
-  const archived =
-    !!preference.archived;
-
-  const blocked =
-    !!preference.blocked;
-
-  const unread =
-    conversationUnreadCount(
-      c
-    );
+  const pinned = !!preference.pinned;
+  const muted = !!preference.muted;
+  const archived = !!preference.archived;
+  const blocked = !!preference.blocked;
 
   return `
-    <div
-      class="chat-item mc2-chat-item ${
-        pinned
-          ? "pinned-chat"
-          : ""
-      }"
-      data-conversation="${escapeHtml(
-        c.id
-      )}"
-      style="
-        position:relative;
-        cursor:pointer;
-        min-width:0;
-      "
-    >
-
       <div
-        class="avatar"
-        style="flex:none;"
-      >
-        ${escapeHtml(
-          initials(
-            name
-          )
-        )}
-      </div>
-
-      <div
-        class="chat-content"
-        style="
-          flex:1;
-          min-width:0;
-          overflow:hidden;
-        "
-      >
-
-        <strong
-          style="
-            display:block;
-            overflow:hidden;
-            text-overflow:ellipsis;
-            white-space:nowrap;
-          "
-        >
-          ${escapeHtml(
-            name
-          )}
-
-          ${
-            pinned
-              ? " 📌"
-              : ""
-          }
-
-          ${
-            muted
-              ? " 🔕"
-              : ""
-          }
-
-          ${
-            archived
-              ? " 📦"
-              : ""
-          }
-
-          ${
-            blocked
-              ? " 🚫"
-              : ""
-          }
-        </strong>
-
-        <p
-          class="mc2-chat-preview"
-          style="
-            overflow:hidden;
-            text-overflow:ellipsis;
-            white-space:nowrap;
-            margin:4px 0 0;
-            font-weight:${
-              unread > 0
-                ? "700"
-                : "400"
-            };
-          "
-        >
-          ${
-            blocked
-              ? "🚫 User blocked"
-              : escapeHtml(
-                  c.lastMessage ||
-                  "Start chatting"
-                )
-          }
-        </p>
-
-      </div>
-
-      <div
-        style="
-          display:flex;
-          flex-direction:column;
-          align-items:flex-end;
-          justify-content:center;
-          gap:5px;
-          flex:none;
-        "
-      >
-
-        <span class="small">
-          ${escapeHtml(
-            formatDate(
-              c.updatedAt
-            )
-          )}
-        </span>
-
-        ${
-          unread > 0
-            ? `
-              <span
-                class="badge mc2-unread-badge"
-                style="
-                  background:var(--danger);
-                  color:#fff;
-                  min-width:20px;
-                  text-align:center;
-                "
-              >
-                ${
-                  unread > 99
-                    ? "99+"
-                    : unread
-                }
-              </span>
-            `
-            : ""
-        }
-
-        <button
-          type="button"
-          class="icon-btn chat-menu-btn"
-          aria-label="Conversation options"
-          aria-expanded="false"
-          data-chat-menu="${escapeHtml(
-            c.id
-          )}"
-          style="
-            width:34px;
-            height:34px;
-            border-radius:11px;
-            font-size:20px;
-            line-height:1;
-            padding:0;
-            display:grid;
-            place-items:center;
-          "
-        >
-          ⋮
-        </button>
-
-      </div>
-
-      <div
-        class="chat-options-menu"
+        class="chat-options-menu mc2-options-menu"
         data-chat-options="${escapeHtml(
           c.id
         )}"
@@ -3737,6 +3549,217 @@ function renderChatListItemHTML(c) {
         </button>
 
       </div>
+  `;
+}
+
+function renderChatListItemHTML(c) {
+  const other =
+    c.participants?.find(
+      x =>
+        x !==
+        state.user.uid
+    );
+
+  const profile =
+    c
+      .participantProfiles?.[
+        other
+      ] || {};
+
+  const name =
+    profile.displayName ||
+    profile.username ||
+    "User";
+
+  const preference =
+    state
+      .conversationPreferences[
+        c.id
+      ] || {};
+
+  const pinned =
+    !!preference.pinned;
+
+  const muted =
+    !!preference.muted;
+
+  const archived =
+    !!preference.archived;
+
+  const blocked =
+    !!preference.blocked;
+
+  const unread =
+    conversationUnreadCount(
+      c
+    );
+
+  return `
+    <div
+      class="chat-item mc2-chat-item ${
+        pinned
+          ? "pinned-chat"
+          : ""
+      }"
+      data-conversation="${escapeHtml(
+        c.id
+      )}"
+      style="
+        position:relative;
+        cursor:pointer;
+        min-width:0;
+      "
+    >
+
+      <div
+        class="avatar"
+        style="flex:none;"
+      >
+        ${escapeHtml(
+          initials(
+            name
+          )
+        )}
+      </div>
+
+      <div
+        class="chat-content"
+        style="
+          flex:1;
+          min-width:0;
+          overflow:hidden;
+        "
+      >
+
+        <strong
+          style="
+            display:block;
+            overflow:hidden;
+            text-overflow:ellipsis;
+            white-space:nowrap;
+          "
+        >
+          ${escapeHtml(
+            name
+          )}
+
+          ${
+            pinned
+              ? " 📌"
+              : ""
+          }
+
+          ${
+            muted
+              ? " 🔕"
+              : ""
+          }
+
+          ${
+            archived
+              ? " 📦"
+              : ""
+          }
+
+          ${
+            blocked
+              ? " 🚫"
+              : ""
+          }
+        </strong>
+
+        <p
+          class="mc2-chat-preview"
+          style="
+            overflow:hidden;
+            text-overflow:ellipsis;
+            white-space:nowrap;
+            margin:4px 0 0;
+            font-weight:${
+              unread > 0
+                ? "700"
+                : "400"
+            };
+          "
+        >
+          ${
+            blocked
+              ? "🚫 User blocked"
+              : escapeHtml(
+                  c.lastMessage ||
+                  "Start chatting"
+                )
+          }
+        </p>
+
+      </div>
+
+      <div
+        style="
+          display:flex;
+          flex-direction:column;
+          align-items:flex-end;
+          justify-content:center;
+          gap:5px;
+          flex:none;
+        "
+      >
+
+        <span class="small">
+          ${escapeHtml(
+            formatDate(
+              c.updatedAt
+            )
+          )}
+        </span>
+
+        ${
+          unread > 0
+            ? `
+              <span
+                class="badge mc2-unread-badge"
+                style="
+                  background:var(--danger);
+                  color:#fff;
+                  min-width:20px;
+                  text-align:center;
+                "
+              >
+                ${
+                  unread > 99
+                    ? "99+"
+                    : unread
+                }
+              </span>
+            `
+            : ""
+        }
+
+        <button
+          type="button"
+          class="icon-btn chat-menu-btn"
+          aria-label="Conversation options"
+          aria-expanded="false"
+          data-chat-menu="${escapeHtml(
+            c.id
+          )}"
+          style="
+            width:34px;
+            height:34px;
+            border-radius:11px;
+            font-size:20px;
+            line-height:1;
+            padding:0;
+            display:grid;
+            place-items:center;
+          "
+        >
+          ⋮
+        </button>
+
+      </div>
+
+      ${renderChatOptionsMenuHTML(c)}
     </div>
   `;
 }
@@ -4020,38 +4043,38 @@ export function renderConversation() {
       style="
         display:flex;
         flex-direction:column;
-        height:100vh;
         min-height:0;
         overflow:hidden;
       "
     >
 
       <div
-        class="section-title"
-        style="flex:none;"
+        class="section-title mc2-conv-header"
+        style="flex:none;position:relative;"
       >
 
-        <div class="profile-row">
+        <div class="profile-row" style="position:relative;">
 
           <button
-            class="icon-btn"
+            class="icon-btn mc2-glass-icon-btn"
             id="backChats"
+            aria-label="Back to conversations"
           >
             ←
           </button>
 
-          <div class="avatar">
+          <div class="avatar mc2-conv-avatar">
             ${escapeHtml(
               initials(name)
             )}
           </div>
 
-          <div>
-            <h2 style="margin:0">
+          <div style="min-width:0;flex:1;">
+            <h2 style="margin:0;" class="mc2-conv-title">
               ${escapeHtml(name)}
             </h2>
 
-            <div class="small">
+            <div class="small mc2-conv-subtitle">
               ${
                 isBlocked
                   ? "Blocked 🚫"
@@ -4064,6 +4087,21 @@ export function renderConversation() {
             </div>
           </div>
 
+          <button
+            type="button"
+            class="icon-btn mc2-glass-icon-btn"
+            aria-label="Conversation options"
+            aria-expanded="false"
+            data-chat-menu="${escapeHtml(
+              c.id
+            )}"
+            style="flex:none;"
+          >
+            ⋮
+          </button>
+
+          ${renderChatOptionsMenuHTML(c)}
+
         </div>
       </div>
 
@@ -4075,8 +4113,11 @@ export function renderConversation() {
           display:flex;
           flex-direction:column;
           overflow:hidden;
+          position:relative;
         "
       >
+
+        <div class="mc2-watermark" aria-hidden="true">MARVEL CHAT</div>
 
         ${
           pinnedMessage
@@ -4434,15 +4475,162 @@ function ensureMarvelChatV2Styles() {
   style.id = "mc2-chat-styles";
 
   style.textContent = `
-    /* ---- Composer ---- */
+    /* =====================================================
+       MARVEL CHAT — PREMIUM FULL-SCREEN IDENTITY
+       Full-viewport conversation, glassmorphism, nebula
+       backdrop + subtle watermark, crimson/nebula accents.
+       ===================================================== */
+
+    .mc2-conversation-page {
+      height:100vh;
+      height:100dvh;
+      width:100%;
+      max-width:100%;
+      margin:0;
+      overflow-x:hidden;
+    }
+
+    /* ---- Premium glass header ---- */
+    .mc2-conv-header {
+      padding:10px 14px;
+      padding-top:calc(10px + env(safe-area-inset-top, 0px));
+      background:rgba(20,12,40,0.55);
+      border-bottom:1px solid rgba(255,255,255,0.10);
+      backdrop-filter:blur(16px) saturate(140%);
+      -webkit-backdrop-filter:blur(16px) saturate(140%);
+      box-shadow:0 1px 0 rgba(255,255,255,0.04), 0 8px 24px rgba(0,0,0,0.18);
+      z-index:5;
+      color:#fff;
+    }
+    @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+      .mc2-conv-header {
+        background:rgba(20,12,40,0.92);
+      }
+    }
+    .mc2-conv-header .profile-row { gap:11px; }
+    .mc2-conv-header h2.mc2-conv-title {
+      font-size:17px;
+      font-weight:700;
+      letter-spacing:.01em;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+      color:#fff;
+    }
+    .mc2-conv-header .mc2-conv-subtitle {
+      color:rgba(255,255,255,0.62);
+    }
+    .mc2-conv-avatar {
+      box-shadow:
+        0 0 0 2px rgba(220,38,38,0.55),
+        0 4px 14px rgba(0,0,0,0.30);
+    }
+    .mc2-glass-icon-btn {
+      background:rgba(255,255,255,0.08);
+      border:1px solid rgba(255,255,255,0.14);
+      color:#fff;
+      backdrop-filter:blur(6px);
+      -webkit-backdrop-filter:blur(6px);
+      transition:background .15s ease, transform .1s ease;
+    }
+    .mc2-glass-icon-btn:hover,
+    .mc2-glass-icon-btn:active {
+      background:rgba(255,255,255,0.16);
+    }
+    .mc2-conv-header .mc2-options-menu {
+      right:10px;
+      top:56px;
+    }
+    .mc2-conversation-page.mc2-bg-softlight .mc2-conv-header {
+      background:rgba(255,255,255,0.75);
+      border-bottom:1px solid rgba(0,0,0,0.08);
+      color:#111;
+      box-shadow:0 1px 0 rgba(255,255,255,0.5), 0 8px 24px rgba(0,0,0,0.06);
+    }
+    .mc2-conversation-page.mc2-bg-softlight .mc2-conv-title,
+    .mc2-conversation-page.mc2-bg-softlight .mc2-glass-icon-btn {
+      color:#111;
+    }
+    .mc2-conversation-page.mc2-bg-softlight .mc2-conv-subtitle {
+      color:rgba(0,0,0,0.55);
+    }
+    .mc2-conversation-page.mc2-bg-softlight .mc2-glass-icon-btn {
+      background:rgba(0,0,0,0.05);
+      border-color:rgba(0,0,0,0.10);
+    }
+
+    /* ---- Premium conversation surface + nebula backdrop ---- */
+    .mc2-conversation-card {
+      border:none;
+      border-radius:0;
+    }
+    .mc2-watermark {
+      position:absolute;
+      inset:0;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      pointer-events:none;
+      z-index:0;
+      font-size:clamp(34px, 9vw, 64px);
+      font-weight:800;
+      letter-spacing:.14em;
+      color:rgba(255,255,255,0.045);
+      transform:rotate(-14deg) scale(1.4);
+      white-space:nowrap;
+      user-select:none;
+    }
+    .mc2-bg-softlight .mc2-watermark,
+    .mc2-bg-classic .mc2-watermark {
+      color:rgba(120,60,60,0.045);
+    }
+    .mc2-pinned-bar,
+    .mc2-messages,
+    .mc2-composer {
+      position:relative;
+      z-index:1;
+    }
+    .mc2-pinned-bar {
+      backdrop-filter:blur(10px);
+      -webkit-backdrop-filter:blur(10px);
+      background:rgba(127,127,127,0.10);
+    }
+
+    /* Default (non-nebula) conversation surfaces still get a
+       subtle deep-space tint so the watermark + glass read
+       consistently across every chat background option. */
+    .mc2-conversation-card {
+      background-color:#150c28;
+      background-image:
+        radial-gradient(circle at 20% 0%, rgba(124,58,237,0.20), transparent 55%),
+        radial-gradient(circle at 100% 30%, rgba(220,38,38,0.10), transparent 45%);
+    }
+    .mc2-conversation-card.mc2-bg-softlight {
+      background-color:#f3f1fa;
+      background-image:
+        radial-gradient(circle at 20% 0%, rgba(124,58,237,0.06), transparent 55%);
+    }
+
+    /* ---- Composer (glass, keyboard-safe) ---- */
     .mc2-composer {
       display:flex;
       align-items:flex-end;
       gap:10px;
       padding:10px 12px;
       padding-bottom:calc(10px + env(safe-area-inset-bottom, 0px));
-      border-top:1px solid var(--border);
-      background:var(--surface);
+      border-top:1px solid rgba(255,255,255,0.10);
+      background:rgba(20,12,40,0.55);
+      backdrop-filter:blur(16px) saturate(140%);
+      -webkit-backdrop-filter:blur(16px) saturate(140%);
+    }
+    @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+      .mc2-composer {
+        background:rgba(20,12,40,0.92);
+      }
+    }
+    .mc2-bg-softlight .mc2-composer {
+      background:rgba(255,255,255,0.75);
+      border-top:1px solid rgba(0,0,0,0.08);
     }
     .mc2-composer-input {
       flex:1;
@@ -4451,16 +4639,22 @@ function ensureMarvelChatV2Styles() {
       min-height:44px;
       max-height:120px;
       padding:11px 18px;
-      border:1px solid var(--border);
-      background:var(--bg, #fff);
+      border:1px solid rgba(255,255,255,0.14);
+      background:rgba(255,255,255,0.08);
+      color:#fff;
       font-size:15px;
       line-height:1.3;
       transition:border-color .15s ease, box-shadow .15s ease;
     }
+    .mc2-bg-softlight .mc2-composer-input {
+      background:#fff;
+      border-color:#e2e5ea;
+      color:#111;
+    }
     .mc2-composer-input:focus {
       outline:none;
-      border-color:var(--primary, #6d28d9);
-      box-shadow:0 0 0 3px rgba(109,40,217,0.15);
+      border-color:#dc2626;
+      box-shadow:0 0 0 3px rgba(220,38,38,0.18);
     }
     .mc2-composer-send {
       flex:none;
@@ -4473,11 +4667,19 @@ function ensureMarvelChatV2Styles() {
       align-items:center;
       justify-content:center;
       font-size:0;
+      background:linear-gradient(135deg,#dc2626,#7c3aed);
+      border:none;
+      box-shadow:0 4px 14px rgba(220,38,38,0.35);
+      transition:transform .1s ease;
+    }
+    .mc2-composer-send:active {
+      transform:scale(0.93);
     }
     .mc2-composer-send::before {
       content:"➤";
       font-size:16px;
       line-height:1;
+      color:#fff;
     }
 
     /* ---- Message bubbles ---- */
@@ -4496,13 +4698,25 @@ function ensureMarvelChatV2Styles() {
       padding:9px 13px;
       word-break:break-word;
       overflow-wrap:anywhere;
+      box-shadow:0 2px 10px rgba(0,0,0,0.10);
+    }
+    /* Dark, glass-backed presets (nebula default + the existing
+       midnight/purple/ocean options) get a translucent glass
+       bubble instead of the flat theme surface. */
+    .mc2-conversation-card:not(.mc2-bg-classic):not(.mc2-bg-softlight) .mc2-bubble:not(.mine) {
+      background:rgba(255,255,255,0.10);
+      border-color:rgba(255,255,255,0.16);
+      backdrop-filter:blur(8px);
+      -webkit-backdrop-filter:blur(8px);
+      color:#fff;
     }
     .mc2-bubble.mine {
       align-self:flex-end;
-      background:var(--primary, #6d28d9);
+      background:linear-gradient(135deg,#b91c1c,#6d28d9);
       color:#fff;
       border-color:transparent;
       border-radius:16px 16px 4px 16px;
+      box-shadow:0 4px 16px rgba(185,28,28,0.28);
     }
     .mc2-bubble-text {
       font-size:15px;
@@ -4585,11 +4799,23 @@ function ensureMarvelChatV2Styles() {
       background:var(--surface2, rgba(0,0,0,0.03));
       border-color:var(--border);
     }
+    /*
+     * Red unread indicator — always at least 20x20px, a
+     * separate visual concept from the green read/sent
+     * status dot above.
+     */
     .mc2-unread-badge {
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
       border-radius:999px;
-      padding:2px 7px;
+      min-width:20px;
+      height:20px;
+      padding:0 6px;
+      box-sizing:border-box;
       font-size:11px;
       font-weight:700;
+      box-shadow:0 2px 8px rgba(220,38,38,0.35);
     }
 
     /* ---- New Marvel Chat background pattern ---- */
@@ -4684,8 +4910,14 @@ function ensureMarvelChatV2Styles() {
       vertical-align:middle;
       position:relative;
     }
+    /*
+     * Sent-but-not-read uses a neutral gray, not red: red is
+     * reserved exclusively for the unread-message badge (see
+     * .mc2-unread-badge below), so the two stay visually
+     * distinct concepts as required. Read uses green.
+     */
     .mc2-status-dot.status-sent {
-      background:#ef4444;
+      background:#9ca3af;
     }
     .mc2-status-dot.status-read {
       background:#22c55e;
