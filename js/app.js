@@ -185,6 +185,26 @@ export function renderApp() {
     !!state.activeConversation;
 
 
+  /*
+   * Single source of truth for the fullscreen-conversation
+   * body/html lock: toggled here, deterministically, every
+   * time renderApp() runs — never inferred from DOM mutations.
+   * Leaving the conversation (closeActiveConversation) also
+   * routes back through renderApp(), so this always gets
+   * removed on the way out.
+   */
+
+  document.documentElement.classList.toggle(
+    "mc2-conv-lock",
+    chatFullscreen
+  );
+
+  document.body?.classList.toggle(
+    "mc2-conv-lock",
+    chatFullscreen
+  );
+
+
   const chatUnread =
     totalUnreadCount();
 
