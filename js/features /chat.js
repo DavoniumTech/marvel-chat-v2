@@ -1159,6 +1159,7 @@ export async function sendMessage() {
     }
 
     input.value = "";
+    mc2ResizeComposerTextarea(input);
   } catch (e) {
     console.error(
       "SEND MESSAGE ERROR:",
@@ -3971,6 +3972,45 @@ export function renderChat(
 }
 
 /* =========================================================
+   COMPOSER HELPERS (emoji list + auto-grow textarea)
+   ========================================================= */
+
+const MC2_EMOJI_LIST = [
+  "😀", "😂", "😍", "👍", "🙏", "🔥",
+  "🎉", "❤️", "😢", "😮", "😡", "👏",
+  "🙌", "💯", "✅", "🤔"
+];
+
+/*
+ * Resizes the message composer textarea to fit its content,
+ * up to a fixed maximum height (after which it becomes
+ * internally scrollable). Purely a visual/UI concern — never
+ * touches Firestore or any part of the message schema.
+ */
+function mc2ResizeComposerTextarea(el) {
+  if (!el) {
+    return;
+  }
+
+  const maxHeight = 136;
+
+  el.style.height = "auto";
+
+  const next =
+    Math.min(
+      el.scrollHeight,
+      maxHeight
+    );
+
+  el.style.height = `${next}px`;
+
+  el.style.overflowY =
+    el.scrollHeight > maxHeight
+      ? "auto"
+      : "hidden";
+}
+
+/* =========================================================
    CHAT CONVERSATION VIEW
    ========================================================= */
 
@@ -4425,15 +4465,48 @@ export function renderConversation() {
             : `
               <div class="message-box mc2-composer" style="flex:none;">
 
-                <input
-                  class="input mc2-composer-input"
+                <button
+                  type="button"
+                  class="mc2-composer-emoji"
+                  data-emoji-toggle
+                  aria-label="Insert emoji"
+                  aria-expanded="false"
+                >
+                  🙂
+                </button>
+
+                <div
+                  id="mc2EmojiPanel"
+                  class="mc2-emoji-panel"
+                  data-open="false"
+                  role="menu"
+                  aria-label="Emoji picker"
+                >
+                  ${MC2_EMOJI_LIST
+                    .map(
+                      emoji => `
+                        <button
+                          type="button"
+                          class="mc2-emoji-item"
+                          data-emoji-insert="${emoji}"
+                          aria-label="Insert ${emoji}"
+                        >${emoji}</button>
+                      `
+                    )
+                    .join("")}
+                </div>
+
+                <textarea
+                  class="textarea mc2-composer-input"
                   id="messageInput"
+                  rows="1"
                   maxlength="5000"
                   autocomplete="off"
                   placeholder="Write a message…"
-                >
+                ></textarea>
 
                 <button
+                  type="button"
                   class="btn btn-primary mc2-composer-send"
                   id="sendMessage"
                   aria-label="Send message"
@@ -4509,7 +4582,7 @@ function ensureMarvelChatV2Styles() {
     }
     .mc2-conv-header .profile-row { gap:11px; }
     .mc2-conv-header h2.mc2-conv-title {
-      font-size:17px;
+      font-size:19px;
       font-weight:700;
       letter-spacing:.01em;
       overflow:hidden;
@@ -4518,6 +4591,7 @@ function ensureMarvelChatV2Styles() {
       color:#fff;
     }
     .mc2-conv-header .mc2-conv-subtitle {
+      font-size:13.5px;
       color:rgba(255,255,255,0.62);
     }
     .mc2-conv-avatar {
@@ -4572,17 +4646,17 @@ function ensureMarvelChatV2Styles() {
       justify-content:center;
       pointer-events:none;
       z-index:0;
-      font-size:clamp(34px, 9vw, 64px);
+      font-size:clamp(28px, 7vw, 52px);
       font-weight:800;
       letter-spacing:.14em;
-      color:rgba(255,255,255,0.045);
+      color:rgba(255,255,255,0.028);
       transform:rotate(-14deg) scale(1.4);
       white-space:nowrap;
       user-select:none;
     }
     .mc2-bg-softlight .mc2-watermark,
     .mc2-bg-classic .mc2-watermark {
-      color:rgba(120,60,60,0.045);
+      color:rgba(120,60,60,0.028);
     }
     .mc2-pinned-bar,
     .mc2-messages,
@@ -4613,9 +4687,10 @@ function ensureMarvelChatV2Styles() {
 
     /* ---- Composer (glass, keyboard-safe) ---- */
     .mc2-composer {
+      position:relative;
       display:flex;
       align-items:flex-end;
-      gap:10px;
+      gap:8px;
       padding:10px 12px;
       padding-bottom:calc(10px + env(safe-area-inset-bottom, 0px));
       border-top:1px solid rgba(255,255,255,0.10);
@@ -4632,24 +4707,104 @@ function ensureMarvelChatV2Styles() {
       background:rgba(255,255,255,0.75);
       border-top:1px solid rgba(0,0,0,0.08);
     }
+
+    /* Emoji button */
+    .mc2-composer-emoji {
+      flex:none;
+      width:42px;
+      height:42px;
+      min-height:0;
+      border-radius:50%;
+      border:1px solid rgba(255,255,255,0.14);
+      background:rgba(255,255,255,0.08);
+      color:inherit;
+      font-size:20px;
+      line-height:1;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:0;
+      cursor:pointer;
+      transition:background .15s ease, transform .1s ease;
+    }
+    .mc2-composer-emoji:active {
+      transform:scale(0.93);
+    }
+    .mc2-bg-softlight .mc2-composer-emoji {
+      background:rgba(0,0,0,0.05);
+      border-color:rgba(0,0,0,0.10);
+    }
+
+    /* Emoji panel */
+    .mc2-emoji-panel {
+      display:none;
+      position:absolute;
+      left:10px;
+      bottom:calc(100% + 8px);
+      z-index:30;
+      grid-template-columns:repeat(6, 1fr);
+      gap:4px;
+      background:var(--surface);
+      border:1px solid var(--border);
+      border-radius:14px;
+      box-shadow:var(--shadow2, 0 10px 30px rgba(0,0,0,0.25));
+      padding:8px;
+      max-width:calc(100vw - 24px);
+    }
+    .mc2-emoji-panel[data-open="true"] {
+      display:grid;
+    }
+    .mc2-emoji-item {
+      width:36px;
+      height:36px;
+      border:0;
+      background:transparent;
+      color:inherit;
+      font-size:20px;
+      line-height:1;
+      border-radius:8px;
+      cursor:pointer;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:0;
+    }
+    .mc2-emoji-item:hover,
+    .mc2-emoji-item:active {
+      background:var(--surface2, rgba(127,127,127,0.12));
+    }
+
+    /* Auto-growing message textarea (rows=1, grows with
+       content, becomes internally scrollable past max-height —
+       see mc2ResizeComposerTextarea in chat.js). */
     .mc2-composer-input {
       flex:1;
       min-width:0;
+      resize:none;
+      display:block;
       border-radius:22px;
-      min-height:44px;
-      max-height:120px;
-      padding:11px 18px;
+      min-height:48px;
+      max-height:136px;
+      height:48px;
+      padding:13px 18px;
       border:1px solid rgba(255,255,255,0.14);
       background:rgba(255,255,255,0.08);
       color:#fff;
-      font-size:15px;
-      line-height:1.3;
+      font-size:16.5px;
+      line-height:1.4;
+      white-space:pre-wrap;
+      overflow-wrap:anywhere;
+      overflow-y:hidden;
       transition:border-color .15s ease, box-shadow .15s ease;
     }
     .mc2-bg-softlight .mc2-composer-input {
       background:#fff;
       border-color:#e2e5ea;
       color:#111;
+    }
+    .mc2-composer-input::placeholder {
+      font-size:16.5px;
+      opacity:0.55;
     }
     .mc2-composer-input:focus {
       outline:none;
@@ -4658,9 +4813,10 @@ function ensureMarvelChatV2Styles() {
     }
     .mc2-composer-send {
       flex:none;
-      width:44px;
-      height:44px;
-      min-width:44px;
+      width:48px;
+      height:48px;
+      min-width:48px;
+      min-height:0;
       border-radius:50%;
       padding:0;
       display:flex;
@@ -4677,7 +4833,7 @@ function ensureMarvelChatV2Styles() {
     }
     .mc2-composer-send::before {
       content:"➤";
-      font-size:16px;
+      font-size:17px;
       line-height:1;
       color:#fff;
     }
@@ -4695,7 +4851,7 @@ function ensureMarvelChatV2Styles() {
       background:var(--surface);
       border:1px solid var(--border);
       border-radius:16px 16px 16px 4px;
-      padding:9px 13px;
+      padding:10px 14px;
       word-break:break-word;
       overflow-wrap:anywhere;
       box-shadow:0 2px 10px rgba(0,0,0,0.10);
@@ -4719,13 +4875,14 @@ function ensureMarvelChatV2Styles() {
       box-shadow:0 4px 16px rgba(185,28,28,0.28);
     }
     .mc2-bubble-text {
-      font-size:15px;
-      line-height:1.4;
+      font-size:17.5px;
+      line-height:1.5;
       white-space:pre-wrap;
+      overflow-wrap:anywhere;
     }
     .mc2-bubble-time {
       margin-top:4px;
-      font-size:11px;
+      font-size:11.5px;
       opacity:0.7;
     }
     .mc2-edited-indicator {
@@ -5829,6 +5986,195 @@ if (
             "false"
           );
         });
+    }
+  );
+}
+
+/* =========================================================
+   COMPOSER BEHAVIOR (auto-grow textarea, Enter-to-send on
+   desktop, emoji panel). Installed once, delegated on
+   document so it survives every renderConversation() call
+   without attaching duplicate listeners — same guarded
+   pattern as the Escape-key handler above. Purely additive:
+   it never removes or replaces whatever already wires up
+   #sendMessage's click behavior elsewhere in the app, and it
+   never touches Firestore.
+   ========================================================= */
+
+if (
+  !window.__marvelChatComposerBehaviorInstalledV1
+) {
+  window.__marvelChatComposerBehaviorInstalledV1 =
+    true;
+
+  document.addEventListener(
+    "input",
+    event => {
+      if (
+        event.target &&
+        event.target.id ===
+          "messageInput"
+      ) {
+        mc2ResizeComposerTextarea(
+          event.target
+        );
+      }
+    }
+  );
+
+  /*
+   * Enter sends, Shift+Enter makes a new line — but only on
+   * devices with a real keyboard. On touch devices (coarse
+   * pointer) native Enter/newline behavior from the soft
+   * keyboard is left completely alone, per spec.
+   */
+  document.addEventListener(
+    "keydown",
+    event => {
+      if (
+        !event.target ||
+        event.target.id !==
+          "messageInput" ||
+        event.key !== "Enter" ||
+        event.shiftKey ||
+        event.isComposing
+      ) {
+        return;
+      }
+
+      const hasFinePointer =
+        typeof window.matchMedia ===
+          "function" &&
+        window.matchMedia(
+          "(pointer: fine)"
+        ).matches;
+
+      if (!hasFinePointer) {
+        return;
+      }
+
+      event.preventDefault();
+      sendMessage();
+    }
+  );
+
+  document.addEventListener(
+    "click",
+    event => {
+      const panel =
+        document.getElementById(
+          "mc2EmojiPanel"
+        );
+
+      const toggle =
+        event.target.closest(
+          "[data-emoji-toggle]"
+        );
+
+      if (toggle) {
+        if (panel) {
+          const isOpen =
+            panel.getAttribute(
+              "data-open"
+            ) === "true";
+
+          panel.setAttribute(
+            "data-open",
+            isOpen ? "false" : "true"
+          );
+
+          toggle.setAttribute(
+            "aria-expanded",
+            isOpen ? "false" : "true"
+          );
+        }
+
+        return;
+      }
+
+      const emojiItem =
+        event.target.closest(
+          "[data-emoji-insert]"
+        );
+
+      if (emojiItem) {
+        const emoji =
+          emojiItem.getAttribute(
+            "data-emoji-insert"
+          ) || "";
+
+        const input =
+          document.getElementById(
+            "messageInput"
+          );
+
+        if (input) {
+          const start =
+            input.selectionStart ??
+            input.value.length;
+
+          const end =
+            input.selectionEnd ??
+            input.value.length;
+
+          input.value =
+            input.value.slice(
+              0,
+              start
+            ) +
+            emoji +
+            input.value.slice(end);
+
+          const nextPos =
+            start + emoji.length;
+
+          input.focus();
+
+          input.setSelectionRange(
+            nextPos,
+            nextPos
+          );
+
+          mc2ResizeComposerTextarea(
+            input
+          );
+        }
+
+        if (panel) {
+          panel.setAttribute(
+            "data-open",
+            "false"
+          );
+        }
+
+        return;
+      }
+
+      if (
+        panel &&
+        panel.getAttribute(
+          "data-open"
+        ) === "true" &&
+        !event.target.closest(
+          "#mc2EmojiPanel"
+        )
+      ) {
+        panel.setAttribute(
+          "data-open",
+          "false"
+        );
+
+        document
+          .querySelectorAll(
+            "[data-emoji-toggle]"
+          )
+          .forEach(btn => {
+            btn.setAttribute(
+              "aria-expanded",
+              "false"
+            );
+          });
+      }
     }
   );
 }
