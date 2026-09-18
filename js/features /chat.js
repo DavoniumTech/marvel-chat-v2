@@ -5233,6 +5233,10 @@ function ensureMarvelChatV2Styles() {
       max-width:none !important;
       margin:0 !important;
       transform:none !important;
+      box-sizing:border-box !important;
+      height:auto !important;
+      min-height:0 !important;
+      max-height:none !important;
     }
     /* Freezes the page body behind the fixed chat screen so
        it can never scroll independently underneath it. */
@@ -5249,108 +5253,6 @@ function ensureMarvelChatV2Styles() {
 
 /* Inject styles as soon as this module loads. */
 ensureMarvelChatV2Styles();
-
-/* =========================================================
-   KEYBOARD-SAFE VIEWPORT SYNC
-
-   Root cause of the "gap below the composer" / "gap between
-   composer and keyboard" bug: .mc2-conversation-page is sized
-   with CSS (position:fixed + inset:0), which is anchored to
-   the LAYOUT viewport. On Android Chrome, opening the on-
-   screen keyboard shrinks the VISUAL viewport (what the user
-   can actually see) without shrinking the layout viewport —
-   so a box sized purely in CSS can end up taller than the
-   space that is really still visible, leaving a dark gap
-   where the page's own background shows through, whether
-   that gap lands below the composer (keyboard closed, browser
-   chrome resized) or between the composer and the keyboard
-   (keyboard open).
-
-   window.visualViewport reports the REAL visible area (height
-   and offsetTop) and is supported on Chrome for Android. We
-   use it as the source of truth for the conversation shell's
-   height/position whenever it's available, re-applied every
-   time it changes. CSS inset:0 remains the fallback for
-   browsers without visualViewport support (style.removeProperty
-   below simply lets that CSS take back over).
-
-   The two style.setProperty(..., "important") calls are
-   required, not decorative: .mc2-conversation-page's CSS uses
-   inset:0 !important, and per the CSS cascade an !important
-   declaration in a stylesheet normally beats a *normal*
-   inline style. Setting our inline override as !important too
-   makes the style-attribute's higher specificity win, so this
-   JS value reliably takes precedence over the CSS fallback
-   instead of silently losing to it.
-   ========================================================= */
-
-export function mc2SyncConversationViewport() {
-
-  const page =
-    document.querySelector(
-      ".mc2-conversation-page"
-    );
-
-  if (!page) {
-    return;
-  }
-
-  const vv =
-    window.visualViewport;
-
-  if (!vv) {
-    // No visualViewport support in this browser: fall back
-    // to whatever the CSS (inset:0) already resolves to.
-    page.style.removeProperty(
-      "height"
-    );
-
-    page.style.removeProperty(
-      "top"
-    );
-
-    return;
-  }
-
-  page.style.setProperty(
-    "height",
-    `${vv.height}px`,
-    "important"
-  );
-
-  page.style.setProperty(
-    "top",
-    `${vv.offsetTop}px`,
-    "important"
-  );
-
-}
-
-if (window.visualViewport) {
-
-  window.visualViewport.addEventListener(
-    "resize",
-    mc2SyncConversationViewport
-  );
-
-  window.visualViewport.addEventListener(
-    "scroll",
-    mc2SyncConversationViewport
-  );
-
-}
-
-window.addEventListener(
-  "orientationchange",
-  () => {
-    // Give the browser a moment to settle the new viewport
-    // dimensions before measuring them.
-    setTimeout(
-      mc2SyncConversationViewport,
-      60
-    );
-  }
-);
 
 /* =========================================================
    CHAT SEARCH — FOCUS-SAFE INPUT HANDLING
